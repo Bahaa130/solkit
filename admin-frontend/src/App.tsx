@@ -17,24 +17,28 @@ export default function App() {
   
   const [activeTab, setActiveTab] = useState<string>("mining");
 
-  // ✅ تصحيح دالة تفكيك التوكين الفولاذية وإعادة الحقل [1] لمنع الـ JSON Crash
+    // ✅ الدالة المصححة والمؤمنة بنسبة 100% لقراءة جزء التشفير الثاني [1]
   const parseJwt = (token: string) => {
     try {
       if (!token) return null;
-      const base64Url = token.split('.')[1]; // إرجاع القيمة المفقودة [1] بدقة
-      if (!base64Url) return null;
+      const parts = token.split('.'); // تفكيك التوكن إلى أجزائه الثلاثة
+      if (parts.length < 2) return null;
+      
+      const base64Url = parts[1]; // 👈 قراءة الجزء الثاني المشفر [1] الذي يحتوي على الـ Payload صراحة
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(
         atob(base64)
           .split('')
-          .map((c) => '%'+('00'+c.charCodeAt(0).toString(16)).slice(-2))
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
           .join('')
       );
       return JSON.parse(jsonPayload);
-    } catch {
+    } catch (e) {
+      console.error("JWT Parsing failed:", e);
       return null;
     }
   };
+
 
   useEffect(() => {
     const savedJwt = localStorage.getItem("solkit_token");
@@ -53,14 +57,13 @@ export default function App() {
           role: savedRole ?? "user",
         });
       } else {
-        // إذا كان التوكن تالفاً أو فارغاً، نقوم بمسحه لطلب تسجيل جديد
         localStorage.clear();
       }
     }
   }, []);
 
   const handleWalletConnected = (jwtToken: string, walletAddress: string, role: string) => {
-    localStorage.setItem("solkit_token", jwtToken);
+    localStorage.setItem("solkit_token", jwtToken); 
     localStorage.setItem("solkit_wallet", walletAddress);
     localStorage.setItem("solkit_role", role);
 
@@ -81,7 +84,6 @@ export default function App() {
     setActiveTab("mining");
   };
 
-  // المحفظة الإدارية الصارمة الخاصة بك
   const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
 
   if (!session) {
@@ -97,13 +99,13 @@ export default function App() {
       </header>
 
       <main style={styles.mainContent}>
-         {activeTab === "mining" && <MiningDashboard />}
-         {activeTab === "withdraw" && <WithdrawalPage userId={session.userId} />}
-         {activeTab === "referral" && <ReferralPage userId={session.userId} />}
-         {activeTab === "tasks" && <TasksPage userId={session.userId} />}
-         {activeTab === "bonus" && <BonusPage userId={session.userId} />}
+         {activeTab === "mining" && <MiningDashboard userId={session.userId} token={session.jwtToken || ""} />}
+         {activeTab === "withdraw" && <WithdrawalPage userId={session.userId} token={session.jwtToken || ""} />}
+         {activeTab === "referral" && <ReferralPage userId={session.userId} token={session.jwtToken || ""} />}
+         {activeTab === "tasks" && <TasksPage userId={session.userId} token={session.jwtToken || ""} />}
+         {activeTab === "bonus" && <BonusPage userId={session.userId} token={session.jwtToken || ""} />}
          
-         {activeTab === "admin" && session.walletAddress === ADMIN_WALLET && <AdminPanelPage />}
+         {activeTab === "admin" && session.walletAddress === ADMIN_WALLET && <AdminPanelPage token={session.jwtToken || ""} />}
       </main>
 
       <nav style={styles.bottomNav}>

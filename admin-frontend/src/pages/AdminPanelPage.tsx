@@ -20,40 +20,50 @@ interface PendingWithdrawal {
   };
 }
 
-export default function AdminPanelPage() {
+// قمنا بتحديث المكون ليستقبل الـ token حياً من الأب الموثق 🛡️
+export default function AdminPanelPage({ token }: { token: string }) {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [pendingList, setPendingList] = useState<PendingWithdrawal[]>([]);
   const [txHashes, setTxHashes] = useState<{ [key: number]: string }>({});
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // 1. دالة جلب البيانات والإحصائيات وتمرير الهيدر الأمني للـ Admin
+  // 1. دالة جلب البيانات والإحصائيات وتمرير التوكن الرسمي الصارم بـ Bearer JWT
   const fetchAdminData = async () => {
+    if (!token) {
+      setErrorMessage("عذراً، يجب تسجيل الدخول أولاً كمسؤول!");
+      return;
+    }
+
     try {
       setErrorMessage(null);
       const headers = { 
         "Content-Type": "application/json",
-        "admin-wallet": ADMIN_WALLET 
+        "Authorization": `Bearer ${token}` // تمرير التوكن المشفر المعتمد بدلاً من الهيدر البدائي القديم 🔐
       };
 
-      // جلب الإحصائيات العامة
+      // جلب الإحصائيات العامة من السيرفر الفولاذي
       const statsRes = await fetch("/api/users/admin/stats", { headers });
+      
+      if (statsRes.status === 401 || statsRes.status === 403) {
+        setErrorMessage("عذراً، جلسة العمل منتهية أو حسابك لا يمتلك صلاحية المسؤول العليا!");
+        return;
+      }
+
       if (!statsRes.ok) {
-        const errData = await statsRes.json();
-        setErrorMessage(errData.message || "فشل التحقق من صلاحيات المدير");
+        setErrorMessage("فشل السيرفر في معالجة طلب الإدارة الحية");
         return;
       }
       const statsData = await statsRes.json();
 
-      // جلب قائمة طلبات السحب
+      // جلب قائمة طلبات السحب المعلقة
       const listRes = await fetch("/api/users/admin/pending-withdrawals", { headers });
       if (!listRes.ok) {
-        setErrorMessage("فشل جلب قائمة سحوبات شبكة سولانا");
+        setErrorMessage("فشل جلب قائمة سحوبات شبكة سولانا المعلقة");
         return;
       }
       const listData = await listRes.json();
 
-      // تحديث الواجهة فور نجاح العملية بالبيانات المستقرة
       setStats(statsData);
       setPendingList(listData);
 
@@ -65,9 +75,9 @@ export default function AdminPanelPage() {
 
   useEffect(() => {
     fetchAdminData();
-  }, []);
+  }, [token]);
 
-  // 2. دالة اتخاذ القرار للمدير (موافقة مع التحقق من الهاش أو الرفض المطلق)
+  // 2. دالة اتخاذ القرار للمدير (موافقة مع إدخال الهاش أو الرفض وإعادة الأموال)
   const handleAction = async (id: number, status: "completed" | "failed") => {
     const hash = txHashes[id];
     if (status === "completed" && !hash) {
@@ -78,7 +88,7 @@ export default function AdminPanelPage() {
       setProcessingId(id);
       const headers = { 
         "Content-Type": "application/json",
-        "admin-wallet": ADMIN_WALLET 
+        "Authorization": `Bearer ${token}`
       };
 
       const res = await fetch(`/api/users/admin/process-withdrawal/${id}`, {
@@ -89,13 +99,12 @@ export default function AdminPanelPage() {
 
       if (res.ok) {
         alert(status === "completed" ? "🟢 تم تأكيد عملية السحب بنجاح!" : "🔴 تم رفض الطلب بنجاح.");
-        // تصفير حقل الهاش الخاص بهذه المعاملة فقط بعد النجاح
         setTxHashes(prev => {
           const updated = { ...prev };
           delete updated[id];
           return updated;
         });
-        fetchAdminData(); // تحديث اللوحة والإحصائيات حياً
+        fetchAdminData(); // تحديث فوري للوحة الإدارة
       } else {
         const errData = await res.json();
         alert(errData.message || "فشل في تحديث حالة السحب");
@@ -107,19 +116,17 @@ export default function AdminPanelPage() {
     }
   };
 
-  // عرض الخطأ بشكل مرئي وصريح في حال وجود تضارب في الصلاحيات والمحفظة
   if (errorMessage) {
     return (
-      <div style={{ color: "#ff4d4d", textAlign: "center", padding: "40px", fontFamily: "sans-serif" }}>
+      <div style={{ color: "#ff4d4d", textAlign: "center", padding: "100px 20px", fontFamily: "sans-serif" }}>
         <h2>⚠️ خطأ في الدخول</h2>
-        <p>{errorMessage}</p>
-        <button onClick={fetchAdminData} style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: "#00ffcc", border: "none", borderRadius: "5px", cursor: "pointer", fontWeight: "bold" }}>إعادة المحاولة</button>
+        <p style={{ marginTop: "10px", color: "#a1a7bb" }}>{errorMessage}</p>
+        <button onClick={fetchAdminData} style={{ marginTop: "20px", padding: "12px 24px", backgroundColor: "#00ffcc", color: "#000", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "bold" }}>إعادة المحاولة 🔄</button>
       </div>
     );
   }
 
-  // وضع جاري التحميل المؤقت
-  if (!stats) return <div style={{ color: "#fff", textAlign: "center", padding: "40px", fontFamily: "sans-serif" }}>جاري تحميل لوحة التحكم للمدير...</div>;
+  if (!stats) return <div style={{ color: "#fff", textAlign: "center", padding: "100px" }}>جاري جلب لوحة المسؤول الآمنة...</div>;
 
   return (
     <div style={styles.container}>
@@ -128,7 +135,6 @@ export default function AdminPanelPage() {
         <p style={styles.subtitle}>متابعة المؤشرات المالية، عدد المعدنين، والموافقة على عمليات سحب شبكة سولانا.</p>
       </div>
 
-      {/* لوحة المؤشرات الرقمية العامة للتطبيق */}
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
           <span style={styles.statLabel}>إجمالي إيرادات التفعيل</span>
@@ -148,7 +154,6 @@ export default function AdminPanelPage() {
         </div>
       </div>
 
-      {/* إدارة طلبات سحب الأرباح وشبكة سولانا */}
       <div style={styles.tableCard}>
         <h3 style={styles.cardTitle}>طلبات سحب العملات المعلقة (🟠 قيد الانتظار)</h3>
         {pendingList.length === 0 ? (
@@ -180,20 +185,8 @@ export default function AdminPanelPage() {
                         onChange={(e) => setTxHashes({ ...txHashes, [req.id]: e.target.value })}
                         style={styles.inputHash}
                       />
-                      <button
-                        onClick={() => handleAction(req.id, "completed")}
-                        disabled={processingId === req.id}
-                        style={styles.approveBtn}
-                      >
-                        موافقة 🟢
-                      </button>
-                      <button
-                        onClick={() => handleAction(req.id, "failed")}
-                        disabled={processingId === req.id}
-                        style={styles.rejectBtn}
-                      >
-                        رفض 🔴
-                      </button>
+                      <button onClick={() => handleAction(req.id, "completed")} disabled={processingId === req.id} style={styles.approveBtn}>موافقة 🟢</button>
+                      <button onClick={() => handleAction(req.id, "failed")} disabled={processingId === req.id} style={styles.rejectBtn}>رفض 🔴</button>
                     </td>
                   </tr>
                 ))}
@@ -206,9 +199,6 @@ export default function AdminPanelPage() {
   );
 }
 
-// ==========================================
-// 🎨 واجهة التنسيق اللوني والجمالي المظلم لـ CSS
-// ==========================================
 const styles: { [key: string]: React.CSSProperties } = {
   container: { padding: "20px", display: "flex", flexDirection: "column", gap: "20px", maxWidth: "900px", margin: "0 auto", direction: "rtl", fontFamily: "sans-serif" },
   headerBox: { textAlign: "center", marginBottom: "10px" },
@@ -229,6 +219,6 @@ const styles: { [key: string]: React.CSSProperties } = {
   td: { padding: "14px 8px", color: "#fff" },
   tdActions: { padding: "14px 8px", display: "flex", gap: "8px", alignItems: "center" },
   inputHash: { backgroundColor: "#1f2235", border: "1px solid #2d314d", borderRadius: "6px", padding: "8px", color: "#fff", fontSize: "12px", outline: "none", width: "160px" },
-  approveBtn: { backgroundColor: "rgba(0, 255, 119, 0.15)", border: "1px solid #00ff77", color: "#00ff77", borderRadius: "6px", padding: "6px 12px", cursor: "pointer", fontWeight: "bold", transition: "all 0.2s" },
-  rejectBtn: { backgroundColor: "rgba(255, 77, 77, 0.15)", border: "1px solid #ff4d4d", color: "#ff4d4d", borderRadius: "6px", padding: "6px 12px", cursor: "pointer", fontWeight: "bold", transition: "all 0.2s" }
+  approveBtn: { backgroundColor: "rgba(0, 255, 119, 0.15)", border: "1px solid #00ff77", color: "#00ff77", borderRadius: "6px", padding: "6px 12px", cursor: "pointer", fontWeight: "bold" },
+  rejectBtn: { backgroundColor: "rgba(255, 77, 77, 0.15)", border: "1px solid #ff4d4d", color: "#ff4d4d", borderRadius: "6px", padding: "6px 12px", cursor: "pointer", fontWeight: "bold" }
 };
