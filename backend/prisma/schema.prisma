@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model User {
+  id            Int     @id @default(autoincrement())
+  email         String  @unique
+  walletAddress String? @unique
+  referralCode  String  @unique
+  referrerId    Int?
+
+  referrer  User?  @relation("UserReferrer", fields: [referrerId], references: [id])
+  referrals User[] @relation("UserReferrer")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wallets  Wallet[]
+  rewards  Reward[]
+  payments Payment[]
+}
+
+model Wallet {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
+  address     String   @unique
+  chain       String   @default("ethereum")
+  connectedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Reward {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  type      String
+  amount    Decimal  @db.Decimal(18, 8)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  amount    Decimal  @db.Decimal(18, 8)
+  currency  String   @default("USD")
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
