@@ -4,61 +4,162 @@ generator client {
 
 datasource db {
   provider = "mysql"
+  url      = env("DATABASE_URL")
 }
+
+// ==========================================
+// 📊 أنواع البيانات الثابتة (Enums)
+// ==========================================
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+}
+
+enum ActivationStatus {
+  inactive
+  pending
+  active
+}
+
+enum MiningStatus {
+  active
+  completed
+}
+
+enum WithdrawalStatus {
+  pending
+  completed
+  failed
+}
+
+// ==========================================
+// 👤 جدول المستخدم (User Model)
+// ==========================================
 
 model User {
-  id            Int     @id @default(autoincrement())
-  email         String  @unique
-  walletAddress String? @unique
-  referralCode  String  @unique
-  referrerId    Int?
+  id               Int              @id @default(autoincrement())
+  name             String?
+  email            String           @unique
+  walletAddress    String?          @unique
+  referralCode     String           @unique
+  referrerId       Int?
+  activationStatus ActivationStatus @default(inactive)
+  
+  // الحقول الجديدة الخاصة بنظام التعدين والمستويات والبونص
+  balance          Decimal          @default(0.00000000) @db.Decimal(18, 8) // إجمالي العملات الرقمية المتاحة للتعدين
+  currentLevel     Int              @default(1) // مستوى الحساب الحالي (1، 2، 3)
+  currentXp        Int              @default(0) // نقاط الخبرة للانتقال للمستوى التالي
 
-  referrer  User?  @relation("UserReferrer", fields: [referrerId], references: [id])
-  referrals User[] @relation("UserReferrer")
+  referrer         User?            @relation("UserReferrer", fields: [referrerId], references: [id])
+  referrals        User[]           @relation("UserReferrer")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  wallets          Wallet[]
+  rewards          Reward[]
+  payments         Payment[]
+  
+  // العلاقات الجديدة للميزات الـ 5 المضافة
+  miningSessions   MiningSession[]
+  withdrawals      Withdrawal[]
+  socialTasks      SocialTask[]
+  dailyBonuses     DailyBonus[]
 
-  wallets  Wallet[]
-  rewards  Reward[]
-  payments Payment[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 }
+
+// ==========================================
+// 💼 الجداول الحالية للمشروع (الموجودة مسبقاً)
+// ==========================================
 
 model Wallet {
   id          Int      @id @default(autoincrement())
   userId      Int      @unique
   address     String   @unique
-  chain       String   @default("ethereum")
+  chain       String   @default("solana")
   connectedAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Reward {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  type      String
-  amount    Decimal  @db.Decimal(18, 8)
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  type         String
+  amount       Decimal  @db.Decimal(18, 8)
+  sourceUserId Int?
+  createdAt    DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Payment {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  amount    Decimal  @db.Decimal(18, 8)
-  currency  String   @default("USD")
-  status    String   @default("pending")
-  createdAt DateTime @default(now())
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  amount      Decimal        @db.Decimal(18, 8)
+  currency    String         @default("USD")
+  status      PaymentStatus  @default(pending)
+  txHash      String?        @unique
+  createdAt   DateTime       @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// ==========================================
+// 🛠️ الجداول الجديدة المضافة للميزات الـ 5
+// ==========================================
 
-model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  createdAt DateTime @default(now())
+// 1. جدول دورات وعداد التعدين (Mining Session)
+model MiningSession {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  miningRate     Decimal      @default(0.500000) @db.Decimal(10, 6) // سرعة التعدين في هذه الجلسة
+  startedAt      DateTime
+  endsAt         DateTime     // وقت انتهاء العداد التنازلي التلقائي (24 ساعة)
+  status         MiningStatus @default(active)
+  minedAmount    Decimal      @default(0.00000000) @db.Decimal(18, 8) // الأرباح المكتسبة عند الاكتمال
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 2. جدول سحوبات شبكة سولانا وسجل العمليات (Withdrawal)
+model Withdrawal {
+  id            Int              @id @default(autoincrement())
+  userId        Int
+  walletAddress String           // محفظة سولانا المستقبلة للأرباح (32-44 حرفاً)
+  amount        Decimal          @db.Decimal(18, 8) // الكمية المطلوبة للسحب
+  gasFee        Decimal          @db.Decimal(10, 8) // رسوم شبكة سولانا الافتراضية
+  txHash        String?          @unique            // رمز الـ Signature الخاص بالمعاملة على بلوكشين سولانا للتحقق عبر Solscan
+  status        WithdrawalStatus @default(pending)  // معلقة برتقالي 🟠، ناجحة أخضر 🟢، فاشلة أحمر 🔴
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 3. جدول المهام الاجتماعية وهدايا الاشتراك (Social Task)
+model SocialTask {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  taskName       String   // نوع المهمة مثل: 'telegram_join' أو 'x_follow'
+  socialUsername String?  // اسم حساب العميل على المنصة للتوثيق
+  isCompleted    Boolean  @default(false) // تصبح قيد القفل والمكتملة لمنع التكرار
+  rewardClaimed  Decimal  @db.Decimal(18, 8) // قيمة الهدية الممنوحة
+  completedAt    DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskName]) // تمنع المستخدم من المطالبة بنفس الهدية مرتين
+}
+
+// 4. جدول البونص اليومي المتصاعد والسلسلة المتتالية (Daily Bonus)
+model DailyBonus {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  streakDay    Int      @default(1) // رقم اليوم في السلسلة (من 1 إلى 7 أيام)
+  rewardAmount Decimal  @db.Decimal(18, 8) // قيمة المكافأة الممنوحة بالتعديل
+  claimedAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
