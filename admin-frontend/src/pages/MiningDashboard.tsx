@@ -8,51 +8,65 @@ interface MiningDashboardProps {
 export default function MiningDashboard({ userId, token }: MiningDashboardProps) {
   const [balance, setBalance] = useState<number>(0.0);
   const [level, setLevel] = useState<number>(1);
-  const [miningStatus, setMiningStatus] = useState({ status: "stopped", miningRate: 0.5, timeLeft: 0 });
+  const [miningStatus, setMiningStatus] = useState({ status: "stopped", miningRate: 0.5, timeLeft: 0, pendingMinedAmount: 0 });
 
   const fetchDashboardData = async () => {
     if (!token || !userId) return;
     try {
-      // جلب بيانات الحساب الرئيسية (الرصيد والمستوى)
-      const userRes = await fetch(`/api/users/${userId}`);
+      let currentBaseBalance = 0;
+
+      // 1. جلب رصيد المستخدم الأساسي من السيرفر مع تمرير توكن الحماية
+      const userRes = await fetch(`/api/users/${userId}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
       if (userRes.ok) {
-        const userData = await userRes.json();
-        setBalance(Number(userData.balance || 0));
-        setLevel(Number(userData.currentLevel || 1));
+        const textData = await userRes.text();
+        if (textData) {
+          const userData = JSON.parse(textData);
+          currentBaseBalance = Number(userData.balance || 0);
+          setLevel(Number(userData.currentLevel || 1));
+        }
       }
 
-      // جلب حالة جلسة التعدين النشطة حركياً
+      // 2. جلب تفاصيل التعدين الحية الحالية والوقت وفارق الثواني
       const miningRes = await fetch("/api/users/mining-status", {
         headers: { "Authorization": `Bearer ${token}` }
       });
       if (miningRes.ok) {
-        const miningData = await miningRes.json();
-        setMiningStatus(miningData);
+        const miningText = await miningRes.text();
+        if (miningText) {
+          const miningData = JSON.parse(miningText);
+          setMiningStatus(miningData);
+          
+          // ⭐ السر الجوهري: دمج الرصيد الأساسي المخزن + الأرباح المعلقة المستخرجة بالثواني فوراً عند تحديث الصفحة لمنع تراجع الرصيد
+          const liveMinedAmount = Number(miningData.pendingMinedAmount || 0);
+          setBalance(currentBaseBalance + liveMinedAmount);
+        }
       }
     } catch (error) {
-      console.error("Error fetching dashboard data:", error);
+      console.error("Error fetching mining status safely:", error);
     }
   };
 
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 60000);
+    const interval = setInterval(fetchDashboardData, 60000); // فحص خلفي كل دقيقة للمزامنة الكلية
     return () => clearInterval(interval);
   }, [userId, token]);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     if (miningStatus.status === "active" && miningStatus.timeLeft > 0) {
       timer = setInterval(() => {
         setMiningStatus((prev) => {
           if (prev.timeLeft <= 1) {
             clearInterval(timer);
             fetchDashboardData();
-            return { ...prev, status: "stopped", timeLeft: 0 };
+            return { ...prev, status: "stopped", timeLeft: 0, pendingMinedAmount: 0 };
           }
           return { ...prev, timeLeft: prev.timeLeft - 1 };
         });
-        // تأثير الزيادة اللحظية للعملة على الشاشة أمام العميل
+        // تحديث وتصاعد حركي حي للأرقام العشرية الدقيقة أمام عين العميل كل ثانية
         setBalance((prev) => prev + (Number(miningStatus.miningRate) / 3600));
       }, 1000);
     }
@@ -69,7 +83,7 @@ export default function MiningDashboard({ userId, token }: MiningDashboardProps)
         }
       });
       if (res.ok) fetchDashboardData();
-    } catch (error) {
+    } catch {
       alert("خطأ في الاتصال بالخادم لم يبدأ التعدين");
     }
   };
@@ -126,7 +140,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   balanceValue: { color: "#00ffcc", fontSize: "28px", margin: 0, fontWeight: "bold", letterSpacing: "0.5px" },
   miningCircleContainer: { marginBottom: "40px" },
   circularProgressBar: { width: "230px", height: "230px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 25px rgba(0, 255, 204, 0.15)", transition: "background 0.5s ease" },
-  innerCircle: { width: "200px", height: "190px", backgroundColor: "#0c0d14", borderRadius: "50%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
+  innerCircle: { width: "200px", height: "200px", backgroundColor: "#0c0d14", borderRadius: "50%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
   timerText: { fontSize: "32px", fontWeight: "bold", color: "#fff", letterSpacing: "1px" },
   rateText: { fontSize: "11px", color: "#00ffcc", marginTop: "8px", fontWeight: "bold" },
   stoppedText: { fontSize: "18px", color: "#a1a7bb", fontWeight: "bold" },

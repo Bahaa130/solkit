@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from "react";
 
 interface ConnectWalletPageProps {
-  onWalletConnected: (jwtToken: string, walletAddress: string, role: string) => void;
+  onWalletConnected: (jwtToken: string, walletAddress: string, role: string, activationStatus: string) => void;
 }
 
 export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPageProps) {
   const [loading, setLoading] = useState(false);
   const [referralCodeFromUrl, setReferralCodeFromUrl] = useState<string | null>(null);
 
-  // 1. التقاط كود الإحالة تلقائياً من رابط الموقع (?ref=xxxx) عند فتح الصفحة
+  // 1. التقاط كود الإحالة تلقائياً من الرابط عند فتح الصفحة
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const ref = urlParams.get("ref");
@@ -18,20 +18,18 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
     }
   }, []);
 
-  // 2. دالة الاتصال بمحفظة Phantom والتسجيل الأمني عبر الـ JWT
+  // 2. دالة الاتصال بمحفظة Phantom والتسجيل الأمني الآمن
   const handleConnectPhantom = async () => {
     const provider = (window as any).solana;
 
     if (!provider || !provider.isPhantom) {
-      alert("الرجاء تثبيت محفظة Phantom أولاً على متصفحك أو استخدام متصفح يدعم محافظ الويب 3!");
+      alert("الرجاء التأكد من تثبيت محفظة Phantom وتسجيل الدخول إليها أولاً!");
       window.open("https://phantom.app", "_blank");
       return;
     }
 
     try {
       setLoading(true);
-      
-      // طلب الاقتران والموافقة الرسمية من المحفظة
       const resp = await provider.connect({ onlyIfTrusted: false });
       const walletAddress = resp.publicKey.toString();
       
@@ -43,29 +41,44 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           walletAddress: walletAddress,
-          referralCode: referralCodeFromUrl
+          referralCode: referralCodeFromUrl || null
         })
       });
 
-      const data = await response.json();
+      // 🛡️ الحل الحديدي: قراءة نص الاستجابة مرة واحدة فقط وتخزينه لمنع الـ Body stream error
+      const rawText = await response.text();
 
-      if (response.ok && data.token) {
-        alert("تم التوثيق الرقمي الآمن وتسجيل الدخول بنجاح! 🔐🎉");
-        
-        // حفظ التوكن والرتبة في الـ localStorage لضمان المزامنة عند تحديث الصفحة
-        localStorage.setItem("solkit_token", data.token);
-        localStorage.setItem("solkit_role", data.user.role);
-        localStorage.setItem("solkit_user_id", data.user.id.toString());
-        localStorage.setItem("solkit_wallet", walletAddress);
+      if (response.ok && rawText) {
+        const data = JSON.parse(rawText);
+        if (data.token) {
+          alert("تم التوثيق الرقمي الآمن وتسجيل الدخول بنجاح! 🔐🎉");
+          
+          const userStatus = data.user?.activationStatus || "inactive";
 
-        // تمرير البيانات المحدثة لملف التحكم الرئيسي لتحديث الواجهة فوراً
-        onWalletConnected(data.token, walletAddress, data.user.role);
+          // حفظ الجلسة الموحدة بشكل ثابت لمنع ظهور صفحة الدفع مجدداً
+          localStorage.setItem("solkit_token", data.token);
+          localStorage.setItem("solkit_role", data.user?.role || "user");
+          localStorage.setItem("solkit_user_id", data.user?.id?.toString() || "0");
+          localStorage.setItem("solkit_wallet", walletAddress);
+          localStorage.setItem("solkit_status", userStatus); // 🟢 تثبيت الحالة الحقيقية (active) كاش للمتصفح
+
+          // تمرير البيانات المحدثة لملف التحكم الرئيسي لتحديث الواجهة فوراً
+          onWalletConnected(data.token, walletAddress, data.user?.role || "user", userStatus);
+        } else {
+          alert("خطأ: لم يتم إصدار التوكن الأمني من السيرفر.");
+        }
       } else {
-        alert(data.message || "فشل التحقق الأمني الرقمي من بصمة محفظتك.");
+        // في حال وجود خطأ بالخلفية، يتم فك تشفير رسالة السيرفر بأمان
+        try {
+          const errData = JSON.parse(rawText);
+          alert(errData.message || "فشل التحقق الأمني الرقمي من المحفظة.");
+        } catch {
+          alert("فشل الاتصال الأمني بالخادم الفولاذي.");
+        }
       }
     } catch (err: any) {
       console.error("Wallet Connection Error:", err);
-      alert(err?.message || "تم إلغاء عملية ربط المحفظة وتصريح الدخول من قبلك.");
+      alert(err?.message || "تم إلغاء عملية ربط المحفظة وتصريح الدخول.");
     } finally {
       setLoading(false);
     }
@@ -75,9 +88,8 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
     <div style={styles.container}>
       <div style={styles.card}>
         <h1 style={styles.title}>مرحباً بك في SOLKIT 💎</h1>
-        <p style={styles.subtitle}>تطبيق التعدين الأول والأكثر أماناً القائم على شبكة سولانا السريعة</p>
+        <p style={styles.subtitle}>تطبيق التعدين الأول والأكثر أماناً القائم على شبكة سولانا</p>
         
-        {/* إشعار ترحيبي أخضر يظهر للمستخدم فقط إذا جاء عبر رابط دعوة صديق */}
         {referralCodeFromUrl && (
           <div style={styles.badge}>
             🎁 أنت تسجل عبر رابط دعوة صديق (كود المكافأة: {referralCodeFromUrl})
@@ -96,63 +108,11 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
   );
 }
 
-// ==========================================
-// 🎨 واجهة التنسيق البصري الاحترافي المظلم
-// ==========================================
 const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: "100vh",
-    backgroundColor: "#0c0d14",
-    color: "#ffffff",
-    fontFamily: "sans-serif",
-    padding: "20px",
-    direction: "rtl"
-  },
-  card: {
-    backgroundColor: "#171924",
-    borderRadius: "20px",
-    padding: "40px",
-    textAlign: "center",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
-    maxWidth: "450px",
-    width: "100%"
-  },
-  title: {
-    fontSize: "26px",
-    color: "#ffffff",
-    marginBottom: "10px",
-    fontWeight: "bold"
-  },
-  subtitle: {
-    color: "#a1a7bb",
-    fontSize: "13px",
-    marginBottom: "35px",
-    lineHeight: "1.6"
-  },
-  badge: {
-    backgroundColor: "rgba(0, 255, 119, 0.12)",
-    color: "#00ff77",
-    padding: "12px",
-    borderRadius: "10px",
-    fontSize: "13px",
-    marginBottom: "25px",
-    fontWeight: "bold",
-    border: "1px solid rgba(0, 255, 119, 0.2)"
-  },
-  connectButton: {
-    width: "100%",
-    padding: "16px",
-    backgroundColor: "#512da8", // اللون البنفسجي الرسمي المعترف به لمحفظة Phantom
-    color: "#ffffff",
-    border: "none",
-    borderRadius: "12px",
-    fontSize: "16px",
-    fontWeight: "bold",
-    cursor: "pointer",
-    transition: "all 0.3s ease",
-    boxShadow: "0 4px 15px rgba(81, 45, 168, 0.4)"
-  }
+  container: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", backgroundColor: "#0c0d14", color: "#ffffff", fontFamily: "sans-serif", padding: "20px", direction: "rtl" },
+  card: { backgroundColor: "#171924", borderRadius: "20px", padding: "40px", textAlign: "center", boxShadow: "0 10px 30px rgba(0,0,0,0.5)", maxWidth: "450px", width: "100%" },
+  title: { fontSize: "26px", color: "#ffffff", marginBottom: "10px", fontWeight: "bold" },
+  subtitle: { color: "#a1a7bb", fontSize: "13px", marginBottom: "35px", lineHeight: "1.6" },
+  badge: { backgroundColor: "rgba(0, 255, 119, 0.12)", color: "#00ff77", padding: "12px", borderRadius: "10px", fontSize: "13px", marginBottom: "25px", fontWeight: "bold", border: "1px solid rgba(0, 255, 119, 0.2)" },
+  connectButton: { width: "100%", padding: "16px", backgroundColor: "#512da8", color: "#ffffff", border: "none", borderRadius: "12px", fontSize: "16px", fontWeight: "bold", cursor: "pointer", boxShadow: "0 4px 15px rgba(81, 45, 168, 0.4)" }
 };
