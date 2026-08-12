@@ -6,7 +6,7 @@ import rateLimit from "express-rate-limit";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import router from "./routes.js";
+import router from "./routes/index.js";
 
 const app = express();
 
