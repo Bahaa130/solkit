@@ -29,8 +29,10 @@ services:
       cd ..
 
     # ── تشغيل الخادم (يخدم API + ملفات dist على نفس الأصل) ──
-    # prisma migrate deploy آمن للتكرار ويضمن تطبيق كل الهجرات على Aiven
-    startCommand: cd backend && npx prisma migrate deploy && node dist/server.js
+    # نستخدم db push بدل migrate deploy: قاعدة Aiven جديدة (بلا بيانات)،
+    # وهذا يتجاوز تاريخ الهجرات المكسور + تضارب حالة الأحرف (Payment vs payment)
+    # على لينكس، ويبني كل الجداول مباشرة من schema.prisma بحالة متّسقة.
+    startCommand: cd backend && npx prisma db push --accept-data-loss && node dist/server.js
 
     # فحص الصحة: يُستخدم لإبقاء الخدمة حيّة
     healthCheckPath: /api/health
