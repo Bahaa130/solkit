@@ -9,7 +9,14 @@ import process from "process";
 
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import { LanguageProvider } from "./i18n/index.tsx";
+import { ToastProvider } from "./components/Toast.tsx";
+import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
-  <App />
+  <LanguageProvider>
+    <ToastProvider>
+      <App />
+    </ToastProvider>
+  </LanguageProvider>
 );

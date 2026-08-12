@@ -1,45 +1,67 @@
 import React, { useState, useEffect } from "react";
 import ConnectWalletPage from "./pages/ConnectWalletPage";
-import MiningDashboard from "./pages/MiningDashboard";
+import HomePage from "./pages/HomePage";
 import ReferralPage from "./pages/ReferralPage";
 import TasksPage from "./pages/TasksPage";
-import BonusPage from "./pages/MiningDashboard";
+import BonusPage from "./pages/BonusPage";
 import AdminPanelPage from "./pages/AdminPanelPage";
-import WithdrawalPage from "./pages/WithdrawalPage";
+import AirdropPage from "./pages/AirdropPage";
 import { Connection, PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
+import { C, font, styles as T } from "./theme";
+import { LANGS } from "./i18n/lang.ts";
+import { useLang } from "./i18n/index.tsx";
 
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
+const SOLANA_RPC_URL = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
+
+// 💰 مبالغ التفعيل المحدّثة: 0.015 SOL لكل محفظة (الإجمالي 0.03 SOL)
+const HALF_LAMPORTS = 15000000; // 0.015 SOL
+const FULL_LAMPORTS = 30000000; // 0.03 SOL
+
+interface Session {
+  userId: number;
+  walletAddress: string;
+  jwtToken?: string;
+  role?: string;
+  activationStatus?: string;
+}
+
+type PayPhase =
+  | { type: "loading"; text: string }
+  | { type: "confirming"; text: string }
+  | { type: "success"; text: string }
+  | { type: "error"; text: string }
+  | null;
 
 export default function App() {
-  const [session, setSession] = useState<{
-    userId: number;
-    walletAddress: string;
-    jwtToken?: string;
-    role?: string;
-    activationStatus?: string;
-  } | null>(null);
-  
-  const [activeTab, setActiveTab] = useState<string>("mining");
+  const { lang, dir, meta, setLang, t } = useLang();
+  const [session, setSession] = useState<Session | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("home");
   const [payLoading, setPayLoading] = useState<boolean>(false);
-  // ✅ تأكد من كتابة اسم الدالة بالـ L الصغيرة لتطابق استدعاء الزر بالأسفل تماماً
+  const [payStatus, setPayStatus] = useState<PayPhase>(null);
+  const [langOpen, setLangOpen] = useState(false);
+
   const handleLogout = () => {
     localStorage.clear();
     setSession(null);
-    setActiveTab("mining");
+    setActiveTab("home");
+    setPayStatus(null);
   };
 
   const parseJwt = (token: string) => {
     try {
       if (!token) return null;
-      const parts = token.split('.');
+      const parts = token.split(".");
       if (parts.length < 2) return null;
       const base64Url = parts[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
       const jsonPayload = decodeURIComponent(
-        atob(base64).split('').map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+        atob(base64).split("").map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join("")
       );
       return JSON.parse(jsonPayload);
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   };
 
   useEffect(() => {
@@ -64,12 +86,11 @@ export default function App() {
     }
   }, []);
 
-  // ابحث عن دالة handleWalletConnected وقم بتحديثها لتصبح هكذا بدقة:
   const handleWalletConnected = (jwtToken: string, walletAddress: string, role: string, activationStatus: string) => {
-    localStorage.setItem("solkit_token", jwtToken); 
+    localStorage.setItem("solkit_token", jwtToken);
     localStorage.setItem("solkit_wallet", walletAddress);
     localStorage.setItem("solkit_role", role);
-    localStorage.setItem("solkit_status", activationStatus); // تثبيت الحالة الحقيقية القادمة من السيرفر (active)
+    localStorage.setItem("solkit_status", activationStatus);
 
     const payload = parseJwt(jwtToken);
     const resolvedUserId = payload?.id || payload?.userId || 0;
@@ -79,225 +100,244 @@ export default function App() {
       walletAddress,
       jwtToken,
       role,
-      activationStatus: activationStatus // 🟢 تحديث فوري للجلسة لعرض لوحة التعدين مباشرة دون تراجع
+      activationStatus
     });
   };
+
   const handlePaymentActivation = async () => {
     if (!session?.jwtToken) return;
     const provider = (window as any).solana;
 
     if (!provider || !provider.isPhantom) {
-      alert("الرجاء التأكد من تثبيت محفظة Phantom وتسجيل الدخول إليها أولاً!");
+      setPayStatus({ type: "error", text: t("app.noPhantom") });
       return;
     }
 
     try {
       setPayLoading(true);
+      setPayStatus({ type: "loading", text: t("app.payPreparing") });
 
-      // 1. الاتصال المباشر بعقدة سولانا الرسمية لبيئة التطوير (Devnet)
-      const connection = new Connection("https://solana.com", "confirmed");
-      
-      const siteAdminPublicKey = new PublicKey("4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo");
+      const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+      const siteAdminPublicKey = new PublicKey(ADMIN_WALLET);
       const userPublicKey = new PublicKey(provider.publicKey.toString());
 
-      // 2. جلب بيانات السجل الحية لمعرفة محفظة الـ Referrer (تعديل الـ Backticks الصحيح 🟢)
+      // 1. جلب بيانات السجل الحية لمعرفة محفظة الـ Referrer
       const checkUserRes = await fetch(`/api/users/${session.userId}`, {
         headers: { "Authorization": `Bearer ${session.jwtToken}` }
       });
-      
-      let referrerWalletAddress: string | null = null;
-      if (checkUserRes.ok) {
-        const userData = await checkUserRes.json();
-        if (userData?.referrer?.walletAddress) {
-          referrerWalletAddress = userData.referrer.walletAddress;
-        }
+      if (!checkUserRes.ok) {
+        throw new Error(t("app.payCheckRefFailed"));
       }
+      const userData = await checkUserRes.json();
+      const referrerWalletAddress: string | null = userData?.referrer?.walletAddress || null;
 
-      // 3. بناء المعاملة الذكية الموحدة للتحويل
+      // 2. بناء المعاملة الموحّدة: تقسيم 0.015 + 0.015 مع إحالة، أو 0.03 كاملة بدونها
       const transaction = new Transaction();
 
       if (referrerWalletAddress) {
-        alert("👥 تم رصد كود إحالة نشط! ستفتح محفظة Phantom الآن لتقسيم العملات حياً على البلوكشين (1$ للموقع و1$ لصاحب الدعوة)...");
+        setPayStatus({ type: "loading", text: t("app.payWithRef") });
         const referrerPublicKey = new PublicKey(referrerWalletAddress);
 
-        // أ. تحويل 0.005 SOL لمدير الموقع
-        transaction.add(
-          SystemProgram.transfer({
-            fromPubkey: userPublicKey,
-            toPubkey: siteAdminPublicKey,
-            lamports: 5000000, 
-          })
-        );
+        if (referrerPublicKey.toBase58() === siteAdminPublicKey.toBase58()) {
+          throw new Error(t("app.payReferrerSame"));
+        }
 
-        // ب. تحويل 0.005 SOL مباشرة لصاحب الإحالة الحقيقي على الشبكة حياً
+        // أ. 0.015 SOL لمحفظة الموقع
         transaction.add(
-          SystemProgram.transfer({
-            fromPubkey: userPublicKey,
-            toPubkey: referrerPublicKey,
-            lamports: 5000000, 
-          })
+          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: HALF_LAMPORTS })
+        );
+        // ب. 0.015 SOL لصاحب الإحالة الحقيقي
+        transaction.add(
+          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: referrerPublicKey, lamports: HALF_LAMPORTS })
         );
       } else {
-        alert("🎯 تسجيل مباشر بدون إحالة: ستفتح محفظة Phantom لإرسال الـ 2$ (0.01 SOL) كاملة لمحفظة الموقع...");
+        setPayStatus({ type: "loading", text: t("app.payNoRef") });
         transaction.add(
-          SystemProgram.transfer({
-            fromPubkey: userPublicKey,
-            toPubkey: siteAdminPublicKey,
-            lamports: 10000000, 
-          })
+          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: FULL_LAMPORTS })
         );
       }
 
-      // ضبط رسوم الشبكة والـ Blockhash
       transaction.feePayer = userPublicKey;
-      const { blockhash } = await connection.getLatestBlockhash("confirmed");
-      transaction.recentBlockhash = blockhash;
+      const latestBlockHashInfo = await connection.getLatestBlockhash("confirmed");
+      transaction.recentBlockhash = latestBlockHashInfo.blockhash;
 
-      // 4. استدعاء وبث المعاملة المقسمة حياً داخل محفظة فانتوم
-      const { signature } = await provider.signAndSendTransaction(transaction);
-      console.log("TxHash الأصلي لمعاملة التقسيم:", signature);
+      // 3. استدعاء محفظة Phantom لتوقيع وبث المعاملة
+      setPayStatus({ type: "loading", text: t("app.payPhantomSign") });
+      const response = await provider.signAndSendTransaction(transaction);
+      const txSignature = typeof response === "string"
+        ? response
+        : (response && typeof response === "object" && "signature" in response ? (response as { signature?: string }).signature : null);
 
-      alert("⏳ جاري انتظار تأكيد عملية التقسيم على كتل البلوكشين (تستغرق 3 ثوانٍ)...");
-      await connection.confirmTransaction(signature, "confirmed");
+      if (!txSignature) throw new Error(t("app.payNoSig"));
 
-      // 5. إرسال التوقيع النهائي للسيرفر لتفعيل الحساب بالـ MySQL
+      setPayStatus({ type: "confirming", text: t("app.payConfirming") });
+      await connection.confirmTransaction({
+        signature: txSignature,
+        blockhash: latestBlockHashInfo.blockhash,
+        lastValidBlockHeight: latestBlockHashInfo.lastValidBlockHeight
+      }, "confirmed");
+
+      // 4. إرسال التوقيع للسيرفر لتفعيل الحساب وتسجيل التقسيم
       const res = await fetch("/api/users/activate-account", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${session.jwtToken}`
         },
-        body: JSON.stringify({ txHash: signature })
+        body: JSON.stringify({ txHash: txSignature })
       });
 
       const data = await res.json();
       if (res.ok) {
-        alert(data.message || "تم تفعيل حسابك بنجاح وتقسيم العملات حياً على البلوكشين! 🎉");
+        setPayStatus({ type: "success", text: data.message || t("app.paySuccess") });
         localStorage.setItem("solkit_status", "active");
         setSession(prev => prev ? { ...prev, activationStatus: "active" } : null);
       } else {
-        alert(data.message || "رفض السيرفر توثيق المعاملة");
+        setPayStatus({ type: "error", text: data.message || t("app.payServerRefused") });
       }
-    } catch (error: any) {
-      console.error("Solana Split Failed:", error);
-      alert(error?.message || "تم إلغاء عملية الدفع والتقسيم من قبلك داخل محفظة فانتوم.");
+    } catch (error) {
+      console.error("Payment activation error:", error);
+      setPayStatus({ type: "error", text: error instanceof Error ? error.message : t("app.payError") });
     } finally {
       setPayLoading(false);
     }
   };
 
-
-    // ابحث عن شرط عدم وجود السيسشن واستبدله بهذا السطر المكتمل والمطابق لـ Props:
   if (!session) {
     return (
-      <ConnectWalletPage 
-        onWalletConnected={(t, w, r, s) => handleWalletConnected(t, w, r, s || "inactive")} 
+      <ConnectWalletPage
+        onWalletConnected={(t, w, r, s) => handleWalletConnected(t, w, r, s || "inactive")}
       />
     );
   }
 
+  const shortWallet = session.walletAddress
+    ? `${session.walletAddress.slice(0, 4)}...${session.walletAddress.slice(-4)}`
+    : "";
+
+  const tabs = [
+    { key: "home", icon: "🏠", adminOnly: false },
+    { key: "airdrop", icon: "🪂", adminOnly: false },
+    { key: "referral", icon: "🔗", adminOnly: false },
+    { key: "tasks", icon: "🎁", adminOnly: false },
+    { key: "bonus", icon: "📅", adminOnly: false },
+    { key: "admin", icon: "👑", adminOnly: true },
+  ].filter((tb) => !tb.adminOnly || session.walletAddress === ADMIN_WALLET);
+
+  const textAlign = dir === "rtl" ? "right" : "left";
 
   return (
-    <div style={styles.appContainer}>
-      <header style={styles.header}>
-        <span style={styles.headerTitle}>SOLKIT SYSTEM 💎</span>
-        <button onClick={handleLogout} style={styles.logoutBtn}>خروج 🚪</button>
+    <div style={{ ...styles.app, direction: dir }}>
+      <header className="app-header" style={styles.header}>
+        <div style={styles.logo}>
+          <span style={{ fontSize: 20 }}>💎</span>
+          <span className="gradient-text" style={{ fontWeight: 900, fontSize: 17 }}>SOLKIT</span>
+          <span className="app-logoTag" style={styles.logoTag}>SYSTEM</span>
+        </div>
+        <div className="app-headerRight" style={styles.headerRight}>
+          {/* 🌐 زر اللغة */}
+          <div style={styles.langWrap}>
+            <button onClick={() => setLangOpen((v) => !v)} className="btn btn-ghost app-langBtn" style={styles.langBtn}>
+              🌐 {meta.flag}
+            </button>
+            {langOpen && (
+              <div style={{ ...styles.langMenu, left: dir === "rtl" ? "auto" : 0, right: dir === "rtl" ? 0 : "auto" }}>
+                {LANGS.map((l) => (
+                  <button
+                    key={l.code}
+                    onClick={() => { setLang(l.code); setLangOpen(false); }}
+                    style={{ ...styles.langItem, textAlign, fontWeight: l.code === lang ? 900 : 500, color: l.code === lang ? C.teal : C.text }}
+                  >
+                    {l.flag} {l.label} {l.code === lang ? "✓" : ""}
+                  </button>
+                ))}
+                <div style={styles.langSoon}>{t("app.langSoon")}</div>
+              </div>
+            )}
+          </div>
+          <span className="pill app-walletPill" style={{ border: "1px solid rgba(0,255,204,0.25)", color: C.teal, background: "rgba(0,255,204,0.08)" }}>🦊 <span className="wallet-addr">{shortWallet}</span></span>
+          <button onClick={handleLogout} className="btn btn-ghost app-logoutBtn" style={{ padding: "8px 14px", fontSize: 12 }}>{t("app.logout")}</button>
+        </div>
       </header>
 
       {session.activationStatus !== "active" ? (
-        <div style={styles.payWrapper}>
-          <div style={styles.payCard}>
-            <h2 style={{ color: "#ffaa00", margin: 0, fontSize: "22px" }}>⚠️ حسابك غير نشط حالياً</h2>
-            <p style={{ color: "#a1a7bb", fontSize: "14px", margin: "15px 0 25px 0", lineHeight: "1.6" }}>
-              لبدء سحوبات سولانا وتشغيل عدادات التعدين الحية، يجب تفعيل الحساب بدفع رسوم التسجيل لمرة واحدة بقيمة <strong>2$ SOL</strong>.
+        <div style={styles.payWrap}>
+          <div className="glass" style={styles.payCard}>
+            <div className="floaty" style={{ fontSize: 54, textAlign: "center" }}>🦊</div>
+            <h2 style={styles.payTitle}>{t("app.payTitle")}</h2>
+            <p style={styles.payDesc}>
+              {t("app.payDesc")}{" "}
+              <strong className="gradient-text" style={{ fontSize: 18 }}>0.03 SOL</strong>.
             </p>
-            <button onClick={handlePaymentActivation} disabled={payLoading} style={styles.payBtn}>
-              تأكيد الدفع والتفعيل الفوري لـ 2$ 🦊
+
+            <div style={{ ...styles.splitBox, textAlign }}>
+              <div style={styles.splitRow}>
+                <span className="pill" style={{ background: "rgba(0,255,204,0.1)", color: C.teal, border: "1px solid rgba(0,255,204,0.25)" }}>{t("app.siteWallet")}</span>
+                <span style={{ fontWeight: 800, color: C.text }}>0.015 SOL</span>
+              </div>
+              <div style={styles.splitRow}>
+                <span className="pill" style={{ background: "rgba(124,92,255,0.12)", color: "#b3a1ff", border: "1px solid rgba(124,92,255,0.3)" }}>{t("app.referrer")}</span>
+                <span style={{ fontWeight: 800, color: C.text }}>0.015 SOL</span>
+              </div>
+              <p style={{ ...T.hint, marginTop: 8 }}>{t("app.splitHint")}</p>
+            </div>
+
+            {payStatus && (
+              <div style={{
+                ...styles.payStatus,
+                textAlign,
+                ...(payStatus.type === "error"
+                  ? { background: "rgba(255,92,122,0.1)", borderColor: "rgba(255,92,122,0.3)", color: "#ff9cae" }
+                  : payStatus.type === "success"
+                    ? { background: "rgba(34,229,132,0.1)", borderColor: "rgba(34,229,132,0.3)", color: "#7cf5c0" }
+                    : {})
+              }}>
+                {(payStatus.type === "loading" || payStatus.type === "confirming") && (
+                  <span className="spinner" style={{ verticalAlign: "middle", marginInlineEnd: 8 }} />
+                )}
+                {payStatus.text}
+              </div>
+            )}
+
+            <button onClick={handlePaymentActivation} disabled={payLoading} className="btn btn-purple btn-block" style={{ marginTop: 20, padding: "16px" }}>
+              {payLoading ? t("app.payBtnLoading") : t("app.payBtn")}
             </button>
+            <p style={{ ...T.hint, marginTop: 14 }}>{t("app.payHint")}</p>
           </div>
         </div>
       ) : (
         <>
-                {/* ⚡ منطقة المحتوى المتغيرة المصلحة التي تقوم باستدعاء كافة الصفحات بالتوكن الحقيقي الفعال */}
-      <main style={styles.mainContent}>
-         {activeTab === "mining" && <MiningDashboard userId={session.userId} token={session.jwtToken || ""} />}
-         {activeTab === "withdraw" && <WithdrawalPage userId={session.userId} token={session.jwtToken || ""} />}
-         
-         {/* 🔗 تفعل السطر البرمجي المفقود لاستدعاء واجهة شبكة الإحالة الفاخرة */}
-         {activeTab === "referral" && <ReferralPage userId={session.userId} token={session.jwtToken || ""} />}
-         
-         {/* 🎁 استدعاء واجهة المهمات الاجتماعية وقفل الهدايا */}
-         {activeTab === "tasks" && <TasksPage userId={session.userId} token={session.jwtToken || ""} />}
-         
-         {/* 📅 استدعاء واجهة البونص اليومي ومتصاعد الـ XP */}
-         {activeTab === "bonus" && <BonusPage userId={session.userId} token={session.jwtToken || ""} />}
-         
-         {/* 👑 لوحة إدارة النظام الرئيسية العليا المحمية */}
-         {activeTab === "admin" && session.walletAddress === ADMIN_WALLET && <AdminPanelPage token={session.jwtToken || ""} />}
-      </main>
+          <main style={{ flex: 1, paddingBottom: 96 }}>
+            <div key={activeTab} className="animate-fade-up">
+              {activeTab === "home" && <HomePage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "airdrop" && <AirdropPage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "referral" && <ReferralPage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "tasks" && <TasksPage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "bonus" && <BonusPage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "admin" && session.walletAddress === ADMIN_WALLET && <AdminPanelPage token={session.jwtToken || ""} />}
+            </div>
+          </main>
 
-
-                {/* 🧭 شريط التنقل السفلي الديناميكي المطور والمحمي لكافة واجهات النظام الخمس */}
-      <nav style={styles.bottomNav}>
-        
-        {/* 👑 1. زر لوحة الإدارة الفاخر: يظهر شرطياً ومخفياً فقط للمسؤول الفعلي حماية للموقع */}
-        {session.walletAddress === ADMIN_WALLET && (
-          <button 
-            onClick={() => setActiveTab("admin")} 
-            style={{ ...styles.navItem, color: activeTab === "admin" ? "#ffaa00" : "#a1a7bb" }}
-          >
-            <span style={styles.navIcon}>👑</span>
-            <span style={styles.navText}>الإدارة</span>
-          </button>
-        )}
-
-        {/* ⛏️ 2. زر عداد التعدين الرئيسي */}
-        <button 
-          onClick={() => setActiveTab("mining")} 
-          style={{ ...styles.navItem, color: activeTab === "mining" ? "#00ffcc" : "#a1a7bb" }}
-        >
-          <span style={styles.navIcon}>⛏️</span>
-          <span style={styles.navText}>التعدين</span>
-        </button>
-
-        {/* 💸 3. زر سحب الأرباح وشبكة سولانا */}
-        <button 
-          onClick={() => setActiveTab("withdraw")} 
-          style={{ ...styles.navItem, color: activeTab === "withdraw" ? "#00ffcc" : "#a1a7bb" }}
-        >
-          <span style={styles.navIcon}>💸</span>
-          <span style={styles.navText}>السحب</span>
-        </button>
-
-        {/* 🔗 4. زر شبكة الإحالة وقائمة الأعضاء */}
-        <button 
-          onClick={() => setActiveTab("referral")} 
-          style={{ ...styles.navItem, color: activeTab === "referral" ? "#00ffcc" : "#a1a7bb" }}
-        >
-          <span style={styles.navIcon}>🔗</span>
-          <span style={styles.navText}>الإحالات</span>
-        </button>
-
-        {/* 🎁 5. زر المهمات الاجتماعية وقفل الهدايا */}
-        <button 
-          onClick={() => setActiveTab("tasks")} 
-          style={{ ...styles.navItem, color: activeTab === "tasks" ? "#00ffcc" : "#a1a7bb" }}
-        >
-          <span style={styles.navIcon}>🎁</span>
-          <span style={styles.navText}>المهمات</span>
-        </button>
-
-        {/* 📅 6. زر البونص اليومي وسلسلة مستويات الـ XP */}
-        <button 
-          onClick={() => setActiveTab("bonus")} 
-          style={{ ...styles.navItem, color: activeTab === "bonus" ? "#00ffcc" : "#a1a7bb" }}
-        >
-          <span style={styles.navIcon}>📅</span>
-          <span style={styles.navText}>البونص</span>
-        </button>
-
-      </nav>
-
+          <nav className="app-nav" style={styles.nav}>
+            {tabs.map((tb) => {
+              const active = activeTab === tb.key;
+              return (
+                <button
+                  key={tb.key}
+                  onClick={() => setActiveTab(tb.key)}
+                  className="app-navItem"
+                  style={{
+                    ...styles.navItem,
+                    color: active ? C.teal : C.muted,
+                    ...(active ? { background: "rgba(0,255,204,0.1)", borderTop: "2px solid " + C.teal } : {})
+                  }}
+                >
+                  <span className="app-navIcon" style={styles.navIcon}>{tb.icon}</span>
+                  <span className="app-navLabel" style={styles.navLabel}>{t(`nav.${tb.key}`)}</span>
+                </button>
+              );
+            })}
+          </nav>
         </>
       )}
     </div>
@@ -305,28 +345,116 @@ export default function App() {
 }
 
 const styles: { [key: string]: React.CSSProperties } = {
-  appContainer: { display: "flex", flexDirection: "column", backgroundColor: "#0c0d14", minHeight: "100vh", color: "#ffffff", fontFamily: "sans-serif", direction: "rtl" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "15px 20px", backgroundColor: "#171924", borderBottom: "1px solid #222531" },
-  headerTitle: { fontSize: "18px", fontWeight: "bold", color: "#00ffcc" },
-  logoutBtn: { padding: "6px 12px", backgroundColor: "rgba(255, 77, 77, 0.1)", border: "1px solid #ff4d4d", color: "#ff4d4d", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" },
-  mainContent: { flex: 1, paddingBottom: "90px" },
-  payWrapper: { display: "flex", alignItems: "center", justifyContent: "center", flex: 1, padding: "40px 20px" },
-  payCard: { backgroundColor: "#171924", borderRadius: "16px", padding: "35px", maxWidth: "500px", width: "100%", textAlign: "center" },
-  payBtn: { width: "100%", padding: "16px", backgroundColor: "#512da8", color: "#fff", border: "none", borderRadius: "10px", fontSize: "15px", fontWeight: "bold", cursor: "pointer" },
-  bottomNav: { display: "flex", position: "fixed", bottom: 0, left: 0, right: 0, height: "70px", backgroundColor: "#171924", borderTop: "1px solid #222531", zIndex: 1000, justifyContent: "space-around" },
-  navItem: {display: "flex", backgroundColor: "transparent", border: "none", color: "#a1a7bb", cursor: "pointer", fontSize: "14px", fontWeight: "bold",flexDirection: "column",
+  app: { display: "flex", flexDirection: "column", minHeight: "100vh", color: C.text, fontFamily: font, direction: "rtl" },
+  header: {
+    position: "sticky",
+    top: 0,
+    zIndex: 100,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "14px 20px",
+    background: "rgba(7,11,22,0.75)",
+    backdropFilter: "blur(16px)",
+    WebkitBackdropFilter: "blur(16px)",
+    borderBottom: "1px solid rgba(255,255,255,0.06)"
+  },
+  logo: { display: "flex", alignItems: "center", gap: 8 },
+  logoTag: {
+    fontSize: 10,
+    fontWeight: 800,
+    color: C.muted,
+    letterSpacing: 1,
+    border: "1px solid rgba(255,255,255,0.12)",
+    padding: "2px 6px",
+    borderRadius: 6
+  },
+  headerRight: { display: "flex", alignItems: "center", gap: 10 },
+  langWrap: { position: "relative" },
+  langBtn: { padding: "8px 12px", fontSize: 13 },
+  langMenu: {
+    position: "absolute",
+    top: "calc(100% + 8px)",
+    left: 0,
+    minWidth: 168,
+    background: "rgba(13,19,38,0.97)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: 14,
+    padding: 8,
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    boxShadow: "0 14px 40px rgba(0,0,0,0.5)",
+    zIndex: 200,
+    backdropFilter: "blur(14px)",
+  },
+  langItem: {
+    background: "transparent",
+    border: "none",
+    color: C.text,
+    fontFamily: font,
+    fontSize: 13,
+    padding: "9px 12px",
+    borderRadius: 10,
+    cursor: "pointer",
+    textAlign: "right",
+    transition: "background .15s ease",
+  },
+  langSoon: { color: C.faint, fontSize: 10.5, textAlign: "center", padding: "8px 4px 2px", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 4 },
+  payWrap: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "30px 18px" },
+  payCard: { maxWidth: 480, width: "100%", padding: 34, textAlign: "center" },
+  payTitle: { fontSize: 22, fontWeight: 900, color: C.amber, marginTop: 16, marginBottom: 8 },
+  payDesc: { color: C.muted, fontSize: 14, lineHeight: 1.8, marginBottom: 20 },
+  splitBox: {
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 14,
+    padding: "14px 16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    textAlign: "right"
+  },
+  splitRow: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 },
+  payStatus: {
+    marginTop: 16,
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(0,255,204,0.25)",
+    background: "rgba(0,255,204,0.08)",
+    color: C.teal,
+    fontSize: 13,
+    lineHeight: 1.7,
+    textAlign: "right"
+  },
+  nav: {
+    position: "fixed",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 72,
+    display: "flex",
+    background: "rgba(10,15,30,0.85)",
+    backdropFilter: "blur(16px)",
+    WebkitBackdropFilter: "blur(16px)",
+    borderTop: "1px solid rgba(255,255,255,0.06)",
+    zIndex: 100
+  },
+  navItem: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    transition: "all 0.2s ease",
-    gap: "4px",
-    flex: 1,
-   },
-  navIcon: {
-    fontSize: "20px", // حجم الأيقونة التعبيرية
+    gap: 3,
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    fontFamily: font,
+    fontWeight: 700,
+    fontSize: 11,
+    transition: "color .2s ease, background .2s ease"
   },
-  navText: {
-    fontSize: "11px", // حجم نص التبويب بالأسفل
-    fontWeight: "500",
-  }
-
+  navIcon: { fontSize: 20, transition: "transform .2s ease" },
+  navLabel: { fontSize: 11, fontWeight: 700 }
 };

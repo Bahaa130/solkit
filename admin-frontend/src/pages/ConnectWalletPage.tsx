@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from "react";
+import { C, font } from "../theme";
+import { useLang } from "../i18n/index.tsx";
+import { useToast } from "../components/Toast";
 
 interface ConnectWalletPageProps {
   onWalletConnected: (jwtToken: string, walletAddress: string, role: string, activationStatus: string) => void;
 }
 
 export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPageProps) {
+  const { dir, t } = useLang();
   const [loading, setLoading] = useState(false);
   const [referralCodeFromUrl, setReferralCodeFromUrl] = useState<string | null>(null);
+  const toast = useToast();
 
   // 1. التقاط كود الإحالة تلقائياً من الرابط عند فتح الصفحة
   useEffect(() => {
@@ -23,7 +28,7 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
     const provider = (window as any).solana;
 
     if (!provider || !provider.isPhantom) {
-      alert("الرجاء التأكد من تثبيت محفظة Phantom وتسجيل الدخول إليها أولاً!");
+      toast.warning(t("connect.noPhantom"));
       window.open("https://phantom.app", "_blank");
       return;
     }
@@ -32,7 +37,7 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
       setLoading(true);
       const resp = await provider.connect({ onlyIfTrusted: false });
       const walletAddress = resp.publicKey.toString();
-      
+
       console.log("تمت قراءة عنوان محفظة سولانا بنجاح:", walletAddress);
 
       // إرسال طلب تسجيل الدخول الآمن المتوافق مع حماية Zod في الخلفية
@@ -51,8 +56,8 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
       if (response.ok && rawText) {
         const data = JSON.parse(rawText);
         if (data.token) {
-          alert("تم التوثيق الرقمي الآمن وتسجيل الدخول بنجاح! 🔐🎉");
-          
+          toast.success(t("connect.toastSuccess"));
+
           const userStatus = data.user?.activationStatus || "inactive";
 
           // حفظ الجلسة الموحدة بشكل ثابت لمنع ظهور صفحة الدفع مجدداً
@@ -65,54 +70,97 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
           // تمرير البيانات المحدثة لملف التحكم الرئيسي لتحديث الواجهة فوراً
           onWalletConnected(data.token, walletAddress, data.user?.role || "user", userStatus);
         } else {
-          alert("خطأ: لم يتم إصدار التوكن الأمني من السيرفر.");
+          toast.error(t("connect.toastNoToken"));
         }
       } else {
         // في حال وجود خطأ بالخلفية، يتم فك تشفير رسالة السيرفر بأمان
         try {
           const errData = JSON.parse(rawText);
-          alert(errData.message || "فشل التحقق الأمني الرقمي من المحفظة.");
+          toast.error(errData.message || t("connect.toastAuthFailed"));
         } catch {
-          alert("فشل الاتصال الأمني بالخادم الفولاذي.");
+          toast.error(t("connect.toastConnFailed"));
         }
       }
     } catch (err: any) {
       console.error("Wallet Connection Error:", err);
-      alert(err?.message || "تم إلغاء عملية ربط المحفظة وتصريح الدخول.");
+      toast.warning(err?.message || t("connect.toastCancelled"));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>مرحباً بك في SOLKIT 💎</h1>
-        <p style={styles.subtitle}>تطبيق التعدين الأول والأكثر أماناً القائم على شبكة سولانا</p>
-        
+    <div style={{ ...styles.container, direction: dir }}>
+      <div className="glass" style={styles.card}>
+        <div className="floaty" style={{ fontSize: 52, marginBottom: 6 }}>💎</div>
+        <h1 style={styles.title}>{t("connect.title")} <span className="gradient-text">SOLKIT</span></h1>
+        <p style={styles.subtitle}>{t("connect.subtitle")}</p>
+
         {referralCodeFromUrl && (
-          <div style={styles.badge}>
-            🎁 أنت تسجل عبر رابط دعوة صديق (كود المكافأة: {referralCodeFromUrl})
+          <div className="pill" style={styles.badge}>
+            {t("connect.refBadge", { code: referralCodeFromUrl })}
           </div>
         )}
 
-        <button 
-          onClick={handleConnectPhantom} 
-          disabled={loading} 
-          style={styles.connectButton}
+        <button
+          onClick={handleConnectPhantom}
+          disabled={loading}
+          className="btn btn-purple btn-block"
+          style={{ padding: "16px", fontSize: 15, marginTop: 8 }}
         >
-          {loading ? "جاري التوثيق الآمن..." : "ربط محفظة Phantom 🦊"}
+          {loading ? (
+            <>
+              <span className="spinner" style={{ borderTopColor: "#fff" }} />
+              {t("connect.loadingBtn")}
+            </>
+          ) : (
+            t("connect.connectBtn")
+          )}
         </button>
+
+        <div style={styles.features}>
+          <span className="pill" style={featurePill}>{t("connect.featureMining")}</span>
+          <span className="pill" style={featurePill}>{t("connect.featureWithdraw")}</span>
+          <span className="pill" style={featurePill}>{t("connect.featureReferral")}</span>
+        </div>
       </div>
     </div>
   );
 }
 
+const featurePill: React.CSSProperties = {
+  background: "rgba(255,255,255,0.05)",
+  color: C.muted,
+  border: "1px solid rgba(255,255,255,0.1)"
+};
+
 const styles: { [key: string]: React.CSSProperties } = {
-  container: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", backgroundColor: "#0c0d14", color: "#ffffff", fontFamily: "sans-serif", padding: "20px", direction: "rtl" },
-  card: { backgroundColor: "#171924", borderRadius: "20px", padding: "40px", textAlign: "center", boxShadow: "0 10px 30px rgba(0,0,0,0.5)", maxWidth: "450px", width: "100%" },
-  title: { fontSize: "26px", color: "#ffffff", marginBottom: "10px", fontWeight: "bold" },
-  subtitle: { color: "#a1a7bb", fontSize: "13px", marginBottom: "35px", lineHeight: "1.6" },
-  badge: { backgroundColor: "rgba(0, 255, 119, 0.12)", color: "#00ff77", padding: "12px", borderRadius: "10px", fontSize: "13px", marginBottom: "25px", fontWeight: "bold", border: "1px solid rgba(0, 255, 119, 0.2)" },
-  connectButton: { width: "100%", padding: "16px", backgroundColor: "#512da8", color: "#ffffff", border: "none", borderRadius: "12px", fontSize: "16px", fontWeight: "bold", cursor: "pointer", boxShadow: "0 4px 15px rgba(81, 45, 168, 0.4)" }
+  container: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: "100vh",
+    fontFamily: font,
+    padding: 20,
+    direction: "rtl"
+  },
+  card: {
+    maxWidth: 460,
+    width: "100%",
+    padding: "40px 34px",
+    textAlign: "center",
+    animation: "fadeInUp .5s cubic-bezier(.16,1,.3,1) both"
+  },
+  title: { fontSize: 26, fontWeight: 900, color: C.text, marginBottom: 10 },
+  subtitle: { color: C.muted, fontSize: 13, marginBottom: 30, lineHeight: 1.7 },
+  badge: {
+    background: "rgba(0,255,119,0.12)",
+    color: "#00ff77",
+    padding: "10px 14px",
+    fontSize: 12,
+    marginBottom: 22,
+    border: "1px solid rgba(0,255,119,0.25)",
+    animation: "pulseGlow 2s ease-out infinite"
+  },
+  features: { display: "flex", justifyContent: "center", gap: 8, marginTop: 26, flexWrap: "wrap" }
 };

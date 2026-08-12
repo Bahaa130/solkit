@@ -3,9 +3,17 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import router from "./routes";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import router from "./routes.js";
 
 const app = express();
+
+// 📦 مسار مجلد الواجهة المبنية (متوافق مع ESM في كل من src/ و dist/)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const FRONTEND_DIST = path.resolve(__dirname, "../../admin-frontend/dist");
 
 // 1. حماية الرؤوس وتوسيع الـ CSP لتسمح باتصالات البلوكشين وعقد الـ RPC الرسمية لـ Solana
 app.use(
@@ -45,5 +53,16 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/api", router);
+
+// 🖥️ خدمة الواجهة المبنية (dist) في بيئة الإنتاج — نشر موحّد (نفس الأصل لـ API + الواجهة)
+// هذا يلغي الحاجة لـ Vite proxy الذي يعمل في وضع التطوير فقط.
+if (fs.existsSync(FRONTEND_DIST)) {
+  app.use(express.static(FRONTEND_DIST));
+
+  // 🔁 تحويل أي مسار غير /api إلى index.html (SPA history fallback)
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(FRONTEND_DIST, "index.html"));
+  });
+}
 
 export default app;

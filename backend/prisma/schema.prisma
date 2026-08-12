@@ -46,27 +46,34 @@ model User {
   referralCode     String           @unique
   referrerId       Int?
   activationStatus ActivationStatus @default(inactive)
-  
+
   // الحقول الجديدة الخاصة بنظام التعدين والمستويات والبونص
-  balance          Decimal          @default(0.00000000) @db.Decimal(18, 8) // إجمالي العملات الرقمية المتاحة للتعدين
-  currentLevel     Int              @default(1) // مستوى الحساب الحالي (1، 2، 3)
-  currentXp        Int              @default(0) // نقاط الخبرة للانتقال للمستوى التالي
+  balance      Decimal @default(0.00000000) @db.Decimal(18, 8) // إجمالي العملات الرقمية المتاحة للتعدين
+  currentLevel Int     @default(1) // مستوى الحساب الحالي (1، 2، 3)
+  currentXp    Int     @default(0) // نقاط الخبرة للانتقال للمستوى التالي
 
-  referrer         User?            @relation("UserReferrer", fields: [referrerId], references: [id])
-  referrals        User[]           @relation("UserReferrer")
+  referrer  User?  @relation("UserReferrer", fields: [referrerId], references: [id])
+  referrals User[] @relation("UserReferrer")
 
-  wallets          Wallet[]
-  rewards          Reward[]
-  payments         Payment[]
-  
+  wallets  Wallet[]
+  rewards  Reward[]
+  payments Payment[]
+
   // العلاقات الجديدة للميزات الـ 5 المضافة
-  miningSessions   MiningSession[]
-  withdrawals      Withdrawal[]
-  socialTasks      SocialTask[]
-  dailyBonuses     DailyBonus[]
+  miningSessions MiningSession[]
+  withdrawals    Withdrawal[]
+  socialTasks    SocialTask[]
+  dailyBonuses   DailyBonus[]
 
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  // علاقة توزيعات الجوائز (توزيع التوكن يدوياً من لوحة المدير)
+  distributionRecords DistributionRecord[]
+
+  // 🎮 علاقات الألعاب المصغرة والمستوى الموحد
+  gameProgress GameProgress?
+  gamePlays    GamePlayRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ==========================================
@@ -91,19 +98,19 @@ model Reward {
   sourceUserId Int?
   createdAt    DateTime @default(now())
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Payment {
-  id          Int            @id @default(autoincrement())
-  userId      Int
-  amount      Decimal        @db.Decimal(18, 8)
-  currency    String         @default("USD")
-  status      PaymentStatus  @default(pending)
-  txHash      String?        @unique
-  createdAt   DateTime       @default(now())
+  id        Int           @id @default(autoincrement())
+  userId    Int
+  amount    Decimal       @db.Decimal(18, 8)
+  currency  String        @default("USD")
+  status    PaymentStatus @default(pending)
+  txHash    String?       @unique
+  createdAt DateTime      @default(now())
 
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ==========================================
@@ -112,45 +119,63 @@ model Payment {
 
 // 1. جدول دورات وعداد التعدين (Mining Session)
 model MiningSession {
-  id             Int          @id @default(autoincrement())
-  userId         Int
-  miningRate     Decimal      @default(0.500000) @db.Decimal(10, 6) // سرعة التعدين في هذه الجلسة
-  startedAt      DateTime
-  endsAt         DateTime     // وقت انتهاء العداد التنازلي التلقائي (24 ساعة)
-  status         MiningStatus @default(active)
-  minedAmount    Decimal      @default(0.00000000) @db.Decimal(18, 8) // الأرباح المكتسبة عند الاكتمال
+  id          Int          @id @default(autoincrement())
+  userId      Int
+  miningRate  Decimal      @default(0.500000) @db.Decimal(10, 6) // سرعة التعدين في هذه الجلسة
+  startedAt   DateTime
+  endsAt      DateTime // وقت انتهاء العداد التنازلي التلقائي (24 ساعة)
+  status      MiningStatus @default(active)
+  minedAmount Decimal      @default(0.00000000) @db.Decimal(18, 8) // الأرباح المكتسبة عند الاكتمال
 
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // 2. جدول سحوبات شبكة سولانا وسجل العمليات (Withdrawal)
 model Withdrawal {
   id            Int              @id @default(autoincrement())
   userId        Int
-  walletAddress String           // محفظة سولانا المستقبلة للأرباح (32-44 حرفاً)
+  walletAddress String // محفظة سولانا المستقبلة للأرباح (32-44 حرفاً)
   amount        Decimal          @db.Decimal(18, 8) // الكمية المطلوبة للسحب
   gasFee        Decimal          @db.Decimal(10, 8) // رسوم شبكة سولانا الافتراضية
-  txHash        String?          @unique            // رمز الـ Signature الخاص بالمعاملة على بلوكشين سولانا للتحقق عبر Solscan
-  status        WithdrawalStatus @default(pending)  // معلقة برتقالي 🟠، ناجحة أخضر 🟢، فاشلة أحمر 🔴
+  txHash        String?          @unique // رمز الـ Signature الخاص بالمعاملة على بلوكشين سولانا للتحقق عبر Solscan
+  status        WithdrawalStatus @default(pending) // معلقة برتقالي 🟠، ناجحة أخضر 🟢، فاشلة أحمر 🔴
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
-  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // 3. جدول المهام الاجتماعية وهدايا الاشتراك (Social Task)
 model SocialTask {
   id             Int      @id @default(autoincrement())
   userId         Int
-  taskName       String   // نوع المهمة مثل: 'telegram_join' أو 'x_follow'
-  socialUsername String?  // اسم حساب العميل على المنصة للتوثيق
+  channelId      Int? // مرجع حساب المجتمع المطلوب الاشتراك به
+  taskName       String // معرف المهمة (مطابق لمعرف الحساب)
+  socialUsername String? // اسم حساب العميل على المنصة للتوثيق
+  status         String   @default("pending") // pending | approved | rejected
   isCompleted    Boolean  @default(false) // تصبح قيد القفل والمكتملة لمنع التكرار
   rewardClaimed  Decimal  @db.Decimal(18, 8) // قيمة الهدية الممنوحة
   completedAt    DateTime @default(now())
 
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel SocialChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
 
   @@unique([userId, taskName]) // تمنع المستخدم من المطالبة بنفس الهدية مرتين
+}
+
+// حساب مجتمعي تابع للمؤسسة — يجب الاشتراك به لإتمام المهمة الاجتماعية
+model SocialChannel {
+  id        Int      @id @default(autoincrement())
+  title     String // اسم القناة/الحساب (مثل: قناة التليجرام الرسمية)
+  platform  String   @default("telegram") // telegram | x | discord | website
+  link      String // رابط الاشتراك
+  reward    Decimal  @default(10.00000000) @db.Decimal(18, 8) // قيمة المكافأة
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks SocialTask[]
 }
 
 // 4. جدول البونص اليومي المتصاعد والسلسلة المتتالية (Daily Bonus)
@@ -161,5 +186,95 @@ model DailyBonus {
   rewardAmount Decimal  @db.Decimal(18, 8) // قيمة المكافأة الممنوحة بالتعديل
   claimedAt    DateTime @default(now())
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 🎁 جداول توزيع جوائز التوكن (يدوياً من لوحة المدير)
+// ==========================================
+
+// 1. خطة توزيع العملات (نسب مئوية لكل مستوى)
+model DistributionPlan {
+  id        Int      @id @default(autoincrement())
+  name      String   @default("خطة التوزيع الافتراضية")
+  levels    Json     // { "1": 40, "2": 35, "3": 25 } — نسب مئوية حسب المستوى
+  active    Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  batches DistributionBatch[]
+}
+
+// 2. دفعة توزيع واحدة (نقرة المدير على "توزيع الآن")
+model DistributionBatch {
+  id             Int      @id @default(autoincrement())
+  planId         Int
+  totalTokens    Decimal  @db.Decimal(18, 8)
+  recipientCount Int
+  txSignatures   Json     // مصفوفة تواقيع معاملات الدفعة
+  status         String   @default("pending") // pending | confirmed | failed
+  createdAt      DateTime @default(now())
+
+  plan    DistributionPlan      @relation(fields: [planId], references: [id])
+  records DistributionRecord[]
+}
+
+// 3. سجل استلام كل مشترك في الدفعة
+model DistributionRecord {
+  id            Int      @id @default(autoincrement())
+  batchId       Int
+  userId        Int
+  walletAddress String
+  level         Int
+  amount        Decimal  @db.Decimal(18, 8)
+  txSignature   String?
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+
+  batch DistributionBatch @relation(fields: [batchId], references: [id])
+  user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 🎮 جداول الألعاب المصغرة والمستوى الموحد
+// ==========================================
+
+enum GameType {
+  wheel
+  tap
+  catch
+}
+
+// سجل تقدم موحد لجميع الألعاب (مستوى + خبرة + رصيد مكتسب)
+model GameProgress {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
+  gameLevel   Int      @default(1)
+  gameXp      Int      @default(0)
+  xpForNext   Int      @default(100)
+  totalEarned Decimal  @default(0.00000000) @db.Decimal(18, 8)
+  playsCount  Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  user  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plays GamePlayRecord[]
+}
+
+// دفتر سجل كل جولة (تدقيق + كولدون + حدود يومية + تاريخ اللعب)
+model GamePlayRecord {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  game       GameType
+  score      Int      @default(0) // فهرس الشريحة للعجلة، أو عدد النتائج للألعاب الأخرى
+  baseReward Decimal  @db.Decimal(18, 8) // قبل المضاعف
+  multiplier Decimal  @db.Decimal(6, 4) // مضاعف مستوى اللعبة المُطبق
+  reward     Decimal  @db.Decimal(18, 8) // المبلغ الممنوح فعلياً
+  xpGained   Int      @default(0)
+  leveledUp  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progress  GameProgress? @relation(fields: [gameProgressId], references: [id])
+  gameProgressId Int?
+
+  @@index([userId, game, createdAt])
 }

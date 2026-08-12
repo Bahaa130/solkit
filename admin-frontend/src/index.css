@@ -1,14 +1,258 @@
-* {
-  box-sizing: border-box;
-}
+/* ============================================
+   SOLKIT — نظام التصميم العصري
+   ============================================ */
 
-html, body, #root {
-  margin: 0;
-  padding: 0;
-  min-height: 100%;
-  font-family: Arial, sans-serif;
-}
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root { min-height: 100%; }
 
 body {
-  background: #f5f7fb;
+  font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif;
+  background: #070b16;
+  color: #eef2ff;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* خلفية متوهجة ثابتة */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(640px 420px at 90% -10%, rgba(0,255,204,0.09), transparent 60%),
+    radial-gradient(720px 520px at -10% 110%, rgba(124,92,255,0.12), transparent 60%),
+    radial-gradient(520px 420px at 50% 125%, rgba(0,184,255,0.07), transparent 60%),
+    #070b16;
+}
+
+/* شريط التمرير المخصص */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,255,204,0.35); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ===== بطاقات زجاجية ===== */
+.glass {
+  background: rgba(255,255,255,0.045);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 18px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+.glass:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0,255,204,0.25);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.35), 0 0 24px rgba(0,255,204,0.08);
+}
+
+/* ===== الأزرار ===== */
+.btn {
+  border: none;
+  border-radius: 12px;
+  padding: 14px 22px;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform .15s ease, box-shadow .25s ease, filter .2s ease, opacity .2s ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; filter: none; }
+.btn-block { width: 100%; }
+.btn-primary { background: linear-gradient(135deg,#00ffcc,#00b8ff); color: #061018; box-shadow: 0 6px 20px rgba(0,255,204,0.25); }
+.btn-primary:hover { box-shadow: 0 8px 28px rgba(0,255,204,0.42); filter: brightness(1.06); }
+.btn-purple { background: linear-gradient(135deg,#7c5cff,#a855f7); color: #fff; box-shadow: 0 6px 20px rgba(124,92,255,0.3); }
+.btn-purple:hover { box-shadow: 0 8px 28px rgba(124,92,255,0.45); filter: brightness(1.06); }
+.btn-amber { background: linear-gradient(135deg,#ffb020,#ff8a00); color: #1a1000; box-shadow: 0 6px 20px rgba(255,176,32,0.3); }
+.btn-amber:hover { box-shadow: 0 8px 28px rgba(255,176,32,0.45); filter: brightness(1.06); }
+.btn-green { background: linear-gradient(135deg,#22e584,#00b8ff); color: #061018; box-shadow: 0 6px 20px rgba(34,229,132,0.3); }
+.btn-green:hover { box-shadow: 0 8px 28px rgba(34,229,132,0.45); filter: brightness(1.06); }
+.btn-ghost { background: rgba(255,255,255,0.06); color: #eef2ff; border: 1px solid rgba(255,255,255,0.12); }
+.btn-ghost:hover { background: rgba(255,255,255,0.1); }
+
+/* ===== حقول الإدخال ===== */
+.input {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 13px 16px;
+  color: #eef2ff;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.input:focus { border-color: rgba(0,255,204,0.6); box-shadow: 0 0 0 3px rgba(0,255,204,0.12); }
+.input::placeholder { color: #6b748c; }
+
+/* ===== نص متدرّج ===== */
+.gradient-text {
+  background: linear-gradient(135deg,#00ffcc,#00b8ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ===== شارات/أقراص ===== */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ===== الحركات ===== */
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-up { animation: fadeInUp .5s cubic-bezier(.16,1,.3,1) both; animation-delay: var(--d, 0s); }
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0,255,204,0.35); }
+  50% { box-shadow: 0 0 0 12px rgba(0,255,204,0); }
+}
+.pulse-glow { animation: pulseGlow 2s ease-out infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: #00ffcc;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.floaty { animation: floaty 3.5s ease-in-out infinite; }
+
+/* ===== إشعارات Toast ===== */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-18px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-in { animation: toastIn .38s cubic-bezier(.16,1,.3,1) both; }
+
+/* ===== حركات الألعاب المصغرة 🎮 ===== */
+@keyframes coinPop {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(.6); }
+  15% { opacity: 1; transform: translate(-50%, -12px) scale(1.15); }
+  100% { opacity: 0; transform: translate(-50%, -72px) scale(1); }
+}
+.coin-pop { animation: coinPop 1.2s ease-out both; }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
+.shake { animation: shake .5s ease; }
+
+@keyframes tilePop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+.tile-hit { animation: tilePop .25s ease; }
+
+@keyframes coinBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.coin-bounce { animation: coinBounce 1s ease-in-out infinite; }
+
+/* 🎮 بطاقات الألعاب — ارتفاع تفاعلي عند التمرير */
+.game-card { transition: transform .2s ease, border-color .2s ease; }
+.game-card:hover { transform: translateY(-3px); border-color: rgba(0,255,204,0.35); }
+
+/* ===== 🎰 دولاب الحظ المطوّر ===== */
+/* حلقة مزخرفة تدور ببطء حول الدولاب */
+@keyframes rimSpin { to { transform: rotate(360deg); } }
+.rim-spin { animation: rimSpin 22s linear infinite; }
+
+/* أضواء الحافة المتناوبة */
+@keyframes pegBlink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px currentColor; }
+  50% { opacity: 0.3; box-shadow: none; }
+}
+.peg-blink { animation: pegBlink 1.5s ease-in-out infinite; }
+
+/* نبض شريحة الجائزة الكبرى */
+@keyframes jackpotPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,215,0,0.55), 0 0 16px rgba(255,215,0,0.5); }
+  50% { box-shadow: 0 0 0 9px rgba(255,215,0,0), 0 0 30px rgba(255,215,0,0.85); }
+}
+.jackpot-pulse { animation: jackpotPulse 1.6s ease-in-out infinite; }
+
+/* توهج الدولاب عند الفوز بالجائزة الكبرى */
+@keyframes wheelWin {
+  0%, 100% { box-shadow: 0 0 34px rgba(255,215,0,0.35), inset 0 0 0 6px rgba(7,11,22,0.75); }
+  50% { box-shadow: 0 0 64px rgba(255,215,0,0.7), inset 0 0 0 6px rgba(7,11,22,0.75); }
+}
+.wheel-win { animation: wheelWin 1.1s ease-in-out infinite; }
+
+/* ============================================
+   📱 التوافق مع مختلف أحجام الشاشات
+   ============================================ */
+
+/* حماية عامة من أي فيض أفقي غير مقصود */
+html, body { overflow-x: hidden; }
+
+/* ─── الرأس العلوي: يلتف لسطرين عند الضيق دون فيض ─── */
+@media (max-width: 560px) {
+  .app-header { flex-wrap: wrap !important; padding: 10px 12px !important; row-gap: 8px; }
+  .app-headerRight { flex: 1; justify-content: flex-end; gap: 8px !important; }
+  .app-logoTag { display: none !important; }
+  .app-walletPill .wallet-addr {
+    display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 90px; vertical-align: text-bottom;
+  }
+}
+
+/* ─── الشاشات الصغيرة جداً: اقتطاع نص المحفظة وضغط العناصر ─── */
+@media (max-width: 400px) {
+  .app-headerRight { gap: 6px !important; }
+  .app-walletPill .wallet-addr { max-width: 52px; }
+  .app-langBtn, .app-logoutBtn { padding: 8px 10px !important; }
+}
+
+/* ─── الشريط السفلي: تصغير متناسق عند الضيق ─── */
+@media (max-width: 400px) {
+  .app-nav { height: 62px !important; }
+  .app-navIcon { font-size: 18px !important; }
+  .app-navLabel { font-size: 10px !important; }
+}
+
+/* ─── بطاقات الألعاب: الزر ينزل إلى سطر ثانٍ عند الضيق ─── */
+@media (max-width: 440px) {
+  .game-card { flex-wrap: wrap; }
+  .game-card-btn { margin-inline-start: auto; }
+}
+
+/* ─── ساحات الألعاب الثابتة: تصغير متناسق للشاشات الأضيق من 350px ─── */
+@media (max-width: 350px) {
+  .wheel-area, .tap-area, .catch-area { zoom: 0.86; }
+}
+
+/* ─── الجداول: تمرير انسيابي باللمس ─── */
+@media (max-width: 480px) {
+  .table-wrapper { -webkit-overflow-scrolling: touch; }
 }

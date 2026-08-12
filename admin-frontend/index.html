@@ -8,6 +8,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- 🌐 Polyfill مبكر: يوفر Buffer و process و global كمتغيرات عامة قبل تقييم أي وحدة سولانا
+         (spl-token-metadata تستخدم Buffer كمتغير عام وليس استيراداً — يجب ضبطه أولاً) -->
+    <script type="module">
+      import { Buffer } from "buffer";
+      import process from "process";
+      window.Buffer = Buffer;
+      window.process = process;
+      window.global = window;
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

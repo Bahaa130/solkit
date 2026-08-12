@@ -4,12 +4,14 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { Connection, PublicKey } from "@solana/web3.js"; // 🌐 استدعاء مكتبة الـ Web3 القياسية للتحقق
+import { getAssociatedTokenAddress } from "@solana/spl-token"; // 🪙 دوال حساب التوكن المرتبط (ATA)
 import { prisma } from "../../config/prisma.js";
-import { authenticateJWT, requireAdmin, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
+import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
+import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_SOLKIT_KEY_2026";
-const ADMIN_WALLET = process.env.ADMIN_WALLET || "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
+export const ADMIN_WALLET = process.env.ADMIN_WALLET || "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
 const MINING_RATES: { [key: number]: number } = { 1: 0.5, 2: 0.525, 3: 0.55 };
 const DAILY_REWARDS = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0];
 
@@ -97,8 +99,9 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
     if (user.activationStatus === "active") return res.status(400).json({ message: "حسابك مفعّل مسبقاً!" });
 
     try {
-      // 🌐 استخدام الـ Endpoint الصحيح والمستقر لـ Devnet لمنع الانهيار
-      const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+      // 🌐 استخدام الـ Endpoint الصحيح والمستقر من البيئة أو Devnet كاحتياطي
+      const solanaRpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";
+      const connection = new Connection(solanaRpcUrl, "confirmed");
       const txStatus = await connection.getTransaction(txHash, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
 
       if (!txStatus) {
@@ -114,27 +117,42 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
       const preBalances = meta.preBalances;
       const accountKeys = txStatus.transaction.message.getAccountKeys();
       
-      let adminIndex = -1;
-      for (let i = 0; i < accountKeys.length; i++) {
-        if (accountKeys.get(i)?.toString() === ADMIN_WALLET) {
-          adminIndex = i;
-          break;
+      // 🔎 دالة مساعدة: إيجاد فهرس حساب داخل المعاملة ثم استخراج صافي ما استلمه فعلياً
+      const findAccountIndex = (address: string): number => {
+        for (let i = 0; i < accountKeys.length; i++) {
+          if (accountKeys.get(i)?.toString() === address) return i;
         }
-      }
+        return -1;
+      };
+      const receivedBy = (address: string): number => {
+        const idx = findAccountIndex(address);
+        return idx === -1 ? 0 : postBalances[idx] - preBalances[idx];
+      };
 
-      if (adminIndex === -1) {
-        return res.status(400).json({ message: "احتيال: هذه المعاملة لم ترسل أي أموال لمحفظة الموقع الرسمية!" });
-      }
-
-      const receivedAmount = postBalances[adminIndex] - preBalances[adminIndex];
-      if (receivedAmount < 10000000) { // التأكد من وصول 0.01 SOL على الأقل
+      // ✅ التحقق من وصول حصة محفظة الموقع (0.015 SOL مع وجود إحالة، أو 0.03 SOL كاملة بدونها)
+      const adminReceived = receivedBy(ADMIN_WALLET);
+      const minimumRequiredAmount = user.referrerId ? 15000000 : 30000000;
+      if (adminReceived < minimumRequiredAmount) {
         return res.status(400).json({ message: "المبلغ المرسل غير كافٍ لتنشيط رسوم التفعيل" });
+      }
+
+      // 🛡️ التحقق الصارم من وصول الحصة الأخرى (0.015 SOL) لمحفظة صاحب الإحالة الفعلي على البلوكشين
+      if (user.referrerId && user.referrer?.walletAddress) {
+        const referrerReceived = receivedBy(user.referrer.walletAddress);
+        if (referrerReceived < 15000000) {
+          return res.status(400).json({
+            message: "احتيال: لم تصل حصة صاحب الإحالة (0.015 SOL) إلى محفظته على البلوكشين!"
+          });
+        }
       }
 
     } catch (blockchainError) {
       console.error("Solana verification breakdown:", blockchainError);
       return res.status(400).json({ message: "فشل السيرفر في التحقق من المعاملة عبر عقدة الـ RPC، حاول مجدداً" });
     }
+
+    const siteShare = 0.015;
+    const referrerShare = user.referrerId ? 0.015 : 0.0;
 
     // تفعيل الحساب الفعلي وتقسيم الأرباح في الـ MySQL بعد نجاح توثيق البلوكشين
     await prisma.$transaction(async (tx) => {
@@ -143,12 +161,20 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
         data: { activationStatus: "active" }
       });
 
+      await (tx as any).payment.create({
+        data: { userId, amount: siteShare, currency: "SOL", status: "paid", txHash: `${txHash}_site` }
+      });
+
       if (user.referrerId) {
-        await (tx as any).payment.create({ data: { userId, amount: 1.0, currency: "USD", status: "paid", txHash: `${txHash}_site` } });
-        await (tx as any).payment.create({ data: { userId: user.referrerId, amount: 1.0, currency: "USD", status: "paid", txHash: `${txHash}_aff` } });
-        await tx.user.update({ where: { id: user.referrerId }, data: { balance: { increment: 1.0 } } as any });
+        await (tx as any).payment.create({
+          data: { userId: user.referrerId, amount: referrerShare, currency: "SOL", status: "paid", txHash: `${txHash}_referrer` }
+        });
+        await tx.user.update({
+          where: { id: user.referrerId },
+          data: { balance: { increment: referrerShare } } as any
+        });
       } else {
-        await (tx as any).payment.create({ data: { userId, amount: 2.0, currency: "USD", status: "paid", txHash: txHash } });
+        await (tx as any).payment.create({ data: { userId, amount: 0.03, currency: "SOL", status: "paid", txHash: txHash } });
       }
     });
 
@@ -239,7 +265,7 @@ router.get("/referral-network", authenticateJWT, async (req: AuthenticatedReques
     const processed = user.referrals.map((ref: any) => {
       // 💰 التحقق مما إذا كان العضو المدعو قد دفع رسوم التفعيل وتغيرت حالته بنجاح
       const isPaid = ref.activationStatus === "active";
-      const bonus = isPaid ? 1.00 : 0.00;
+      const bonus = isPaid ? 0.015 : 0.00;
       totalEarned += bonus;
 
       // 🔐 دالة إخفاء الإيميل المصححة هندسياً لمنع انهيار الـ substring
@@ -367,20 +393,478 @@ router.post("/claim-daily", authenticateJWT, async (req: AuthenticatedRequest, r
   } catch (error) {
     return res.status(500).json({ message: "Failed to process bonus" });
   }
-
-
-
-
 });
+
+// ==========================================
+// 🎮 مسارات الألعاب المصغرة والمستوى الموحد
+// ==========================================
+router.use("/games", authenticateJWT, gamesRouter);
+
+// ==========================================
+// 👑 6. مسارات لوحة الإدارة العليا (Admin Panel)
+// ==========================================
+
+// فحص صلاحية الموقع العليا مباشرة (تجنباً لميدل وير requireAdmin المعطّل في auth.middleware)
+export const isAdmin = (req: AuthenticatedRequest, res: Response): boolean => {
+  if (!req.user || req.user.role !== "admin" || req.user.walletAddress !== ADMIN_WALLET) {
+    res.status(403).json({ message: "صلاحية مرفوضة: هذا النطاق مخصص لإدارة الموقع العليا فقط!" });
+    return false;
+  }
+  return true;
+};
+
+// أ. الإحصائيات العامة للوحة الإدارة
+router.get("/admin/stats", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+
+    const [totalUsers, activeMiners, pendingWithdrawals, payments] = await Promise.all([
+      prisma.user.count(),
+      (prisma as any).miningSession.count({ where: { status: "active" } }),
+      (prisma as any).withdrawal.count({ where: { status: "pending" } }),
+      (prisma as any).payment.findMany({ select: { amount: true, txHash: true } })
+    ]);
+
+    // 💰 إيرادات الموقع = كل سجلات الدفع عدا حصص صاحب الإحالة (التي تنتهي بـ _referrer)
+    let totalRevenue = 0;
+    for (const p of payments) {
+      const hash: string | null = p.txHash ? String(p.txHash) : null;
+      if (!hash?.endsWith("_referrer")) {
+        totalRevenue += Number(p.amount || 0);
+      }
+    }
+
+    return res.json({ totalUsers, activeMiners, pendingWithdrawals, totalRevenue });
+  } catch (error) {
+    console.error("Admin stats error:", error);
+    return res.status(500).json({ message: "فشل السيرفر في معالجة طلب الإدارة الحية" });
+  }
+});
+
+// ب. قائمة طلبات السحب المعلقة
+router.get("/admin/pending-withdrawals", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const list = await (prisma as any).withdrawal.findMany({
+      where: { status: "pending" },
+      include: { user: { select: { email: true, walletAddress: true } } },
+      orderBy: { createdAt: "asc" }
+    });
+    return res.json(list || []);
+  } catch (error) {
+    console.error("Admin pending withdrawals error:", error);
+    return res.status(500).json({ message: "فشل جلب قائمة سحوبات شبكة سولانا المعلقة" });
+  }
+});
+
+// ج. موافقة/رفض طلب سحب مع إمكانية إعادة الرصيد عند الرفض
+const processWithdrawalSchema = z.object({
+  status: z.enum(["completed", "failed"]),
+  txHash: z.string().min(30).nullable().optional(),
+});
+
+router.post("/admin/process-withdrawal/:id", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const withdrawalId = Number(req.params.id);
+    const parsed = processWithdrawalSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "صيغة المدخلات غير سليمة" });
+
+    const { status, txHash } = parsed.data;
+    const withdrawal = await (prisma as any).withdrawal.findUnique({ where: { id: withdrawalId } });
+    if (!withdrawal) return res.status(404).json({ message: "طلب السحب غير موجود" });
+    if (withdrawal.status !== "pending") return res.status(400).json({ message: "تمت معالجة هذا الطلب مسبقاً" });
+
+    await prisma.$transaction([
+      (prisma as any).withdrawal.update({
+        where: { id: withdrawalId },
+        data: { status, txHash: status === "completed" ? txHash : null }
+      }),
+      ...(status === "failed"
+        ? [prisma.user.update({ where: { id: withdrawal.userId }, data: { balance: { increment: Number(withdrawal.amount) } } as any })]
+        : [])
+    ]);
+
+    return res.json({
+      message: status === "completed" ? "تم تأكيد عملية السحب بنجاح! 🟢" : "تم رفض الطلب وإعادة الرصيد للمستخدم 🔴"
+    });
+  } catch (error) {
+    console.error("Admin process withdrawal error:", error);
+    return res.status(500).json({ message: "فشل تحديث حالة السحب" });
+  }
+});
+
+// ==========================================
+// 🎁 7. مسارات توزيع جوائز التوكن (يدوياً من لوحة المدير)
+// ==========================================
+
+const TOKEN_MINT = process.env.TOKEN_MINT || "";
+const TOKEN_DECIMALS = Number(process.env.TOKEN_DECIMALS || 9);
+const SOLANA_NETWORK = process.env.SOLANA_NETWORK || "devnet";
+const getRpcUrl = () => process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";
+
+// دالة مساعدة: جلب خطة التوزيع النشطة (تُنشئ الافتراضية إن لم توجد)
+const getActivePlan = async () => {
+  let plan = await (prisma as any).distributionPlan.findFirst({ where: { active: true }, orderBy: { updatedAt: "desc" } });
+  if (!plan) {
+    plan = await (prisma as any).distributionPlan.create({ data: { levels: { 1: 40, 2: 35, 3: 25 }, active: true } });
+  }
+  return plan;
+};
+
+// دالة مساعدة: رصيد توكن الخزانة على البلوكشين
+const getTreasuryTokenBalance = async (connection: Connection, mint: PublicKey, owner: PublicKey): Promise<number> => {
+  try {
+    const accounts = await connection.getParsedTokenAccountsByOwner(owner, { mint });
+    let total = 0;
+    for (const a of accounts.value) {
+      total += Number(a.account.data.parsed.info.tokenAmount.uiAmount || 0);
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+};
+
+// دالة مساعدة: التحقق البلوكشيني من استلام مستلم لمبلغ توكن في معاملة
+const verifyTokenReceipt = async (
+  connection: Connection,
+  signature: string,
+  mint: PublicKey,
+  recipientWallet: string,
+  expectedAmount: number
+): Promise<boolean> => {
+  try {
+    const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+    if (!txInfo || !txInfo.meta || txInfo.meta.err) return false;
+    const postBalances = txInfo.meta.postTokenBalances || [];
+    for (const entry of postBalances) {
+      if (
+        entry.owner === recipientWallet &&
+        entry.mint === mint.toBase58() &&
+        Number(entry.uiTokenAmount.uiAmount || 0) >= expectedAmount - 1e-9
+      ) {
+        return true;
+      }
+    }
+    // بديل احترازي: فحص رصيد حساب التوكن المرتبط حالياً
+    const ata = await getAssociatedTokenAddress(mint, new PublicKey(recipientWallet));
+    const info = await connection.getTokenAccountBalance(ata, "confirmed");
+    return Number(info.value.uiAmount || 0) >= expectedAmount - 1e-9;
+  } catch {
+    return false;
+  }
+};
+
+// أ. نظرة عامة على الأرصدة المجمعة وحالة التوكن
+router.get("/admin/distribution/overview", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const connection = new Connection(getRpcUrl(), "confirmed");
+    const configured = Boolean(TOKEN_MINT);
+    let treasuryBalance = 0;
+    if (configured) {
+      treasuryBalance = await getTreasuryTokenBalance(connection, new PublicKey(TOKEN_MINT), new PublicKey(ADMIN_WALLET));
+    }
+
+    const [accruedAgg, totalUsers, activeUsers, miningAgg, tasksAgg, gamesAgg, bonusAgg, poolUsers] = await Promise.all([
+      prisma.user.aggregate({ _sum: { balance: true } }),
+      prisma.user.count(),
+      prisma.user.findMany({
+        where: { activationStatus: "active", walletAddress: { not: null } },
+        select: { currentLevel: true }
+      }),
+      prisma.miningSession.aggregate({ _sum: { minedAmount: true } }),
+      prisma.socialTask.aggregate({ _sum: { rewardClaimed: true } }),
+      prisma.gamePlayRecord.aggregate({ _sum: { reward: true } }),
+      prisma.dailyBonus.aggregate({ _sum: { rewardAmount: true } }),
+      prisma.user.count({ where: { activationStatus: "active", walletAddress: { not: null }, balance: { gt: 0 } } })
+    ]);
+
+    const levelCounts: { [key: string]: number } = {};
+    activeUsers.forEach((u) => {
+      levelCounts[u.currentLevel] = (levelCounts[u.currentLevel] || 0) + 1;
+    });
+
+    const plan = await getActivePlan();
+
+    return res.json({
+      configured,
+      mint: TOKEN_MINT || null,
+      decimals: TOKEN_DECIMALS,
+      network: SOLANA_NETWORK,
+      treasuryWallet: ADMIN_WALLET,
+      treasuryBalance,
+      accruedBalance: Number(accruedAgg._sum.balance || 0),
+      poolUsers,
+      poolSources: {
+        mining: Number(miningAgg._sum.minedAmount || 0),
+        tasks: Number(tasksAgg._sum.rewardClaimed || 0),
+        games: Number(gamesAgg._sum.reward || 0),
+        bonus: Number(bonusAgg._sum.rewardAmount || 0)
+      },
+      totalUsers,
+      totalActive: activeUsers.length,
+      levelCounts,
+      plan: { id: plan.id, levels: plan.levels }
+    });
+  } catch (error) {
+    console.error("Distribution overview error:", error);
+    return res.status(500).json({ message: "فشل جلب نظرة عامة على توزيع الجوائز" });
+  }
+});
+
+// ب. قراءة خطة التوزيع النسبية
+router.get("/admin/distribution/plan", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const plan = await getActivePlan();
+    return res.json(plan);
+  } catch {
+    return res.status(500).json({ message: "خطأ في جلب خطة التوزيع" });
+  }
+});
+
+// ج. حفظ خطة التوزيع (نسب مئوية لكل مستوى، المجموع = 100%)
+const planSchema = z
+  .object({
+    levels: z.record(z.string(), z.number().min(0))
+  })
+  .refine((body) => {
+    const vals = Object.values(body.levels);
+    if (!vals.length) return false;
+    return Math.abs(vals.reduce((a, b) => a + b, 0) - 100) < 0.001;
+  }, { message: "مجموع النسب يجب أن يساوي 100%" });
+
+router.post("/admin/distribution/plan", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const parsed = planSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "صيغة خطة التوزيع غير صالحة — تأكد أن مجموع النسب 100%" });
+    const levels = parsed.data.levels;
+
+    const saved = await prisma.$transaction(async (tx) => {
+      await (tx as any).distributionPlan.updateMany({ where: { active: true }, data: { active: false } });
+      return (tx as any).distributionPlan.create({ data: { levels: levels as any, active: true } });
+    });
+    return res.json(saved);
+  } catch {
+    return res.status(500).json({ message: "خطأ في حفظ خطة التوزيع" });
+  }
+});
+
+// د. تجهيز التوزيع: رصيد المجمع الداخلي (المهام/التعدين/الألعاب/البونص) يوزَّع على كل مشترك حسب مساهمته
+router.get("/admin/distribution/prepare", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    if (!TOKEN_MINT) return res.status(400).json({ message: "لم يتم إعداد التوكن بعد — شغّل سكربت setup-token أولاً" });
+
+    const connection = new Connection(getRpcUrl(), "confirmed");
+    const mint = new PublicKey(TOKEN_MINT);
+    const treasury = new PublicKey(ADMIN_WALLET);
+
+    const treasuryBalance = await getTreasuryTokenBalance(connection, mint, treasury);
+
+    // رصيد المجمع = مجموع أرصدة المشتركين النشطين (تُجمع من المهام والتعدين والألعاب والبونص)
+    const poolUsers = await prisma.user.findMany({
+      where: { activationStatus: "active", walletAddress: { not: null }, balance: { gt: 0 } },
+      select: { id: true, walletAddress: true, currentLevel: true, balance: true }
+    });
+    const pool = poolUsers.reduce((s, u) => s + Number(u.balance), 0);
+
+    if (pool <= 0) return res.status(400).json({ message: "رصيد المجمع صفر — لا توجد أرصدة متراكمة بعد" });
+    if (treasuryBalance < pool) {
+      return res.status(400).json({
+        message: `رصيد خزانة التوكن (${treasuryBalance.toFixed(2)}) أقل من رصيد المجمع (${pool.toFixed(2)}) — امنح التوكن للخزانة أولاً`
+      });
+    }
+
+    // توزيع نسبي: كل مشترك يستلم حصته = رصيده الحالي (مساهمته في المجمع)
+    const recipients: any[] = [];
+    for (const u of poolUsers) {
+      const amount = Math.floor(Number(u.balance) * 1e8) / 1e8; // تقريب لـ 8 خانات دون تجاوز
+      if (amount <= 0) continue;
+      const ata = await getAssociatedTokenAddress(mint, new PublicKey(u.walletAddress!));
+      const info = await connection.getAccountInfo(ata);
+      recipients.push({
+        userId: u.id,
+        walletAddress: u.walletAddress,
+        level: u.currentLevel || 1,
+        balance: Number(u.balance),
+        amount,
+        hasAta: Boolean(info)
+      });
+    }
+
+    const treasuryAta = await getAssociatedTokenAddress(mint, treasury);
+
+    return res.json({
+      mint: TOKEN_MINT,
+      decimals: TOKEN_DECIMALS,
+      network: SOLANA_NETWORK,
+      pool,
+      treasuryWallet: ADMIN_WALLET,
+      treasuryAta: treasuryAta.toBase58(),
+      recipientCount: recipients.length,
+      recipients
+    });
+  } catch (error) {
+    console.error("Distribution prepare error:", error);
+    return res.status(500).json({ message: "فشل تجهيز توزيع الجوائز" });
+  }
+});
+
+// هـ. تأكيد التوزيع بعد توقيع المدير: تحقق بلوكشيني ثم تسجيل الدفعة والسجلات
+const confirmDistributionSchema = z.object({
+  recipients: z
+    .array(
+      z.object({
+        userId: z.number().int(),
+        walletAddress: z.string().min(32).max(44),
+        level: z.number().int(),
+        amount: z.number().positive(),
+        txSignature: z.string().min(40)
+      })
+    )
+    .min(1)
+});
+
+router.post("/admin/distribution/confirm", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    if (!TOKEN_MINT) return res.status(400).json({ message: "لم يتم إعداد التوكن بعد" });
+    const parsed = confirmDistributionSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "صيغة بيانات التوزيع غير سليمة" });
+    const { recipients } = parsed.data;
+
+    const connection = new Connection(getRpcUrl(), "confirmed");
+    const mint = new PublicKey(TOKEN_MINT);
+
+    // 1) تحقق بلوكشيني صارم: كل مستلم استلم مبلغه فعلاً في معاملته
+    for (const r of recipients) {
+      const ok = await verifyTokenReceipt(connection, r.txSignature, mint, r.walletAddress, r.amount);
+      if (!ok) {
+        return res.status(400).json({ message: `فشل التحقق البلوكشيني للمستلم ${r.walletAddress.substring(0, 6)}... — أعد التحقق من المعاملة` });
+      }
+    }
+
+    // 2) تسجيل الدفعة وسجلات الاستلام لكل مشترك
+    const totalTokens = recipients.reduce((s, r) => s + r.amount, 0);
+    const plan = await getActivePlan();
+    const signatures = Array.from(new Set(recipients.map((r) => r.txSignature)));
+
+    const batch = await prisma.$transaction(async (tx) => {
+      const b = await (tx as any).distributionBatch.create({
+        data: {
+          planId: plan.id,
+          totalTokens,
+          recipientCount: recipients.length,
+          txSignatures: signatures as any,
+          status: "confirmed"
+        }
+      });
+      for (const r of recipients) {
+        await (tx as any).distributionRecord.create({
+          data: {
+            batchId: b.id,
+            userId: r.userId,
+            walletAddress: r.walletAddress,
+            level: r.level,
+            amount: r.amount,
+            txSignature: r.txSignature,
+            status: "confirmed"
+          }
+        });
+        // 🔄 تصفير رصيد المشترك بعد استلام حصته — مع الحفاظ على مستوى الحساب والخبرة وتقدّم الألعاب
+        await (tx as any).user.update({
+          where: { id: r.userId },
+          data: { balance: 0 }
+        });
+      }
+      return b;
+    });
+
+    return res.json({
+      message: "تم توزيع رصيد المجمع وتصفير الأرصدة بنجاح 🎉",
+      batchId: batch.id,
+      totalTokens,
+      recipientCount: recipients.length
+    });
+  } catch (error) {
+    console.error("Distribution confirm error:", error);
+    return res.status(500).json({ message: "فشل تأكيد توزيع الجوائز" });
+  }
+});
+
+// و. سجل دفعات التوزيع السابقة
+router.get("/admin/distribution/history", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const batches = await (prisma as any).distributionBatch.findMany({
+      include: { plan: true, records: true },
+      orderBy: { createdAt: "desc" }
+    });
+    return res.json(batches || []);
+  } catch {
+    return res.status(500).json({ message: "خطأ في جلب سجل التوزيع" });
+  }
+});
+
+// ز. ملخص توزيعات التوكن لصفحة الإسقاط الجوي: الإجمالي الموزَّع + سجل المشترك الشخصي
+router.get("/distribution/summary", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [batchesAgg, batchCount, userRecords] = await Promise.all([
+      (prisma as any).distributionBatch.aggregate({
+        _sum: { totalTokens: true, recipientCount: true },
+        where: { status: "confirmed" }
+      }),
+      (prisma as any).distributionBatch.count({ where: { status: "confirmed" } }),
+      (prisma as any).distributionRecord.findMany({
+        where: { userId: req.user!.id },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, batchId: true, amount: true, status: true, createdAt: true }
+      })
+    ]);
+
+    return res.json({
+      totalDistributed: Number(batchesAgg._sum.totalTokens || 0),
+      totalRecipients: Number(batchesAgg._sum.recipientCount || 0),
+      batchCount,
+      userRecords: userRecords.map((r: any) => ({
+        id: r.id,
+        batchId: r.batchId,
+        amount: Number(r.amount),
+        status: r.status,
+        createdAt: r.createdAt
+      })),
+      userTotal: userRecords.reduce((s: number, r: any) => s + Number(r.amount), 0)
+    });
+  } catch (error) {
+    console.error("Distribution summary error:", error);
+    return res.status(500).json({ message: "فشل جلب ملخص توزيع التوكن" });
+  }
+});
+
 // ==========================================//
 //  👤 5. مسار الحساب العام بالـ ID//
 //  ==========================================
 
-  router.get("/:id", async (req, res) => {try {const user = await prisma.user.findUnique({ where: { id: Number(req.params.id)
+  router.get("/:id", async (req, res) => {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: Number(req.params.id) },
+        include: {
+          socialTasks: true,
+          dailyBonuses: true,
+          // 🔗 إرجاع محفظة صاحب الإحالة حتى تستطيع الواجهة الأمامية تقسيم الدفع على البلوكشين
+          referrer: { select: { id: true, walletAddress: true } }
+        } as any
+      });
 
-   }, include: { socialTasks: true, dailyBonuses: true } as any });
-
-  if (!user) return res.status(404).json({ message: "Not found" });
-  return res.json(user);} catch { return res.status(500).json({ message: "Error" }); }
-});
+      if (!user) return res.status(404).json({ message: "Not found" });
+      return res.json(user);
+    } catch {
+      return res.status(500).json({ message: "Error" });
+    }
+  });
   export default router;

@@ -1,0 +1,56 @@
+# ============================================================
+#  SOLKIT — نشر موحّد على Render (واجهة + API في نفس الخدمة)
+#  قاعدة البيانات: MySQL خارجية (Aiven / أي MySQL)
+# ============================================================
+services:
+  - type: web
+    name: solkit
+    runtime: node
+    region: frankfurt      # غيّرها لأقرب منطقة لك (oregon / singapore / frankfurt)
+    plan: free             # الطبقة المجانية — تنام بعد 15 دقيقة من الخمول
+    # المستودع مُستنسخ بحيث يكون backend/ و admin-frontend/ في الجذر
+    # (هذا الملف render.yaml موجود في جذر المستودع)
+    branch: main           # تأكد أن اسم الفرع مطابق لفرعك على GitHub
+
+    # ── تثبيت + بناء الواجهة والخلفية ──
+    # (الهجرات تُطبَّق في startCommand لأنها آمنة متكررة وتعمل حتى بعد استيقاظ الخدمة من النوم)
+    buildCommand: |
+      set -e
+      # 1) الواجهة: تثبيت + بناء → admin-frontend/dist
+      cd admin-frontend
+      npm install
+      npm run build
+      cd ..
+      # 2) الخلفية: تثبيت + توليد prisma + بناء → backend/dist
+      cd backend
+      npm install
+      npx prisma generate
+      npm run build
+      cd ..
+
+    # ── تشغيل الخادم (يخدم API + ملفات dist على نفس الأصل) ──
+    # prisma migrate deploy آمن للتكرار ويضمن تطبيق كل الهجرات على Aiven
+    startCommand: cd backend && npx prisma migrate deploy && node dist/server.js
+
+    # فحص الصحة: يُستخدم لإبقاء الخدمة حيّة
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: PORT
+        value: "10000"        # Render يمرّر PORT تلقائياً، هذا احتياطي
+      - key: DATABASE_URL
+        sync: false           # ضع قيمتها يدوياً من Aiven (رابط MySQL كامل)
+      - key: CLIENT_URL
+        sync: false           # ضع رابط موقع Render بعد إنشائه، مثل https://solkit.onrender.com
+      - key: JWT_SECRET
+        sync: false           # أنشئ سراً قوياً وطويلاً
+      - key: ADMIN_WALLET
+        sync: false           # عنوان محفظة المشرف (Phantom)
+      - key: TOKEN_MINT
+        sync: false           # عنوان عقد توكن SOLKIT على Devnet
+      - key: TOKEN_DECIMALS
+        value: "9"
+      - key: SOLANA_NETWORK
+        value: "devnet"

@@ -1,12 +1,12 @@
 // index.ts //
 import { Router } from "express";
-import healthRoute from "../modules/health/health.route";
-import usersRoute from "../modules/users/users.route";
-import miningRoute from "../modules/mining/mining.route";
-import withdrawalRoute from "../modules/withdrawal/withdrawal.route";
-import referralRoute from "../modules/referral/referral.route";
-import tasksRoute from "../modules/tasks/tasks.route";
-import bonusRoute from "../modules/bonus/bonus.route";
+import healthRoute from "../modules/health/health.route.js";
+import usersRoute from "../modules/users/users.route.js";
+import miningRoute from "../modules/mining/mining.route.js";
+import withdrawalRoute from "../modules/withdrawal/withdrawal.route.js";
+import referralRoute from "../modules/referral/referral.route.js";
+import tasksRoute from "../modules/tasks/tasks.route.js";
+import bonusRoute from "../modules/bonus/bonus.route.js";
 
 const router = Router();
 
