@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
+import { getInjectedProvider, isMobile, openInWalletApp } from "../lib/walletEnv";
 
 interface ConnectWalletPageProps {
   onWalletConnected: (jwtToken: string, walletAddress: string, role: string, activationStatus: string) => void;
@@ -25,9 +26,17 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
 
   // 2. دالة الاتصال بمحفظة Phantom والتسجيل الأمني الآمن
   const handleConnectPhantom = async () => {
-    const provider = (window as any).solana;
+    // 📱 على الهاتف خارج تطبيق المحفظة: افتح التطبيق عبر الرابط الموحّد الرسمي
+    // (داخل التطبيق يتوفر window.solana فيعمل التسجيل والتوقيع بأمان تام).
+    if (isMobile() && !getInjectedProvider()) {
+      toast.warning(t("connect.openingWallet"));
+      openInWalletApp();
+      return;
+    }
 
-    if (!provider || !provider.isPhantom) {
+    const provider = getInjectedProvider();
+
+    if (!provider) {
       toast.warning(t("connect.noPhantom"));
       window.open("https://phantom.app", "_blank");
       return;
