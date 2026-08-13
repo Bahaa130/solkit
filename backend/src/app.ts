@@ -22,7 +22,7 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        connectSrc: ["'self'", "https://api.devnet.solana.com", "https://api.mainnet-beta.solana.com"], // 🟢 السماح لعقد الـ RPC
+        connectSrc: ["'self'", "https://api.devnet.solana.com", "wss://api.devnet.solana.com", "https://api.mainnet-beta.solana.com", "wss://api.mainnet-beta.solana.com"], // 🟢 السماح لعقد الـ RPC (https + websocket للتأكيد)
         upgradeInsecureRequests: [],
       },
     },

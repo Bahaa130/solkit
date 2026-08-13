@@ -102,7 +102,13 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
       // 🌐 استخدام الـ Endpoint الصحيح والمستقر من البيئة أو Devnet كاحتياطي
       const solanaRpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";
       const connection = new Connection(solanaRpcUrl, "confirmed");
-      const txStatus = await connection.getTransaction(txHash, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+      // 🔁 إعادة محاولة قراءة المعاملة: devnet قد لا يُرجعها فوراً (تأخير الفهرسة)
+      let txStatus = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        txStatus = await connection.getTransaction(txHash, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        if (txStatus) break;
+        await new Promise((r) => setTimeout(r, 2500)); // انتظر 2.5s بين المحاولات
+      }
 
       if (!txStatus) {
         return res.status(400).json({ message: "لم يتم العثور على المعاملة على البلوكشين بعد، أعد المحاولة خلال ثوانٍ" });

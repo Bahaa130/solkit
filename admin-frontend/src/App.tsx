@@ -171,11 +171,17 @@ export default function App() {
       if (!txSignature) throw new Error(t("app.payNoSig"));
 
       setPayStatus({ type: "confirming", text: t("app.payConfirming") });
-      await connection.confirmTransaction({
-        signature: txSignature,
-        blockhash: latestBlockHashInfo.blockhash,
-        lastValidBlockHeight: latestBlockHashInfo.lastValidBlockHeight
-      }, "confirmed");
+      // 🔁 التأكيد المحلي "أفضل جهد": لو فشل (انتهاء بلوك/حجب WebSocket) نتابع للسيرفر
+      // لأن السيرفر يتحقق أصلاً من المعاملة عبر HTTPS RPC — فالدفع الذي هبط لا يضيع.
+      try {
+        await connection.confirmTransaction({
+          signature: txSignature,
+          blockhash: latestBlockHashInfo.blockhash,
+          lastValidBlockHeight: latestBlockHashInfo.lastValidBlockHeight
+        }, "confirmed");
+      } catch (confirmErr) {
+        console.warn("Local confirmation skipped (server will re-verify):", confirmErr);
+      }
 
       // 4. إرسال التوقيع للسيرفر لتفعيل الحساب وتسجيل التقسيم
       const res = await fetch("/api/users/activate-account", {
