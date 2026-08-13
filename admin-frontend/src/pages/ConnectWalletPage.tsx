@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
-import { getInjectedProvider, isMobile, openInWalletApp } from "../lib/walletEnv";
+import { getInjectedProvider, isMobile, openInWalletApp, ensureConnected, signMessage } from "../lib/walletEnv";
 
 interface ConnectWalletPageProps {
   onWalletConnected: (jwtToken: string, walletAddress: string, role: string, activationStatus: string) => void;
@@ -44,18 +44,45 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
 
     try {
       setLoading(true);
-      const resp = await provider.connect({ onlyIfTrusted: false });
-      const walletAddress = resp.publicKey.toString();
+      // 🔌 التأكد من الاتصال (يُظهر modal التأكيد داخل Phantom عند الحاجة)
+      const walletAddress = await ensureConnected();
+      if (!walletAddress) {
+        toast.warning(t("connect.noPhantom"));
+        return;
+      }
 
       console.log("تمت قراءة عنوان محفظة سولانا بنجاح:", walletAddress);
 
-      // إرسال طلب تسجيل الدخول الآمن المتوافق مع حماية Zod في الخلفية
+      // 1️⃣ جلب رسالة التحدّي من السيرفر
+      const challengeRes = await fetch("/api/users/login-challenge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress })
+      });
+      if (!challengeRes.ok) {
+        const err = await challengeRes.json().catch(() => ({}));
+        toast.error(err.message || t("connect.toastAuthFailed"));
+        return;
+      }
+      const { message } = await challengeRes.json();
+
+      // 2️⃣ توقيع الرسالة داخل Phantom (تظهر نافذة التوقيع = تأكيد الربط المرئي)
+      toast.info(t("connect.signing"));
+      const signature = await signMessage(message);
+      if (!signature) {
+        toast.warning(t("connect.toastCancelled"));
+        return;
+      }
+
+      // 3️⃣ إرسال التوقيع للسيرفر للتحقق من ملكية المحفظة
       const response = await fetch("/api/users/login-wallet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           walletAddress: walletAddress,
-          referralCode: referralCodeFromUrl || null
+          referralCode: referralCodeFromUrl || null,
+          signature,
+          message
         })
       });
 

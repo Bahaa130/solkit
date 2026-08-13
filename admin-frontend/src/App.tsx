@@ -10,7 +10,7 @@ import { Connection, PublicKey, Transaction, SystemProgram } from "@solana/web3.
 import { C, font, styles as T } from "./theme";
 import { LANGS } from "./i18n/lang.ts";
 import { useLang } from "./i18n/index.tsx";
-import { getInjectedProvider, isMobile, openInWalletApp } from "./lib/walletEnv";
+import { getInjectedProvider, isMobile, openInWalletApp, ensureConnected } from "./lib/walletEnv";
 
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
 const SOLANA_RPC_URL = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
@@ -126,10 +126,13 @@ export default function App() {
       setPayLoading(true);
       setPayStatus({ type: "loading", text: t("app.payPreparing") });
 
+      // 🔌 التأكد من تحميل العنوان قبل بناء المعاملة (قد يكون undefined داخل In-App Browser)
+      const walletAddress = await ensureConnected();
+      if (!walletAddress) throw new Error(t("app.payNoSig"));
+
       const connection = new Connection(SOLANA_RPC_URL, "confirmed");
       const siteAdminPublicKey = new PublicKey(ADMIN_WALLET);
-      const userPublicKey = new PublicKey(provider.publicKey?.toString() || "");
-      if (!provider.publicKey) throw new Error(t("app.payNoSig"));
+      const userPublicKey = new PublicKey(walletAddress);
 
       // 1. جلب بيانات السجل الحية لمعرفة محفظة الـ Referrer
       const checkUserRes = await fetch(`/api/users/${session.userId}`, {

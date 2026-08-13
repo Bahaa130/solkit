@@ -1,0 +1,12 @@
+# مخرجات البناء (يولّدها Render أثناء النشر)
+backend/dist
+backend/tsconfig.tsbuildinfo
+backend/node_modules
+
+# مخرجات بناء الواجهة (Render يبنيها)
+admin-frontend/dist
+admin-frontend/dist-ssr
+
+# متغيرات البيئة المحلية
+.env
+.env.local

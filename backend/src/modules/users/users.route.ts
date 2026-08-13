@@ -5,6 +5,8 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { Connection, PublicKey } from "@solana/web3.js"; // 🌐 استدعاء مكتبة الـ Web3 القياسية للتحقق
 import { getAssociatedTokenAddress } from "@solana/spl-token"; // 🪙 دوال حساب التوكن المرتبط (ATA)
+import bs58 from "bs58"; // 🔐 فك ترميز عنوان المحفظة (base58)
+import { ed25519 } from "@noble/curves/ed25519"; // ✍️ التحقق من توقيع ed25519
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
@@ -15,10 +17,19 @@ export const ADMIN_WALLET = process.env.ADMIN_WALLET || "4NC1c6ZUrpTibV1FuxomBst
 const MINING_RATES: { [key: number]: number } = { 1: 0.5, 2: 0.525, 3: 0.55 };
 const DAILY_REWARDS = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0];
 
+// 🪪 مخزن مؤقت لرموز التحدّي (nonce) بصلاحية 5 دقائق — يمنع إعادة استخدام التوقيع
+const challengeStore = new Map<string, { nonce: string; expires: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of challengeStore) if (v.expires < now) challengeStore.delete(k);
+}, 60_000).unref();
+
 const registerSchema = z.object({
   walletAddress: z.string().min(32).max(44),
   referralCode: z.string().optional().nullable(),
-});
+  signature: z.string().optional(),
+  message: z.string().optional(),
+}).passthrough();
 
 const withdrawSchema = z.object({
   amount: z.number().positive(),
@@ -26,15 +37,68 @@ const withdrawSchema = z.object({
 });
 
 // ==========================================
+// 🪪 0. توليد رسالة تحدّي للتوقيع (إثبات ملكية المحفظة)
+// ==========================================
+// يطلبها الـ Frontend قبل الربط: السيرفر يولّد رسالة + nonce عشوائي،
+// والمستخدم يوقّعها داخل Phantom (تظهر نافذة التوقيع الحقيقية = "تأكيد الربط" المرئي).
+// هذا أقوى من مجرد قراءة العنوان — يثبت أن المستخدم يملك المفتاح الخاص فعلياً.
+router.post("/login-challenge", async (req: Request, res: Response) => {
+  try {
+    const { walletAddress } = req.body || {};
+    if (!walletAddress || typeof walletAddress !== "string" || walletAddress.length < 32) {
+      return res.status(400).json({ message: "عنوان المحفظة مطلوب" });
+    }
+    const nonce = crypto.randomBytes(16).toString("hex");
+    const message =
+      `SOLKIT | تأكيد ملكية المحفظة\n` +
+      `Wallet: ${walletAddress}\n` +
+      `Nonce: ${nonce}\n` +
+      `لن يتم خصم أي رصيد من حسابك.`;
+    // 💾 خزّن الـ nonce مربوطاً بالمحفظة (صلاحية 5 دقائق)
+    challengeStore.set(walletAddress, { nonce, expires: Date.now() + 5 * 60_000 });
+    return res.json({ message, nonce });
+  } catch {
+    return res.status(500).json({ message: "تعذّر توليد رسالة التحدّي" });
+  }
+});
+
+// ==========================================
 // 🔑 1. مسار تسجيل الدخول وإصدار التوكن
 // ==========================================
 // 🔑 تحديث مسار تسجيل الدخول وإصدار التوكن ليقرأ الحالة الحية الحقيقية من الـ MySQL
+// الآن يتطلب توقيعاً على رسالة التحدّي (signature) للتحقق من ملكية المحفظة.
 router.post("/login-wallet", async (req: Request, res: Response) => {
   try {
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "صيغة المحفظة غير صالحة" });
 
-    const { walletAddress, referralCode } = parsed.data;
+    const { walletAddress, referralCode, signature, message } = parsed.data as any;
+
+    // 🔎 استخراج الـ nonce من الرسالة الموقّعة (السطر الثالث: "Nonce: xxx")
+    const nonceMatch = typeof message === "string" ? message.match(/Nonce:\s*([0-9a-f]+)/i) : null;
+    const nonce = nonceMatch ? nonceMatch[1] : "";
+
+    // ✍️ التحقق من توقيع ملكية المحفظة (ed25519) — يمنع انتحال العناوين
+    if (!signature || !message || typeof signature !== "string" || typeof message !== "string") {
+      return res.status(400).json({ message: "توقيع تأكيد المحفظة مطلوب" });
+    }
+    try {
+      const pubKeyBytes = bs58.decode(walletAddress);
+      const msgBytes = new TextEncoder().encode(message);
+      // الواجهة ترسل التوقيع Base64 (Uint8Array → Base64)
+      const sigBytes = Buffer.from(signature, "base64");
+      const valid = ed25519.verify(sigBytes, msgBytes, pubKeyBytes);
+      if (!valid) return res.status(401).json({ message: "توقيع غير صالح — تأكد أنك وقّعت بالمحفظة الصحيحة" });
+      // 🔒 تحقق من أن الرسالة تحوي الـ nonce الصحيح وغير منتهٍ
+      const stored = challengeStore.get(walletAddress);
+      if (!stored || stored.nonce !== nonce || stored.expires < Date.now()) {
+        return res.status(401).json({ message: "انتهت صلاحية رمز التحدّي، أعد المحاولة" });
+      }
+    } catch (sigErr) {
+      console.error("فشل التحقق من التوقيع:", sigErr);
+      return res.status(401).json({ message: "تعذّر التحقق من توقيع المحفظة" });
+    }
+
     let user = await prisma.user.findUnique({ where: { walletAddress } });
     
     if (!user) {
