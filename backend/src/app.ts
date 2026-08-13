@@ -48,20 +48,22 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
-app.get("/", (_req, res) => {
-  res.send("API is secured and running");
-});
-
 app.use("/api", router);
 
 // 🖥️ خدمة الواجهة المبنية (dist) في بيئة الإنتاج — نشر موحّد (نفس الأصل لـ API + الواجهة)
 // هذا يلغي الحاجة لـ Vite proxy الذي يعمل في وضع التطوير فقط.
+// يُسجَّل قبل مسار "/" النصي حتى تُخدم الواجهة في جذر الموقع لا نص "API is running".
 if (fs.existsSync(FRONTEND_DIST)) {
   app.use(express.static(FRONTEND_DIST));
 
   // 🔁 تحويل أي مسار غير /api إلى index.html (SPA history fallback)
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(FRONTEND_DIST, "index.html"));
+  });
+} else {
+  // 🛟 عند غياب الواجهة المبنية (مثلاً تطوير محلي للـ API فقط)
+  app.get("/", (_req, res) => {
+    res.send("API is secured and running");
   });
 }
 
