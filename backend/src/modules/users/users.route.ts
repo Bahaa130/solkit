@@ -56,10 +56,12 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
     }
 
     const role = walletAddress === ADMIN_WALLET ? "admin" : "user";
-    
+    // 🛡️ محفظة المدير مفعّلة دائماً — لا تتطلب دفع رسوم التفعيل
+    const effectiveStatus = role === "admin" ? "active" : user.activationStatus;
+
     // ⭐ تضمين حالة التفعيل الفعلي الحية الحالية داخل الـ JWT Payload
     const token = jwt.sign(
-      { id: user.id, walletAddress: user.walletAddress, role, activationStatus: user.activationStatus },
+      { id: user.id, walletAddress: user.walletAddress, role, activationStatus: effectiveStatus },
       JWT_SECRET,
       { expiresIn: "24h" }
     );
@@ -67,12 +69,12 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
     return res.json({
       message: "Authentication successful",
       token,
-      user: { 
-        id: user.id, 
-        walletAddress: user.walletAddress, 
-        role, 
-        balance: Number(user.balance), 
-        activationStatus: user.activationStatus // 🟢 نقل القيمة الحية الحالية المسجلة بالـ MySQL صراحة (active)
+      user: {
+        id: user.id,
+        walletAddress: user.walletAddress,
+        role,
+        balance: Number(user.balance),
+        activationStatus: effectiveStatus // 🟢 المشرف دائماً active
       }
     });
   } catch (error) {

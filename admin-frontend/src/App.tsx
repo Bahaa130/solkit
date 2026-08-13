@@ -266,7 +266,7 @@ export default function App() {
         </div>
       </header>
 
-      {session.activationStatus !== "active" ? (
+      {session.activationStatus !== "active" && session.role !== "admin" ? (
         <div style={styles.payWrap}>
           <div className="glass" style={styles.payCard}>
             <div className="floaty" style={{ fontSize: 54, textAlign: "center" }}>🦊</div>
