@@ -222,7 +222,34 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
         const serialized = transaction.serialize({ requireAllSignatures: false });
         return await sendTransactionPhantomMobile(serialized, connection);
       }
-      // 🪟/💻 باقي البيئات
+
+      // 🪟 داخل متصفح المحفظة المدمج: نستخدم المزوّد المحقون مباشرةً
+      if (isInsideWalletApp()) {
+        const injected = getInjectedProvider();
+        if (injected?.signAndSendTransaction) {
+          const { signature } = await injected.signAndSendTransaction(transaction);
+          return signature as string;
+        }
+        if (injected?.signTransaction) {
+          const signed = await injected.signTransaction(transaction);
+          return await connection.sendRawTransaction(
+            (signed as any).serialize({ requireAllSignatures: false }),
+          );
+        }
+        throw new Error("injected_send_unavailable");
+      }
+
+      // 💻 الويب/سطح المكتب: نفضّل المزوّد المحقون مباشرةً (يتفادى WalletNotSelectedError
+      // الناجم عن ضياع حالة wallet-adapter) ونبثّ المعاملة عبر اتصالنا (البروكسي devnet).
+      const injected = getInjectedProvider();
+      if (injected && typeof injected.signTransaction === "function") {
+        const signed = await injected.signTransaction(transaction);
+        return await connection.sendRawTransaction(
+          (signed as any).serialize({ requireAllSignatures: false }),
+        );
+      }
+
+      // احتياطي: محوّل wallet-adapter
       if (!sendTransaction) throw new Error("sendTransaction_unavailable");
       return await sendTransaction(transaction, connection);
     },
