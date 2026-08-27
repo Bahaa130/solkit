@@ -9,10 +9,11 @@ export interface LangMeta {
 }
 
 export const LANGS: LangMeta[] = [
-  { code: "ar", flag: "🇸🇦", label: "العربية", dir: "rtl" },
   { code: "en", flag: "🇬🇧", label: "English", dir: "ltr" },
   { code: "fr", flag: "🇫🇷", label: "Français", dir: "ltr" },
   { code: "es", flag: "🇪🇸", label: "Español", dir: "ltr" },
+  { code: "ar", flag: "🇸🇦", label: "العربية", dir: "rtl" },
+  { code: "tr", flag: "🇹🇷", label: "Türkçe", dir: "ltr" },
 ];
 
 export const DEFAULT_LANG = "ar";

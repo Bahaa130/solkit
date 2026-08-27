@@ -1,3 +1,4 @@
+import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
@@ -23,7 +24,7 @@ export default function ReferralPage({ userId, token }: ReferralPageProps) {
     try {
       setError(null);
       // جلب بيانات رادار شبكة الإحالة والعمولات الفورية من الـ MySQL بالتوجيه الصحيح
-      const res = await fetch("/api/users/referral-network", {
+      const res = await apiFetch("/api/users/referral-network", {
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}` // تمرير التوكن الأمني الصارم الفعال 🛡️

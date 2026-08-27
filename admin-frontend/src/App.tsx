@@ -1,3 +1,4 @@
+import { apiFetch } from "./lib/api";
 import React, { useState, useEffect } from "react";
 import ConnectWalletPage from "./pages/ConnectWalletPage";
 import HomePage from "./pages/HomePage";
@@ -6,11 +7,16 @@ import TasksPage from "./pages/TasksPage";
 import BonusPage from "./pages/BonusPage";
 import AdminPanelPage from "./pages/AdminPanelPage";
 import AirdropPage from "./pages/AirdropPage";
+import LevelsPage from "./pages/LevelsPage";
+import NotFoundPage from "./pages/NotFoundPage";
+import MaintenancePage from "./pages/MaintenancePage";
 import { Connection, PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
 import { C, font, styles as T } from "./theme";
 import { LANGS } from "./i18n/lang.ts";
 import { useLang } from "./i18n/index.tsx";
-import { getInjectedProvider, isMobile, openInWalletApp, ensureConnected } from "./lib/walletEnv";
+import { useBranding } from "./branding";
+import CoinIcon from "./components/CoinIcon";
+import { useSolanaWallet } from "./lib/walletProvider";
 
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
 const SOLANA_RPC_URL = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
@@ -36,11 +42,28 @@ type PayPhase =
 
 export default function App() {
   const { lang, dir, meta, setLang, t } = useLang();
+  const { branding } = useBranding();
+  const { address: walletAddressHook, connectWallet, sendTransaction } = useSolanaWallet();
   const [session, setSession] = useState<Session | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("home");
+  // 🗺️ قائمة التبويبات المعروفة (تُستخدم لفلترة المسارات غير الصالحة → 404)
+  const KNOWN_TABS = ["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels"];
+  // 🔗 قراءة التبويب من معامل ?tab= في الرابط عند التحميل (قيمة غير معروفة → "404")
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return tab && KNOWN_TABS.includes(tab) ? tab : (tab ? "404" : "home");
+  });
+  // 🔗 تنقّل موحّد: يبدّل التبويب ويحدّث رابط ?tab= في المتصفح
+  const navigateTab = (tab: string) => {
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", url.toString());
+  };
   const [payLoading, setPayLoading] = useState<boolean>(false);
   const [payStatus, setPayStatus] = useState<PayPhase>(null);
   const [langOpen, setLangOpen] = useState(false);
+  // 🔧 حالة الصيانة (تُجلب من الخادم عند التحميل)
+  const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
 
   const handleLogout = () => {
     localStorage.clear();
@@ -64,6 +87,56 @@ export default function App() {
       return null;
     }
   };
+
+  // 🔗 مزامنة التبويب مع الرابط (؟tab=) + الاستماع لأزرار المتصفح (أمام/خلف)
+  // أي قيمة غير معروفة في الرابط تُظهر صفحة 404 بدل التحديث الأعمى
+  useEffect(() => {
+    const syncUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      if (activeTab === "home") params.delete("tab");
+      else params.set("tab", activeTab);
+      const newUrl = `${window.location.pathname}?${params.toString()}`.replace(/\?$/, "");
+      window.history.replaceState(null, "", newUrl);
+    };
+    syncUrl();
+
+    const onPopState = () => {
+      const tab = new URLSearchParams(window.location.search).get("tab");
+      setActiveTab(tab && KNOWN_TABS.includes(tab) ? tab : (tab ? "404" : "home"));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [activeTab]);
+
+  // 🔧 فحص وضع الصيانة عند التحميل + استطلاع دوري (polling) لتحديث الحالة دون إعادة تحميل
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: number;
+
+    const checkMaintenance = async () => {
+      try {
+        const res = await apiFetch("/api/users/settings");
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            setMaintenance({ enabled: Boolean(data.maintenanceMode), message: data.maintenanceMessage || "" });
+          }
+        } else if (!cancelled) {
+          setMaintenance({ enabled: false, message: "" });
+        }
+      } catch {
+        if (!cancelled) setMaintenance({ enabled: false, message: "" });
+      }
+    };
+
+    checkMaintenance(); // فحص فوري عند التحميل
+    intervalId = window.setInterval(checkMaintenance, 30000); // ثم كل 30 ثانية
+
+    return () => {
+      cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     const savedJwt = localStorage.getItem("solkit_token");
@@ -108,34 +181,26 @@ export default function App() {
   const handlePaymentActivation = async () => {
     if (!session?.jwtToken) return;
 
-    // 📱 على الهاتف خارج تطبيق المحفظة: افتح التطبيق عبر الرابط الموحّد ليتوفر window.solana
-    if (isMobile() && !getInjectedProvider()) {
-      setPayStatus({ type: "loading", text: t("app.openingWallet") });
-      openInWalletApp();
-      return;
-    }
-
-    const provider = getInjectedProvider();
-
-    if (!provider || !provider.isPhantom) {
-      setPayStatus({ type: "error", text: t("app.noPhantom") });
-      return;
-    }
-
     try {
       setPayLoading(true);
       setPayStatus({ type: "loading", text: t("app.payPreparing") });
 
-      // 🔌 التأكد من تحميل العنوان قبل بناء المعاملة (قد يكون undefined داخل In-App Browser)
-      const walletAddress = await ensureConnected();
-      if (!walletAddress) throw new Error(t("app.payNoSig"));
+      // 🔌 التأكد من اتصال المحفظة (ضروري للتوقيع داخل التطبيق)
+      let signerAddress = walletAddressHook;
+      if (!signerAddress) {
+        signerAddress = (await connectWallet()) || null;
+      }
+      if (!signerAddress) {
+        setPayStatus({ type: "error", text: t("app.noPhantom") });
+        return;
+      }
 
       const connection = new Connection(SOLANA_RPC_URL, "confirmed");
       const siteAdminPublicKey = new PublicKey(ADMIN_WALLET);
-      const userPublicKey = new PublicKey(walletAddress);
+      const userPublicKey = new PublicKey(signerAddress);
 
       // 1. جلب بيانات السجل الحية لمعرفة محفظة الـ Referrer
-      const checkUserRes = await fetch(`/api/users/${session.userId}`, {
+      const checkUserRes = await apiFetch(`/api/users/${session.userId}`, {
         headers: { "Authorization": `Bearer ${session.jwtToken}` }
       });
       if (!checkUserRes.ok) {
@@ -174,12 +239,9 @@ export default function App() {
       const latestBlockHashInfo = await connection.getLatestBlockhash("confirmed");
       transaction.recentBlockhash = latestBlockHashInfo.blockhash;
 
-      // 3. استدعاء محفظة Phantom لتوقيع وبث المعاملة
+      // 3. استدعاء المحفظة لتوقيع وبث المعاملة (Phantom على الويب / WalletConnect على الموبايل)
       setPayStatus({ type: "loading", text: t("app.payPhantomSign") });
-      const response = await provider.signAndSendTransaction(transaction);
-      const txSignature = typeof response === "string"
-        ? response
-        : (response && typeof response === "object" && "signature" in response ? (response as { signature?: string }).signature : null);
+      const txSignature = await sendTransaction(transaction, connection);
 
       if (!txSignature) throw new Error(t("app.payNoSig"));
 
@@ -197,7 +259,7 @@ export default function App() {
       }
 
       // 4. إرسال التوقيع للسيرفر لتفعيل الحساب وتسجيل التقسيم
-      const res = await fetch("/api/users/activate-account", {
+      const res = await apiFetch("/api/users/activate-account", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -230,6 +292,11 @@ export default function App() {
     );
   }
 
+  // 🔧 وضع الصيانة — يُعرض للجميع ما عدا محفظة المدير
+  if (maintenance?.enabled && session.walletAddress !== ADMIN_WALLET) {
+    return <MaintenancePage onLogout={handleLogout} />;
+  }
+
   const shortWallet = session.walletAddress
     ? `${session.walletAddress.slice(0, 4)}...${session.walletAddress.slice(-4)}`
     : "";
@@ -249,8 +316,8 @@ export default function App() {
     <div style={{ ...styles.app, direction: dir }}>
       <header className="app-header" style={styles.header}>
         <div style={styles.logo}>
-          <span style={{ fontSize: 20 }}>💎</span>
-          <span className="gradient-text" style={{ fontWeight: 900, fontSize: 17 }}>SOLKIT</span>
+          <CoinIcon size={20} />
+          <span className="gradient-text" style={{ fontWeight: 900, fontSize: 17 }}>{branding.projectName}</span>
           <span className="app-logoTag" style={styles.logoTag}>SYSTEM</span>
         </div>
         <div className="app-headerRight" style={styles.headerRight}>
@@ -326,14 +393,19 @@ export default function App() {
         </div>
       ) : (
         <>
-          <main style={{ flex: 1, paddingBottom: 96 }}>
+          <main style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 96 }}>
             <div key={activeTab} className="animate-fade-up">
-              {activeTab === "home" && <HomePage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "home" && <HomePage userId={session.userId} token={session.jwtToken || ""} onNavigateTab={navigateTab} />}
               {activeTab === "airdrop" && <AirdropPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "referral" && <ReferralPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "tasks" && <TasksPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "bonus" && <BonusPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "admin" && session.walletAddress === ADMIN_WALLET && <AdminPanelPage token={session.jwtToken || ""} />}
+              {activeTab === "levels" && <LevelsPage userId={session.userId} token={session.jwtToken || ""} />}
+              {/* 🚫 تبويب غير معروف → صفحة 404 آمنة */}
+              {!["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels"].includes(activeTab) && (
+                <NotFoundPage onNavigateTab={navigateTab} />
+              )}
             </div>
           </main>
 
@@ -343,7 +415,7 @@ export default function App() {
               return (
                 <button
                   key={tb.key}
-                  onClick={() => setActiveTab(tb.key)}
+                   onClick={() => navigateTab(tb.key)}
                   className="app-navItem"
                   style={{
                     ...styles.navItem,
@@ -364,7 +436,7 @@ export default function App() {
 }
 
 const styles: { [key: string]: React.CSSProperties } = {
-  app: { display: "flex", flexDirection: "column", minHeight: "100vh", color: C.text, fontFamily: font, direction: "rtl" },
+  app: { display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden", color: C.text, fontFamily: font, direction: "rtl" },
   header: {
     position: "sticky",
     top: 0,
@@ -372,7 +444,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "14px 20px",
+    paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)",
+    paddingBottom: 14,
+    paddingLeft: 20,
+    paddingRight: 20,
     background: "rgba(7,11,22,0.75)",
     backdropFilter: "blur(16px)",
     WebkitBackdropFilter: "blur(16px)",
@@ -451,7 +526,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     bottom: 0,
     left: 0,
     right: 0,
-    height: 72,
+    height: "calc(72px + env(safe-area-inset-bottom, 0px))",
+    paddingBottom: "env(safe-area-inset-bottom, 0px)",
     display: "flex",
     background: "rgba(10,15,30,0.85)",
     backdropFilter: "blur(16px)",

@@ -4,6 +4,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { C, font } from "../../theme";
 import { useLang } from "../../i18n/index.tsx";
+import { useBranding } from "../../branding";
 import { spinWheel, submitResult } from "./gamesApi";
 import { formatCooldown } from "./gamesUtils";
 import { CoinLayer } from "./CoinLayer";
@@ -29,13 +30,13 @@ const SEG_DEG = 360 / SEGMENTS;
 interface WheelSegment { label: string; color: string; text: string; chip: string; jackpot?: boolean }
 const WHEEL_SEGMENTS: WheelSegment[] = [
   { label: "1",   color: "#22e584", text: "#04241a", chip: "rgba(255,255,255,0.85)" },
-  { label: "2",   color: "#00b8ff", text: "#001c33", chip: "rgba(255,255,255,0.85)" },
-  { label: "0.5", color: "#7c5cff", text: "#ffffff", chip: "rgba(255,255,255,0.16)" },
+  { label: "2.5", color: "#00b8ff", text: "#001c33", chip: "rgba(255,255,255,0.85)" },
+  { label: "1.5", color: "#7c5cff", text: "#ffffff", chip: "rgba(255,255,255,0.16)" },
   { label: "3",   color: "#ffb020", text: "#3a2400", chip: "rgba(255,255,255,0.85)" },
-  { label: "1.5", color: "#00ffcc", text: "#003a2b", chip: "rgba(255,255,255,0.85)" },
-  { label: "0.5", color: "#ff5c7a", text: "#ffffff", chip: "rgba(255,255,255,0.16)" },
+  { label: "0.5", color: "#00ffcc", text: "#003a2b", chip: "rgba(255,255,255,0.85)" },
+  { label: "2",   color: "#ff5c7a", text: "#ffffff", chip: "rgba(255,255,255,0.16)" },
   { label: "💎",   color: "#ffd700", text: "#3a2b00", chip: "rgba(255,255,255,0.95)", jackpot: true },
-  { label: "1",   color: "#ff8a00", text: "#3a1c00", chip: "rgba(255,255,255,0.85)" },
+  { label: "1.5", color: "#ff8a00", text: "#3a1c00", chip: "rgba(255,255,255,0.85)" },
 ];
 
 // 🔦 أضواء الحافة (16 ضوءاً ذهبياً/تيل حول الحلقة المزخرفة)
@@ -44,6 +45,7 @@ const PEG_R = 140; // نصف قطر دائرة الأضواء حول مركز م
 
 export default function LuckyWheel({ token, multiplier, cooldown, onReward, onStatusRefresh }: GameProps) {
   const { dir, t } = useLang();
+  const { branding } = useBranding();
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [reward, setReward] = useState<number | null>(null);
@@ -209,7 +211,7 @@ export default function LuckyWheel({ token, multiplier, cooldown, onReward, onSt
         <div className="glass" style={styles.rewardBox}>
           <span className="coin-bounce" style={{ fontSize: 20 }}>🪙</span>
           <span className="gradient-text" style={{ fontSize: 18, fontWeight: 900 }}>
-            +{reward.toFixed(2)} SOLKIT
+            +{reward.toFixed(2)} {branding.tokenSymbol}
           </span>
         </div>
       )}

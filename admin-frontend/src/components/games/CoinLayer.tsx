@@ -1,6 +1,7 @@
 // src/components/games/CoinLayer.tsx
 // 🪙 طبقة "+X SOLKIT" العائمة — تعرض مكاسب فورية تتصاعد وتتلاشى فوق منطقة اللعب
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { useBranding } from "../../branding";
 
 export interface CoinLayerHandle {
   /** يعرض نافذة "+amount SOLKIT" عائمة (أو نص مخصص) عند إحداثيات نسبة مئوية داخل الطبقة */
@@ -23,6 +24,7 @@ interface CoinLayerProps {
 export const CoinLayer = forwardRef<CoinLayerHandle, CoinLayerProps>(({ color = "#00ffcc" }, ref) => {
   const [pops, setPops] = useState<PopItem[]>([]);
   const idRef = useRef(0);
+  const { branding } = useBranding();
 
   useImperativeHandle(ref, () => ({
     pop: (amount, x = 50, y = 40, text) => {
@@ -50,7 +52,7 @@ export const CoinLayer = forwardRef<CoinLayerHandle, CoinLayerProps>(({ color = 
             textShadow: `0 0 14px ${p.text ? "#ff5c7a" : color}`,
           }}
         >
-          {p.text || `+${Number(p.amount).toFixed(2)} SOLKIT`}
+          {p.text || `+${Number(p.amount).toFixed(2)} ${branding.tokenSymbol}`}
         </span>
       ))}
     </div>

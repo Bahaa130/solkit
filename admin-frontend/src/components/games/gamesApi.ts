@@ -1,3 +1,4 @@
+import { apiFetch } from "../../lib/api";
 // backend/src/components/games/gamesApi.ts
 // 🎮 عمليات جلب واجهة الألعاب — كلها تمر عبر الـ Vite proxy إلى /api/users/games/*
 
@@ -10,9 +11,9 @@ export interface GamesStatus {
   playsCount: number;
   balance: number;
   eligible: boolean;
-  todayEarned: { wheel: number; tap: number; catch: number; total: number };
-  dailyCaps: { wheel: number; tap: number; catch: number; total: number };
-  cooldowns: { wheel: number; tap: number; catch: number };
+  todayEarned: { wheel: number; xo: number; catch: number; total: number };
+  dailyCaps: { wheel: number; xo: number; catch: number; total: number };
+  cooldowns: { wheel: number; xo: number; catch: number };
 }
 
 export interface GameResultResponse {
@@ -28,7 +29,7 @@ export interface GameResultResponse {
   capped: boolean;
 }
 
-type GameKey = "wheel" | "tap" | "catch";
+type GameKey = "wheel" | "xo" | "catch";
 
 const readJson = async (res: Response) => {
   const text = await res.text();
@@ -36,7 +37,7 @@ const readJson = async (res: Response) => {
 };
 
 export const fetchGamesStatus = async (token: string): Promise<GamesStatus> => {
-  const res = await fetch("/api/users/games/status", {
+  const res = await apiFetch("/api/users/games/status", {
     headers: { "Authorization": `Bearer ${token}` },
   });
   const data = await readJson(res);
@@ -45,7 +46,7 @@ export const fetchGamesStatus = async (token: string): Promise<GamesStatus> => {
 };
 
 export const spinWheel = async (token: string): Promise<{ segment: number; spinToken: string }> => {
-  const res = await fetch("/api/users/games/wheel/spin", {
+  const res = await apiFetch("/api/users/games/wheel/spin", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
   });
@@ -58,7 +59,7 @@ export const submitResult = async (
   token: string,
   payload: { game: GameKey; score?: number; segment?: number; spinToken?: string }
 ): Promise<GameResultResponse> => {
-  const res = await fetch("/api/users/games/result", {
+  const res = await apiFetch("/api/users/games/result", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
     body: JSON.stringify(payload),

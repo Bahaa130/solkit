@@ -1,8 +1,11 @@
+import { apiFetch } from "../lib/api";
 // src/pages/AirdropPage.tsx
 // 🪂 الإسقاط الجوي — ورقة بيضاء مصغّرة + الطرح القريب + البورصات اللامركزية + ملف المشاركة
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { C, styles as T } from "../theme";
 import { useLang } from "../i18n/index.tsx";
+import { useBranding } from "../branding";
+import CoinIcon from "../components/CoinIcon";
 import { useToast } from "../components/Toast";
 
 interface AirdropPageProps {
@@ -15,18 +18,10 @@ const TOKEN_MINT = "gWgPKqXQRGh7rNRXi4EBSg6vacCBTYWcZ11SEHpumTT";
 const TOKEN_DECIMALS = 9;
 const TOKEN_SUPPLY = 1_000_000;
 
-// ⏳ هدف الطرح الحي: يُثبَّت في المتصفح ويتقدّم للمرحلة التالية عند الوصول إليه
-const TGE_STORAGE_KEY = "solkit_tge_target";
-const PHASE_MS = 30 * 24 * 3600 * 1000; // 30 يوماً لكل مرحلة
-const getTgeTarget = (): number => {
-  let t = Number(localStorage.getItem(TGE_STORAGE_KEY));
-  const now = Date.now();
-  if (!t || t <= now) {
-    t = now + PHASE_MS;
-    localStorage.setItem(TGE_STORAGE_KEY, String(t));
-  }
-  return t;
-};
+// ⏳ هدف الطرح الحي: يُجلب من الخادم (يتحكم به المدير من لوحة الإعدادات)
+// إن لم يُعيّن عدّاد من الخادم → يُستخدم افتراضي 30 يوماً للأمام لراحة العرض
+const TGE_FALLBACK_MS = 30 * 24 * 3600 * 1000; // 30 يوماً افتراضياً
+const getTgeFallback = (): number => Date.now() + TGE_FALLBACK_MS;
 
 // 🦍 البورصات اللامركزية التي سيتم الاكتتاب عليها
 const DEXS = [
@@ -80,8 +75,9 @@ interface DistSummary {
 
 export default function AirdropPage({ userId, token }: AirdropPageProps) {
   const { dir, t, lang } = useLang();
+  const { branding } = useBranding();
   const toast = useToast();
-  const [target] = useState(getTgeTarget);
+  const [target, setTarget] = useState<number>(getTgeFallback);
   const [now, setNow] = useState(Date.now());
   const [profile, setProfile] = useState<Profile | null>(null);
   const [dist, setDist] = useState<DistSummary | null>(null);
@@ -105,7 +101,7 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
     if (!token || !userId) return;
     try {
       const p: Profile = { balance: 0, level: 1, referrals: 0, gamesEarned: 0, bonusStreak: 1 };
-      const userRes = await fetch(`/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const userRes = await apiFetch(`/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
       if (userRes.ok) {
         const raw = await userRes.text();
         if (raw) {
@@ -119,25 +115,40 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
           }
         }
       }
-      const refRes = await fetch("/api/users/referral-network", { headers: { Authorization: `Bearer ${token}` } });
+      const refRes = await apiFetch("/api/users/referral-network", { headers: { Authorization: `Bearer ${token}` } });
       if (refRes.ok) {
         const raw = await refRes.text();
         if (raw) p.referrals = Number(JSON.parse(raw).totalReferrals || 0);
       }
       try {
-        const g = await fetch("/api/users/games/status", { headers: { Authorization: `Bearer ${token}` } });
+        const g = await apiFetch("/api/users/games/status", { headers: { Authorization: `Bearer ${token}` } });
         if (g.ok) {
           const raw = await g.text();
           if (raw) p.gamesEarned = Number(JSON.parse(raw).totalEarned || 0);
         }
       } catch { /* اختياري */ }
       try {
-        const d = await fetch("/api/users/distribution/summary", { headers: { Authorization: `Bearer ${token}` } });
+        const d = await apiFetch("/api/users/distribution/summary", { headers: { Authorization: `Bearer ${token}` } });
         if (d.ok) {
           const raw = await d.text();
           if (raw) setDist(JSON.parse(raw));
         }
       } catch { /* اختياري */ }
+
+      // ⏳ جلب هدف عدّاد TGE من إعدادات الخادم (يتحكم به المدير)
+      try {
+        const s = await apiFetch("/api/users/settings", { headers: { Authorization: `Bearer ${token}` } });
+        if (s.ok) {
+          const raw = await s.text();
+          if (raw) {
+            const data = JSON.parse(raw);
+            if (data.tgeTarget && Number(data.tgeTarget) > Date.now()) {
+              setTarget(Number(data.tgeTarget));
+            }
+          }
+        }
+      } catch { /* اختياري */ }
+
       setProfile(p);
       setErr(null);
     } catch (e) {
@@ -211,7 +222,10 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
         <div style={styles.infoGrid}>
           <div style={styles.infoItem}>
             <span style={styles.infoLabel}>{t("airdrop.tokenSymbol")}</span>
-            <span className="gradient-text" style={{ ...styles.infoValue, fontSize: 20, fontWeight: 900 }}>SOLKIT</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <CoinIcon size={22} />
+              <span className="gradient-text" style={{ ...styles.infoValue, fontSize: 20, fontWeight: 900 }}>{branding.tokenSymbol}</span>
+            </span>
           </div>
           <div style={styles.infoItem}>
             <span style={styles.infoLabel}>{t("airdrop.tokenChain")}</span>

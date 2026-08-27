@@ -9,12 +9,27 @@ import bs58 from "bs58"; // 🔐 فك ترميز عنوان المحفظة (base
 import { ed25519 } from "@noble/curves/ed25519"; // ✍️ التحقق من توقيع ed25519
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT } from "../../middlewares/auth.middleware.js";
+import { getSettings, updateSettings } from "../../config/settings.js";
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_SOLKIT_KEY_2026";
 export const ADMIN_WALLET = process.env.ADMIN_WALLET || "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
 const MINING_RATES = { 1: 0.5, 2: 0.525, 3: 0.55 };
 const DAILY_REWARDS = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0];
+// ⛏️ دالة مساعدة: إنهاء جلسة تعدين وقيد أرباحها اللحظية لرصيد المستخدم
+// تُستخدم عند اكتمال الـ 24 ساعة (في mining-status) أو عند بدء جلسة جديدة فوق جلسة منتهية (mining-start)
+const finishMiningSession = async (session, minedAmount, userId) => {
+    await prisma.$transaction([
+        prisma.miningSession.update({
+            where: { id: session.id },
+            data: { status: "completed", minedAmount }
+        }),
+        prisma.user.update({
+            where: { id: userId },
+            data: { balance: { increment: minedAmount } }
+        })
+    ]);
+};
 // 🪪 مخزن مؤقت لرموز التحدّي (nonce) بصلاحية 5 دقائق — يمنع إعادة استخدام التوقيع
 const challengeStore = new Map();
 setInterval(() => {
@@ -54,7 +69,8 @@ router.post("/login-challenge", async (req, res) => {
         challengeStore.set(walletAddress, { nonce, expires: Date.now() + 5 * 60000 });
         return res.json({ message, nonce });
     }
-    catch {
+    catch (error) {
+        console.error("Login challenge error:", error);
         return res.status(500).json({ message: "تعذّر توليد رسالة التحدّي" });
     }
 });
@@ -129,7 +145,10 @@ router.post("/login-wallet", async (req, res) => {
         });
     }
     catch (error) {
-        return res.status(500).json({ message: "Internal server error" });
+        // 🛠️ تسجيل الخطأ الحقيقي في السيرفر لتسهيل التشخيص (لا يُكشف للمستخدم)
+        console.error("Login wallet error:", error);
+        const msg = error?.message ? error.message : "حدث خطأ غير متوقع أثناء تسجيل الدخول";
+        return res.status(500).json({ message: `تعذّر تسجيل الدخول: ${msg}` });
     }
 });
 // ==========================================
@@ -350,16 +369,24 @@ router.get("/mining-status", authenticateJWT, async (req, res) => {
             return res.json({ status: "stopped", miningRate: currentRate, timeLeft: 0, pendingMinedAmount: 0 });
         const now = new Date();
         const timeLeftSeconds = Math.max(0, Math.floor((new Date(activeSession.endsAt).getTime() - now.getTime()) / 1000));
+        // ✅ عند انتهاء جلسة الـ 24 ساعة: قيد الأرباح اللحظية الفعلية (ما مضى فعلاً) لرصيد المستخدم وأكمل الجلسة
         if (timeLeftSeconds <= 0) {
-            const minedAmount = 24 * currentRate;
-            await prisma.$transaction([
-                prisma.miningSession.update({ where: { id: activeSession.id }, data: { status: "completed", minedAmount } }),
-                prisma.user.update({ where: { id: userId }, data: { balance: { increment: minedAmount } } })
-            ]);
+            const secondsPassed = 24 * 60 * 60; // الجلسة اكتملت كاملة
+            const minedAmount = (secondsPassed * currentRate) / 3600;
+            await finishMiningSession(activeSession, minedAmount, userId);
             return res.json({ status: "stopped", miningRate: currentRate, timeLeft: 0, pendingMinedAmount: 0 });
         }
+        // 🔄 جلسة نشطة: أرباح لحظية = الزمن المنقضي فعلياً × المعدّل
         const secondsPassed = Math.floor((now.getTime() - new Date(activeSession.startedAt).getTime()) / 1000);
-        return res.json({ status: "active", miningRate: currentRate, timeLeft: timeLeftSeconds, endsAt: activeSession.endsAt, pendingMinedAmount: (secondsPassed * currentRate) / 3600 });
+        const pendingMinedAmount = (secondsPassed * currentRate) / 3600;
+        return res.json({
+            status: "active",
+            miningRate: currentRate,
+            timeLeft: timeLeftSeconds,
+            endsAt: activeSession.endsAt,
+            pendingMinedAmount,
+            sessionId: activeSession.id
+        });
     }
     catch {
         return res.status(500).json({ message: "Error" });
@@ -371,11 +398,34 @@ router.post("/mining-start", authenticateJWT, async (req, res) => {
         const user = await prisma.user.findUnique({ where: { id: userId } });
         if (!user || user.activationStatus !== "active")
             return res.status(403).json({ message: "Forbidden" });
+        // 🔒 منع الجلسات المزدوجة + قيد أرباح أي جلسة سابقة انتهت لحظياً قبل بدء جديدة
+        const existing = await prisma.miningSession.findFirst({
+            where: { userId, status: "active" },
+            orderBy: { startedAt: "desc" }
+        });
+        if (existing) {
+            const now = new Date();
+            const endsAt = new Date(existing.endsAt);
+            if (endsAt.getTime() > now.getTime()) {
+                // جلسة لا تزال قيد التشغيل → ارفض البدء المزدوج
+                const secondsPassed = Math.floor((now.getTime() - new Date(existing.startedAt).getTime()) / 1000);
+                return res.status(400).json({
+                    message: "Already mining",
+                    status: "active",
+                    timeLeft: Math.floor((endsAt.getTime() - now.getTime()) / 1000),
+                    pendingMinedAmount: (secondsPassed * Number(existing.miningRate)) / 3600
+                });
+            }
+            // جلسة سابقة انتهت ولم تُقيد بعد → قيد أرباحها اللحظية أولاً
+            const secondsPassed = 24 * 60 * 60;
+            const minedAmount = (secondsPassed * Number(existing.miningRate)) / 3600;
+            await finishMiningSession(existing, minedAmount, userId);
+        }
         const currentRate = MINING_RATES[user.currentLevel || 1] || 0.5;
         const startedAt = new Date();
         const endsAt = new Date(startedAt.getTime() + 24 * 60 * 60 * 1000);
-        await prisma.miningSession.create({ data: { userId, miningRate: currentRate, startedAt, endsAt, status: "active" } });
-        return res.status(201).json({ message: "Mining started" });
+        const created = await prisma.miningSession.create({ data: { userId, miningRate: currentRate, startedAt, endsAt, status: "active" } });
+        return res.status(201).json({ message: "Mining started", sessionId: created.id, startedAt, endsAt });
     }
     catch {
         return res.status(500).json({ message: "Error" });
@@ -855,6 +905,47 @@ router.get("/distribution/summary", authenticateJWT, async (req, res) => {
 // ==========================================//
 //  👤 5. مسار الحساب العام بالـ ID//
 //  ==========================================
+// ⚙️ قراءة الإعدادات العامة (قبل /:id حتى لا يلتقطها معرّف المسار) — متاح للجميع
+router.get("/settings", async (_req, res) => {
+    try {
+        const s = getSettings();
+        return res.json({
+            maintenanceMode: s.maintenanceMode,
+            maintenanceMessage: s.maintenanceMessage,
+            tgeTarget: s.tgeTarget
+        });
+    }
+    catch (error) {
+        console.error("GET /settings error:", error);
+        return res.status(500).json({ message: "Error" });
+    }
+});
+// ⚙️ تحديث الإعدادات — للمدير فقط
+const settingsSchema = z.object({
+    maintenanceMode: z.boolean().optional(),
+    maintenanceMessage: z.string().min(1).max(300).optional(),
+    tgeTarget: z.number().int().min(0).optional()
+});
+router.post("/admin/settings", authenticateJWT, async (req, res) => {
+    try {
+        if (!isAdmin(req, res))
+            return;
+        const parsed = settingsSchema.safeParse(req.body);
+        if (!parsed.success)
+            return res.status(400).json({ message: "صيغة الإعدادات غير صالحة" });
+        const updated = updateSettings(parsed.data);
+        return res.json({
+            message: "تم حفظ الإعدادات بنجاح ✅",
+            maintenanceMode: updated.maintenanceMode,
+            maintenanceMessage: updated.maintenanceMessage,
+            tgeTarget: updated.tgeTarget
+        });
+    }
+    catch (error) {
+        console.error("Update settings error:", error);
+        return res.status(500).json({ message: "فشل حفظ الإعدادات" });
+    }
+});
 router.get("/:id", async (req, res) => {
     try {
         const user = await prisma.user.findUnique({

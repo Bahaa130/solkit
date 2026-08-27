@@ -1,7 +1,9 @@
+import { apiFetch } from "../lib/api";
 // src/components/CommunityTasksPanel.tsx
 // 🎯 إدارة حسابات المجتمعات (المؤسسة) + التحقق اليدوي من اشتراك المستخدم قبل منح المكافأة
 import React, { useEffect, useState } from "react";
 import { C, font } from "../theme";
+import { useLang } from "../i18n/index.tsx";
 
 interface Props {
   token: string;
@@ -16,16 +18,21 @@ interface PendingTask {
   channel: { title: string; link: string; platform: string } | null;
 }
 
-const PLATFORMS = [
+const PLATFORMS: { value: string; icon: string; label?: string; labelKey?: string }[] = [
   { value: "telegram", label: "Telegram", icon: "✈️" },
   { value: "x", label: "X (Twitter)", icon: "🐦" },
   { value: "discord", label: "Discord", icon: "🎮" },
-  { value: "website", label: "موقع / ويب", icon: "🌐" },
+  { value: "website", labelKey: "adminTasks.platformWeb", icon: "🌐" },
 ];
-const platformLabel = (p: string) => PLATFORMS.find((x) => x.value === p)?.label || p;
 const platformIcon = (p: string) => PLATFORMS.find((x) => x.value === p)?.icon || "📢";
 
 export default function CommunityTasksPanel({ token }: Props) {
+  const { t } = useLang();
+  const platformLabel = (p: string) => {
+    const found = PLATFORMS.find((x) => x.value === p);
+    if (!found) return p;
+    return found.labelKey ? t(found.labelKey as any) : (found.label as string);
+  };
   const [channels, setChannels] = useState<any[]>([]);
   const [pending, setPending] = useState<PendingTask[]>([]);
   const [form, setForm] = useState({ title: "", platform: "telegram", link: "", reward: "10" });
@@ -38,13 +45,13 @@ export default function CommunityTasksPanel({ token }: Props) {
   const loadAll = async () => {
     try {
       const [ch, pd] = await Promise.all([
-        fetch("/api/tasks/admin/channels", { headers }).then((r) => r.json()),
-        fetch("/api/tasks/admin/pending", { headers }).then((r) => r.json()),
+        apiFetch("/api/tasks/admin/channels", { headers }).then((r) => r.json()),
+        apiFetch("/api/tasks/admin/pending", { headers }).then((r) => r.json()),
       ]);
       setChannels(Array.isArray(ch) ? ch : []);
       setPending(Array.isArray(pd) ? pd : []);
     } catch {
-      setStatus({ type: "error", text: "تعذر جلب بيانات المجتمعات" });
+      setStatus({ type: "error", text: t("adminTasks.fetchError") });
     }
   };
 
@@ -56,7 +63,7 @@ export default function CommunityTasksPanel({ token }: Props) {
     }
     try {
       setSaving(true);
-      const res = await fetch("/api/tasks/admin/channels", {
+      const res = await apiFetch("/api/tasks/admin/channels", {
         method: "POST",
         headers,
         body: JSON.stringify({ title: form.title.trim(), platform: form.platform, link: form.link.trim(), reward: Number(form.reward) || 10 }),
@@ -80,7 +87,7 @@ export default function CommunityTasksPanel({ token }: Props) {
     const ch = channels.find((c) => c.id === id);
     if (!ch) return;
     try {
-      const res = await fetch(`/api/tasks/admin/channels/${id}`, {
+      const res = await apiFetch(`/api/tasks/admin/channels/${id}`, {
         method: "PUT",
         headers,
         body: JSON.stringify({ title: ch.title, platform: ch.platform, link: ch.link, reward: Number(ch.reward), active }),
@@ -94,7 +101,7 @@ export default function CommunityTasksPanel({ token }: Props) {
   const deleteChannel = async (id: number) => {
     if (!window.confirm("حذف هذا الحساب المجتمعي؟ ستبقى المكافآت الممنوحة سابقاً محفوظة.")) return;
     try {
-      const res = await fetch(`/api/tasks/admin/channels/${id}`, { method: "DELETE", headers });
+      const res = await apiFetch(`/api/tasks/admin/channels/${id}`, { method: "DELETE", headers });
       if (res.ok) { setStatus({ type: "success", text: "تم حذف الحساب" }); loadAll(); }
     } catch {
       setStatus({ type: "error", text: "فشل حذف الحساب" });
@@ -104,7 +111,7 @@ export default function CommunityTasksPanel({ token }: Props) {
   const decideTask = async (id: number, action: "approve" | "reject") => {
     try {
       setProcessingId(id);
-      const res = await fetch(`/api/tasks/admin/${action}`, {
+      const res = await apiFetch(`/api/tasks/admin/${action}`, {
         method: "POST",
         headers,
         body: JSON.stringify({ taskId: id }),
@@ -173,7 +180,7 @@ export default function CommunityTasksPanel({ token }: Props) {
             />
           </div>
           <div style={styles.field}>
-            <label style={styles.label}>المكافأة (SOLKIT)</label>
+            <label style={styles.label}>{t("adminTasks.fieldReward")}</label>
             <input
               className="input"
               type="number"

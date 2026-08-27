@@ -12,6 +12,7 @@ import {
 } from "react";
 import { DEFAULT_LANG, LANGS, LANG_STORAGE_KEY, type LangMeta } from "./lang";
 import { TRANSLATIONS } from "./translations";
+import { useBranding } from "../branding";
 
 export type LangCode = string;
 
@@ -45,12 +46,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     [lang],
   );
   const dir: "rtl" | "ltr" = meta.dir;
+  // 🏷️ نقرأ الهوية (اسم المشروع/العملة) لحقنها تلقائياً في الترجمات عبر {token}/{app}
+  const { branding } = useBranding();
 
   const t = useCallback(
     (key: string, vars?: Record<string, string | number>): string => {
       const dict = TRANSLATIONS[lang] ?? TRANSLATIONS[DEFAULT_LANG];
       let str =
         dict[key] ?? TRANSLATIONS[DEFAULT_LANG][key] ?? key;
+      // 🪄 حقن تلقائي لاسم العملة والمشروع في كل الترجمات
+      str = str.replaceAll("{token}", branding.tokenSymbol).replaceAll("{app}", branding.projectName);
       if (vars) {
         for (const [k, v] of Object.entries(vars)) {
           str = str.replaceAll(`{${k}}`, String(v));
@@ -58,7 +63,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       }
       return str;
     },
-    [lang],
+    [lang, branding],
   );
 
   const setLang = useCallback((code: LangCode) => {

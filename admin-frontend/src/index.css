@@ -6,6 +6,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* 📱 لمس سلس على أندرويد: إزالة وميض التظليل + منع السحب/التكبير العرضي */
+* { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+html, body { overscroll-behavior-y: contain; touch-action: manipulation; }
+
 html, body, #root { min-height: 100%; }
 
 body {

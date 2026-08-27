@@ -1,3 +1,4 @@
+import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from "react";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import {
@@ -6,6 +7,7 @@ import {
   createAssociatedTokenAccountInstruction,
 } from "@solana/spl-token";
 import { C, font } from "../theme";
+import { useLang } from "../i18n/index.tsx";
 
 interface DistributionPanelProps {
   token: string;
@@ -20,14 +22,16 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
   const [distributing, setDistributing] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [status, setStatus] = useState<{ type: string; text: string } | null>(null);
+  const [percentage, setPercentage] = useState<number>(100);
+  const { t } = useLang();
 
   const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
 
   const fetchAll = async () => {
     try {
       const [ov, hs] = await Promise.all([
-        fetch("/api/users/admin/distribution/overview", { headers }).then((r) => r.json()),
-        fetch("/api/users/admin/distribution/history", { headers }).then((r) => r.json()),
+        apiFetch("/api/users/admin/distribution/overview", { headers }).then((r) => r.json()),
+        apiFetch("/api/users/admin/distribution/history", { headers }).then((r) => r.json()),
       ]);
       setOverview(ov);
       setHistory(Array.isArray(hs) ? hs : []);
@@ -46,11 +50,11 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       setPreparing(true);
       setStatus(null);
       setPreview(null);
-      const res = await fetch("/api/users/admin/distribution/prepare", { headers });
+      const res = await apiFetch(`/api/users/admin/distribution/prepare?percentage=${percentage}`, { headers });
       const data = await res.json();
       if (res.ok) {
         setPreview(data);
-        setStatus({ type: "success", text: `تم تجهيز التوزيع: ${data.recipientCount} مشترك سيستلم ${Number(data.pool).toFixed(3)} توكن من رصيد المجمع 🎁` });
+         setStatus({ type: "success", text: `تم تجهيز التوزيع: ${data.recipientCount} مشترك سيستلم ${Number(data.pool).toFixed(3)} توكن (${data.requestedPercentage}%) من رصيد المجمع 🎁` });
       } else {
         setStatus({ type: "error", text: data.message || "فشل تجهيز التوزيع" });
       }
@@ -129,7 +133,7 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       }
 
       setStatus({ type: "loading", text: "جاري التحقق البلوكشيني وتسجيل التوزيع على السيرفر..." });
-      const confirmRes = await fetch("/api/users/admin/distribution/confirm", {
+      const confirmRes = await apiFetch("/api/users/admin/distribution/confirm", {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -186,9 +190,7 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
         <div className="glass" style={{ ...styles.notice, border: "1px solid rgba(255,176,32,0.3)", background: "rgba(255,176,32,0.06)" }}>
           <strong style={{ color: C.amber }}>⚠️ التوكن غير مُعدّ بعد:</strong>
           <span style={{ color: C.muted, fontSize: 13 }}>
-            {" "}شغّل سكربت الإعداد لمرة واحدة من مجلد الخلفية:
-            <code style={{ background: "rgba(255,255,255,0.08)", padding: "2px 8px", borderRadius: 6, margin: "0 6px", direction: "ltr", display: "inline-block" }}>npx tsx scripts/setup-token.ts</code>
-            ثم أعد تشغيل الخلفية.
+            {" "}{t("distribution.tokenHint")}
           </span>
         </div>
       )}
@@ -230,6 +232,21 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       {/* زر التوزيع والمعاينة */}
       <div className="glass" style={styles.card}>
         <h3 style={styles.cardTitle}>تنفيذ التوزيع اليدوي</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+          <label style={{ color: C.muted, fontSize: 13, fontWeight: 700 }}>{t("distribution.percentLabel")}</label>
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={percentage}
+            onChange={(e) => setPercentage(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
+            style={{ width: 90, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "8px 12px", fontSize: 14, color: C.text, outline: "none", textAlign: "center" }}
+          />
+          <span style={{ color: C.muted, fontSize: 12 }}>%</span>
+          <span style={{ color: C.faint, fontSize: 11, marginInlineStart: "auto" }}>
+            {t("distribution.percentHint")}
+          </span>
+        </div>
         <button onClick={prepare} disabled={preparing || distributing} className="btn btn-amber btn-block" style={{ padding: 15 }}>
           {preparing ? "جاري تجهيز الحصص..." : "تجهيز توزيع رصيد المجمع (معاينة قبل الإرسال) 🎯"}
         </button>
@@ -271,7 +288,13 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
               </table>
             </div>
             <p style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>
-              الإجمالي: <strong style={{ color: C.teal }}>{preview.recipients.reduce((s: number, r: any) => s + r.amount, 0)}</strong> توكن من رصيد المجمع — <strong style={{ color: C.amber }}>ستُصفَّر أرصدة المشتركين بعد التنفيذ</strong> مع بقاء مستوياتهم كما هي.
+              الإجمالي: <strong style={{ color: C.teal }}>{preview.recipients.reduce((s: number, r: any) => s + r.amount, 0)}</strong> توكن من رصيد المجمع —{" "}
+              <strong style={{ color: C.amber }}>
+                {preview.requestedPercentage && preview.requestedPercentage < 100
+                  ? t("distribution.willDeduct")
+                  : t("distribution.willZero")}
+              </strong>{" "}
+              {t("distribution.levelsKept")}
             </p>
             <button onClick={distributeNow} disabled={distributing} className="btn btn-purple btn-block" style={{ padding: 15, marginTop: 12 }}>
               {distributing ? "جاري التوزيع والتوقيع عبر Phantom..." : "توزيع المجمع وتصفير الأرصدة 🚀 (توقيع محفظة المدير)"}

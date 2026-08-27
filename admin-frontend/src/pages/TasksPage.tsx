@@ -1,8 +1,10 @@
+import { apiFetch } from "../lib/api";
 // src/pages/TasksPage.tsx
 // 🎯 المهام الاجتماعية: اشترك في حسابات المجتمعات الرسمية، أدخل اسم حسابك، وتنتظر مراجعة الإدارة قبل منح المكافأة
 import React, { useCallback, useEffect, useState } from "react";
 import { C, styles as T } from "../theme";
 import { useLang } from "../i18n/index.tsx";
+import { useBranding } from "../branding";
 import { useToast } from "../components/Toast";
 
 interface TasksPageProps { userId: number; token: string; }
@@ -29,6 +31,7 @@ const normalizeLink = (link: string): string => {
 
 export default function TasksPage({ token }: TasksPageProps) {
   const { dir, t } = useLang();
+  const { branding } = useBranding();
   const toast = useToast();
   const [channels, setChannels] = useState<ChannelItem[] | null>(null);
   const [usernames, setUsernames] = useState<Record<number, string>>({});
@@ -37,7 +40,7 @@ export default function TasksPage({ token }: TasksPageProps) {
   const loadTasks = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch("/api/tasks/list", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await apiFetch("/api/tasks/list", { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
       setChannels(res.ok ? (data.channels || []) : []);
     } catch {
@@ -52,7 +55,7 @@ export default function TasksPage({ token }: TasksPageProps) {
     if (!username) return toast.warning(t("tasks.toastNoUsername"));
     try {
       setSubmittingId(channel.id);
-      const res = await fetch("/api/tasks/verify", {
+      const res = await apiFetch("/api/tasks/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ channelId: channel.id, socialUsername: username })
@@ -74,7 +77,7 @@ export default function TasksPage({ token }: TasksPageProps) {
   return (
     <div style={{ ...T.page, direction: dir, maxWidth: 600 }}>
       <h2 style={styles.heading}>{t("tasks.heading")}</h2>
-      <p style={styles.sub}>اشترك في حساباتنا الرسمية عبر زر «انضم الآن»، ثم ضع اسم حسابك ليتم التحقق من اشتراكك فعلاً قبل منحك المكافأة.</p>
+      <p style={styles.sub}>{t("tasks.sub")}</p>
 
       {channels === null ? (
         <p style={{ color: C.muted, textAlign: "center", padding: 24, fontSize: 13 }}>{t("common.loading")}</p>
@@ -95,7 +98,7 @@ export default function TasksPage({ token }: TasksPageProps) {
                   <span style={styles.taskIcon}>{platformIcon(channel.platform)}</span>
                   <div style={styles.taskHeadText}>
                     <h4 style={styles.taskTitle}>{channel.title}</h4>
-                    <span style={styles.taskReward}>+{channel.reward.toFixed(2)} SOLKIT</span>
+                    <span style={styles.taskReward}>+{channel.reward.toFixed(2)} {branding.tokenSymbol}</span>
                   </div>
                   {approved ? (
                     <span className="pill" style={styles.approvedPill}>✅ {t("tasks.doneBtn")}</span>

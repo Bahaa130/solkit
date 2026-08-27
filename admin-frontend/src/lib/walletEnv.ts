@@ -15,8 +15,8 @@ export interface InjectedProvider {
 
 declare global {
   interface Window {
-    solana?: InjectedProvider;
-    solflare?: InjectedProvider;
+    solana?: any;
+    solflare?: any;
   }
 }
 

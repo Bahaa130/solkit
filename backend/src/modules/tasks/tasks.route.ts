@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
 import { isAdmin } from "../users/users.route.js";
+import { awardActivity } from "../users/levelSystem.js"; // 🎯 نقاط النشاط عند الموافقة على مهمة
 
 const router = Router();
 
@@ -232,6 +233,9 @@ router.post("/admin/approve", authenticateJWT, async (req: AuthenticatedRequest,
         data: { balance: { increment: reward } },
       });
     });
+
+    // 🎯 منح نقاط النشاط لإكمال المهمة الاجتماعية
+    try { await awardActivity(task.userId, 25); } catch (e) { console.error("task activity error:", e); }
 
     return res.json({
       message: `تم تأكيد اشتراك المستخدم ومنحه ${reward.toFixed(2)} SOLKIT ✓`,

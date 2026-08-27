@@ -10,13 +10,19 @@ import process from "process";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import { LanguageProvider } from "./i18n/index.tsx";
+import { BrandingProvider } from "./branding.tsx";
 import { ToastProvider } from "./components/Toast.tsx";
+import { SolanaWalletProvider } from "./lib/walletProvider.tsx";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
-  <LanguageProvider>
-    <ToastProvider>
-      <App />
-    </ToastProvider>
-  </LanguageProvider>
+  <SolanaWalletProvider>
+    <BrandingProvider>
+      <LanguageProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </LanguageProvider>
+    </BrandingProvider>
+  </SolanaWalletProvider>
 );

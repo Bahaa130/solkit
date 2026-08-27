@@ -10,3 +10,9 @@ admin-frontend/dist-ssr
 # متغيرات البيئة المحلية
 .env
 .env.local
+
+# سجلات وأدوات تطوير
+.idea/
+backend/backend_dev.*
+backend/*.log
+*.log

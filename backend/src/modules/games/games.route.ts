@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
+import { awardActivity } from "../users/levelSystem.js"; // 🎯 نقاط النشاط عند لعب لعبة
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_SOLKIT_KEY_2026";
@@ -13,20 +14,20 @@ const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_SOLKIT_KEY_2026";
 // ⚙️ الإعدادات القابلة للضبط (في مكان واحد)
 // ==========================================
 
-// 🎰 قيم شرائح العجلة الثابتة عند السيرفر — النتيجة النهائية لا تأتي من العميل إطلاقاً
-const WHEEL_SEGMENTS = [1.0, 2.0, 0.5, 3.0, 1.5, 0.5, 10.0, 1.0]; // فهرس 6 = الجائزة الكبرى 10
+// 🎰 قيم شرائح العجلة الثابتة عند السيرفر — النتيجة النهائية لا تأتي من العميل إطلاقاً (دولاب محدّث)
+const WHEEL_SEGMENTS = [1.0, 2.5, 1.5, 3.0, 0.5, 2.0, 12.0, 1.5]; // فهرس 6 = الجائزة الكبرى 12
 
 const XP_PER_PLAY = 10; // نقاط خبرة المستوى الموحد لكل جولة ممنوحة
-const TOTAL_DAILY_CAP = 150; // السقف الإجمالي اليومي لجميع الألعاب معاً
+const TOTAL_DAILY_CAP = 230; // السقف الإجمالي اليومي لجميع الألعاب معاً
 
-type GameKey = "wheel" | "tap" | "catch";
+type GameKey = "wheel" | "xo" | "catch";
 
-// cooldownSec: ثوانٍ بين جولتين (ساعة كاملة لزيارة مستمرة للموقع) • dailyCap: سقف يومي بالمبلغ الممنوح فعلياً • maxScore: حد أقصى معقول
+// cooldownSec: ثوانٍ بين جولتين (ساعة كاملة لزيارة مستمرة للموقع) • dailyCap: سقف يومي بالمبلغ الممنوح فعلياً • maxScore: حد أقصى معقول • factor: معامل تحويل النتيجة إلى رصيد
 const HOUR_LOCK = 3600; // ⏳ قفل الساعة — كل لعبة مرة واحدة كل ساعة
-const GAME_CONFIG: Record<GameKey, { cooldownSec: number; dailyCap: number; maxScore: number | null }> = {
-  wheel: { cooldownSec: HOUR_LOCK, dailyCap: 50, maxScore: null }, // العجلة تستخدم شريحة وليس score
-  tap: { cooldownSec: HOUR_LOCK, dailyCap: 100, maxScore: 45 },
-  catch: { cooldownSec: HOUR_LOCK, dailyCap: 80, maxScore: 45 },
+const GAME_CONFIG: Record<GameKey, { cooldownSec: number; dailyCap: number; maxScore: number | null; factor: number }> = {
+  wheel: { cooldownSec: HOUR_LOCK, dailyCap: 50, maxScore: null, factor: 0 }, // العجلة تستخدم شريحة وليس score
+  xo: { cooldownSec: HOUR_LOCK, dailyCap: 60, maxScore: 1, factor: 5 }, // الفوز = 5 توكن
+  catch: { cooldownSec: HOUR_LOCK, dailyCap: 80, maxScore: 80, factor: 0.5 }, // كل عملة ملتقطة = 0.5 توكن
 };
 
 // 🕐 تنسيق مدة القفل بالعربية (ساعة/دقيقة/ثانية)
@@ -47,7 +48,7 @@ const getGameMultiplier = (level: number): number => Math.min(5, 1 + (Math.max(1
 const round8 = (n: number): number => Math.round(n * 1e8) / 1e8;
 
 const resultSchema = z.object({
-  game: z.enum(["wheel", "tap", "catch"]),
+  game: z.enum(["wheel", "xo", "catch"]),
   score: z.number().int().min(0).optional(),
   segment: z.number().int().min(0).max(7).optional(),
   spinToken: z.string().optional(),
@@ -70,9 +71,9 @@ router.get("/status", authenticateJWT, async (req: AuthenticatedRequest, res: Re
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    const todayEarned: Record<GameKey, number> = { wheel: 0, tap: 0, catch: 0 };
-    const cooldowns: Record<GameKey, number> = { wheel: 0, tap: 0, catch: 0 };
-    const games: GameKey[] = ["wheel", "tap", "catch"];
+    const todayEarned: Record<GameKey, number> = { wheel: 0, xo: 0, catch: 0 };
+    const cooldowns: Record<GameKey, number> = { wheel: 0, xo: 0, catch: 0 };
+    const games: GameKey[] = ["wheel", "xo", "catch"];
 
     for (const g of games) {
       const [agg, last] = await Promise.all([
@@ -102,10 +103,10 @@ router.get("/status", authenticateJWT, async (req: AuthenticatedRequest, res: Re
       playsCount: progress.playsCount || 0,
       balance: Number(user.balance),
       eligible: user.activationStatus === "active",
-      todayEarned: { ...todayEarned, total: todayEarned.wheel + todayEarned.tap + todayEarned.catch },
+      todayEarned: { ...todayEarned, total: todayEarned.wheel + todayEarned.xo + todayEarned.catch },
       dailyCaps: {
         wheel: GAME_CONFIG.wheel.dailyCap,
-        tap: GAME_CONFIG.tap.dailyCap,
+        xo: GAME_CONFIG.xo.dailyCap,
         catch: GAME_CONFIG.catch.dailyCap,
         total: TOTAL_DAILY_CAP,
       },
@@ -166,12 +167,12 @@ router.post("/result", authenticateJWT, async (req: AuthenticatedRequest, res: R
       base = WHEEL_SEGMENTS[segment];
       scoreVal = segment;
     } else {
-      // 👆🪙 ألعاب المهارة: فحص حد أقصى معقول للنتيجة
+      // 🐍❌ ألعاب المهارة: فحص حد أقصى معقول للنتيجة
       if (score == null) return res.status(400).json({ message: "النتيجة مفقودة" });
       if (cfg.maxScore != null && score > cfg.maxScore) return res.status(400).json({ message: "نتيجة غير صحيحة" });
-      base = game === "tap" ? score * 0.2 : score * 0.1;
+      base = score * cfg.factor;
       scoreVal = score;
-      // جولة صفرية (لا إصابات) لا تحسب كجولة ولا تطبق كولدون
+      // جولة صفرية (بدون نقاط) لا تحسب كجولة ولا تطبق كولدون
       if (score <= 0) return res.json({ reward: 0, balance: Number(user.balance), xpGained: 0, gameLevel: 0, gameXp: 0, leveledUp: false });
     }
 
@@ -237,6 +238,9 @@ router.post("/result", authenticateJWT, async (req: AuthenticatedRequest, res: R
       });
       return [u];
     });
+
+    // 🎯 منح نقاط النشاط لعبّ اللعبة
+    try { await awardActivity(userId, 5); } catch (e) { console.error("game activity error:", e); }
 
     return res.json({
       reward: final,

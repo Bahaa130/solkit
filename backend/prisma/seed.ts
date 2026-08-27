@@ -41,19 +41,6 @@ async function main() {
     }
   });
 
-  // 3. إنشاء طلب سحب معلق لحسابك (ليظهر في جدول السحوبات بصفحة الإدارة وتختبر زر الموافقة 🟢 والرفض 🔴)
-  await (prisma as any).withdrawal.deleteMany({ where: { userId: adminUser.id } });
-  await (prisma as any).withdrawal.create({
-    data: {
-      userId: adminUser.id,
-      walletAddress: ADMIN_WALLET,
-      amount: 25.00000000,
-      gasFee: 0.00000500,
-      status: "pending",
-      createdAt: new Date()
-    }
-  });
-
   console.log("✅ تم ربط وضخ البيانات التجريبية لحساب المسؤول بنجاح فوري!");
 }
 

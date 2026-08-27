@@ -34,7 +34,7 @@ export const font = "'Cairo','Segoe UI',Tahoma,Arial,sans-serif";
 // 🧩 أنماط JSX مشتركة قابلة لإعادة الاستخدام
 export const styles: { [key: string]: CSSProperties } = {
   page: {
-    padding: "24px 20px 110px",
+    padding: "24px 20px 120px",
     maxWidth: 760,
     margin: "0 auto",
     color: C.text,

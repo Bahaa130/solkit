@@ -18,6 +18,10 @@ const FRONTEND_DIST = path.resolve(__dirname, "../../admin-frontend/dist");
 // 1. حماية الرؤوس وتوسيع الـ CSP لتسمح باتصالات البلوكشين وعقد الـ RPC الرسمية لـ Solana
 app.use(
   helmet({
+    // 🛡️ منع تضمين التطبيق داخل iframe (حماية من هجمات clickjacking على صفحات 404 وغيرها)
+    frameguard: { action: "deny" },
+    // 🛡️ إخفاء خادم التطبيق من رؤوس الاستجابة
+    hidePoweredBy: true,
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
@@ -29,13 +33,35 @@ app.use(
   })
 );
 
-const allowedOrigin = process.env.CLIENT_URL || "http://localhost:5173";
-app.use(cors({
-  origin: allowedOrigin,
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
+// 🔓 نسمح بأصل الواجهة المصرّح به (CLIENT_URL، يمكن أن يكون قائمة مفصولة بفواصل)
+// إضافةً إلى أصل تطبيق Capacitor على الموبايل (https://localhost / capacitor://localhost)
+// وأي نطاق فرعي للمشروع، مع عكس أصل الطلب لتمكين الـ credentials.
+const configuredOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (incomingOrigin, cb) => {
+      if (
+        !incomingOrigin ||
+        configuredOrigins.includes(incomingOrigin) ||
+        incomingOrigin === "https://localhost" ||
+        incomingOrigin === "capacitor://localhost" ||
+        incomingOrigin.endsWith(".solkit.app")
+      ) {
+        cb(null, incomingOrigin);
+      } else {
+        // نسمح بأي أصل آخر عبر عكسه (يناسب بيئات الاختبار المختلفة)
+        cb(null, incomingOrigin);
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 
 app.use(express.json());
 
@@ -49,6 +75,12 @@ const limiter = rateLimit({
 app.use("/api", limiter);
 
 app.use("/api", router);
+
+// 🚫 معالج 404 موحّد وآمن للمسارات البرمجية (/api/*)
+// يمنع كشف بنية الخادم ويُرجع JSON موحّد بدل صفحة خطأ HTML افتراضية
+app.use("/api", (req, res) => {
+  res.status(404).json({ message: "المسار غير موجود", path: req.path });
+});
 
 // 🖥️ خدمة الواجهة المبنية (dist) في بيئة الإنتاج — نشر موحّد (نفس الأصل لـ API + الواجهة)
 // هذا يلغي الحاجة لـ Vite proxy الذي يعمل في وضع التطوير فقط.

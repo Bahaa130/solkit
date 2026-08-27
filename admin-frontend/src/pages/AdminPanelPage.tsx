@@ -1,34 +1,38 @@
+import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from "react";
 import { C, font, styles as T } from "../theme";
 import DistributionPanel from "../components/DistributionPanel";
 import CommunityTasksPanel from "../components/CommunityTasksPanel";
+import TokenSetupPanel from "../components/TokenSetupPanel";
+import BrandingPanel from "../components/BrandingPanel";
 import { useToast } from "../components/Toast";
+import { useLang } from "../i18n/index.tsx";
+import { useBranding } from "../branding";
 
 interface AdminStats {
   totalUsers: number;
   activeMiners: number;
-  pendingWithdrawals: number;
   totalRevenue: number;
 }
 
-interface PendingWithdrawal {
-  id: number;
-  amount: string | number;
-  walletAddress: string;
-  createdAt: string;
-  user: {
-    email: string;
-  };
-}
+type LevelRow = { level: number; name: string; minXp: number; color: string; miningRate: number };
 
 // قمنا بتحديث المكون ليستقبل الـ token حياً من الأب الموثق 🛡️
 export default function AdminPanelPage({ token }: { token: string }) {
+  const { t, dir, lang } = useLang();
+  const { branding } = useBranding();
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [pendingList, setPendingList] = useState<PendingWithdrawal[]>([]);
-  const [txHashes, setTxHashes] = useState<{ [key: number]: string }>({});
-  const [processingId, setProcessingId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks">("general");
+  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels">("general");
+  const [levelPlan, setLevelPlan] = useState<LevelRow[]>([]);
+  // ⚙️ إعدادات الموقع (الصيانة + عدّاد TGE)
+  const [settings, setSettings] = useState<{ maintenanceMode: boolean; maintenanceMessage: string; tgeTarget: number }>({
+    maintenanceMode: false,
+    maintenanceMessage: "",
+    tgeTarget: 0,
+  });
+  const [tgeDays, setTgeDays] = useState<number>(30);
+  const [savingSettings, setSavingSettings] = useState(false);
   const toast = useToast();
 
   // 1. دالة جلب البيانات والإحصائيات وتمرير التوكن الرسمي الصارم بـ Bearer JWT
@@ -46,7 +50,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
       };
 
       // جلب الإحصائيات العامة من السيرفر الفولاذي
-      const statsRes = await fetch("/api/users/admin/stats", { headers });
+      const statsRes = await apiFetch("/api/users/admin/stats", { headers });
 
       if (statsRes.status === 401 || statsRes.status === 403) {
         setErrorMessage("عذراً، جلسة العمل منتهية أو حسابك لا يمتلك صلاحية المسؤول العليا!");
@@ -59,16 +63,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
       }
       const statsData = await statsRes.json();
 
-      // جلب قائمة طلبات السحب المعلقة
-      const listRes = await fetch("/api/users/admin/pending-withdrawals", { headers });
-      if (!listRes.ok) {
-        setErrorMessage("فشل جلب قائمة سحوبات شبكة سولانا المعلقة");
-        return;
-      }
-      const listData = await listRes.json();
-
       setStats(statsData);
-      setPendingList(listData);
 
     } catch (error) {
       console.error("Error loading admin dashboard:", error);
@@ -80,80 +75,157 @@ export default function AdminPanelPage({ token }: { token: string }) {
     fetchAdminData();
   }, [token]);
 
-  // 2. دالة اتخاذ القرار للمدير (موافقة مع إدخال الهاش أو الرفض وإعادة الأموال)
-  const handleAction = async (id: number, status: "completed" | "failed") => {
-    const hash = txHashes[id];
-    if (status === "completed" && !hash) {
-      return toast.warning("الرجاء إدخال الـ Transaction Signature (TxHash) لتأكيد المعاملة برمجياً!");
-    }
-
+  // ⚙️ جلب إعدادات الموقع (الصيانة + عدّاد TGE)
+  const fetchSettings = async () => {
+    if (!token) return;
     try {
-      setProcessingId(id);
-      const headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      };
-
-      const res = await fetch(`/api/users/admin/process-withdrawal/${id}`, {
-        method: "POST",
-        headers: headers,
-        body: JSON.stringify({ status, txHash: hash || null }),
-      });
-
+      const headers = { Authorization: `Bearer ${token}` };
+      const res = await apiFetch("/api/users/settings", { headers });
       if (res.ok) {
-        toast.success(status === "completed" ? "🟢 تم تأكيد عملية السحب بنجاح!" : "🔴 تم رفض الطلب وإعادة الرصيد.");
-        setTxHashes(prev => {
-          const updated = { ...prev };
-          delete updated[id];
-          return updated;
+        const data = await res.json();
+        setSettings({
+          maintenanceMode: Boolean(data.maintenanceMode),
+          maintenanceMessage: data.maintenanceMessage || "",
+          tgeTarget: Number(data.tgeTarget || 0),
         });
-        fetchAdminData(); // تحديث فوري للوحة الإدارة
-      } else {
-        const errData = await res.json();
-        toast.error(errData.message || "فشل في تحديث حالة السحب");
+        if (Array.isArray(data.levelPlan) && data.levelPlan.length) {
+          setLevelPlan(data.levelPlan.map((l: LevelRow) => ({ ...l })));
+        }
       }
-    } catch (error) {
-      toast.error("خطأ في الاتصال بالسيرفر أثناء تحديث الحالة");
+    } catch { /* تجاهل */ }
+  };
+
+  useEffect(() => {
+    fetchSettings();
+  }, [token]);
+
+  // ⚙️ حفظ وضع الصيانة (مستقل عن عدّاد الإيردروب)
+  const saveMaintenance = async () => {
+    try {
+      setSavingSettings(true);
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+      const res = await apiFetch("/api/users/admin/settings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          maintenanceMode: settings.maintenanceMode,
+          maintenanceMessage: settings.maintenanceMessage,
+        }),
+      });
+      if (res.ok) {
+        toast.success(t("admin.settingsSaved"));
+        fetchSettings();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || t("admin.settingsError"));
+      }
+    } catch {
+      toast.error(t("admin.settingsError"));
     } finally {
-      setProcessingId(null);
+      setSavingSettings(false);
+    }
+  };
+
+  // ⏳ حفظ عدّاد الإيردروب (TGE) — قسم مستقل
+  const saveAirdrop = async () => {
+    try {
+      setSavingSettings(true);
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+      const targetTs = tgeDays > 0 ? Date.now() + tgeDays * 24 * 3600 * 1000 : 0;
+      const res = await apiFetch("/api/users/admin/settings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ tgeTarget: targetTs }),
+      });
+      if (res.ok) {
+        toast.success(t("admin.settingsSaved"));
+        fetchSettings();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || t("admin.settingsError"));
+      }
+    } catch {
+      toast.error(t("admin.settingsError"));
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  // 🏆 حفظ خطة المستويات
+  const updateLevel = (i: number, key: keyof LevelRow, val: string | number) => {
+    setLevelPlan((prev) => prev.map((l, idx) => (idx === i ? { ...l, [key]: val } : l)));
+  };
+
+  const saveLevels = async () => {
+    try {
+      setSavingSettings(true);
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+      const res = await apiFetch("/api/users/admin/settings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ levelPlan }),
+      });
+      if (res.ok) {
+        toast.success(t("admin.levels.saved"));
+        fetchSettings();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || t("admin.settingsError"));
+      }
+    } catch {
+      toast.error(t("admin.settingsError"));
+    } finally {
+      setSavingSettings(false);
     }
   };
 
   if (errorMessage) {
     return (
       <div style={{ ...T.page, textAlign: "center", paddingTop: 80 }}>
-        <h2 style={{ color: C.red, fontWeight: 900 }}>⚠️ خطأ في الدخول</h2>
-        <p style={{ marginTop: 10, color: C.muted }}>{errorMessage}</p>
-        <button onClick={fetchAdminData} className="btn btn-primary" style={{ marginTop: 20, padding: "12px 24px" }}>إعادة المحاولة 🔄</button>
+        <h2 style={{ color: C.red, fontWeight: 900 }}>{errorMessage}</h2>
+        <button onClick={fetchAdminData} className="btn btn-primary" style={{ marginTop: 20, padding: "12px 24px" }}>{t("common.retry")}</button>
       </div>
     );
   }
 
-  if (!stats) return <div style={{ ...T.page, textAlign: "center", color: C.muted }}>جاري جلب لوحة المسؤول الآمنة...</div>;
+  if (!stats) return <div style={{ ...T.page, textAlign: "center", color: C.muted }}>{t("common.loading")}</div>;
 
   const statCards = [
-    { label: "إجمالي إيرادات التفعيل", value: `${Number(stats.totalRevenue || 0).toFixed(3)}`, unit: "SOL", color: C.amber, icon: "💰" },
-    { label: "إجمالي المشتركين", value: `${stats.totalUsers}`, unit: "حساب", color: C.text, icon: "👥" },
-    { label: "المعدنين النشطين الآن", value: `${stats.activeMiners}`, unit: "مُعدّن", color: C.teal, icon: "⛏️" },
-    { label: "طلبات السحب المعلقة", value: `${stats.pendingWithdrawals}`, unit: "طلب", color: C.red, icon: "🟠" },
+    { label: t("admin.totalRevenue"), value: `${Number(stats.totalRevenue || 0).toFixed(3)}`, unit: t("admin.unitSOL"), color: C.amber, icon: "💰" },
+    { label: t("admin.totalUsers"), value: `${stats.totalUsers}`, unit: t("admin.unitAccounts"), color: C.text, icon: "👥" },
+    { label: t("admin.activeMiners"), value: `${stats.activeMiners}`, unit: t("admin.unitMiners"), color: C.teal, icon: "⛏️" },
   ];
 
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, direction: dir }}>
       <div style={styles.headerBox}>
-        <h1 style={styles.title}>👑 لوحة إدارة النظام الرئيسية (Admin)</h1>
-        <p style={styles.subtitle}>متابعة المؤشرات المالية، عدد المعدنين، والموافقة على عمليات سحب شبكة سولانا.</p>
+        <h1 style={styles.title}>👑 {t("nav.admin")} — {branding.projectName}</h1>
       </div>
 
       <div style={styles.tabBar}>
         <button onClick={() => setAdminTab("general")} style={{ ...styles.tabBtn, ...(adminTab === "general" ? styles.tabActive : {}) }}>
-          📊 الإدارة العامّة
+          {t("admin.statsTitle")}
         </button>
         <button onClick={() => setAdminTab("distribution")} style={{ ...styles.tabBtn, ...(adminTab === "distribution" ? styles.tabActive : {}) }}>
-          🎁 توزيع الجوائز
+          {t("admin.distTitle")}
         </button>
         <button onClick={() => setAdminTab("tasks")} style={{ ...styles.tabBtn, ...(adminTab === "tasks" ? styles.tabActive : {}) }}>
-          🎯 مهام المجتمع
+          {t("admin.tasksTitle")}
+        </button>
+        <button onClick={() => setAdminTab("token")} style={{ ...styles.tabBtn, ...(adminTab === "token" ? styles.tabActive : {}) }}>
+          {t("token.tab")}
+        </button>
+        <button onClick={() => setAdminTab("branding")} style={{ ...styles.tabBtn, ...(adminTab === "branding" ? styles.tabActive : {}) }}>
+          {t("nav.branding")}
+        </button>
+        <button onClick={() => setAdminTab("maintenance")} style={{ ...styles.tabBtn, ...(adminTab === "maintenance" ? styles.tabActive : {}) }}>
+          {t("nav.maintenance")}
+        </button>
+        <button onClick={() => setAdminTab("airdrop")} style={{ ...styles.tabBtn, ...(adminTab === "airdrop" ? styles.tabActive : {}) }}>
+          {t("nav.airdropCounter")}
+        </button>
+        <button onClick={() => setAdminTab("levels")} style={{ ...styles.tabBtn, ...(adminTab === "levels" ? styles.tabActive : {}) }}>
+          {t("nav.levels")}
         </button>
       </div>
 
@@ -161,6 +233,104 @@ export default function AdminPanelPage({ token }: { token: string }) {
         <DistributionPanel token={token} />
       ) : adminTab === "tasks" ? (
         <CommunityTasksPanel token={token} />
+      ) : adminTab === "token" ? (
+        <TokenSetupPanel token={token} />
+      ) : adminTab === "branding" ? (
+        <BrandingPanel token={token} />
+      ) : adminTab === "maintenance" ? (
+        <div className="glass" style={styles.card}>
+          <h3 style={styles.cardTitle}>{t("admin.maintenanceTitle")}</h3>
+          <p style={{ ...styles.cardSub }}>
+            {t("admin.maintenanceDesc")}
+          </p>
+          <label style={styles.toggleRow}>
+            <span style={{ color: C.text, fontWeight: 800, fontSize: 13 }}>{t("admin.maintenanceEnable")}</span>
+            <input
+              type="checkbox"
+              checked={settings.maintenanceMode}
+              onChange={(e) => setSettings({ ...settings, maintenanceMode: e.target.checked })}
+              style={{ width: 20, height: 20, accentColor: C.amber }}
+            />
+          </label>
+          <textarea
+            value={settings.maintenanceMessage}
+            onChange={(e) => setSettings({ ...settings, maintenanceMessage: e.target.value })}
+            placeholder={t("admin.maintenanceMessagePlaceholder")}
+            rows={3}
+            style={{ ...styles.textarea, color: C.text }}
+          />
+          <button
+            onClick={saveMaintenance}
+            disabled={savingSettings}
+            className="btn btn-primary"
+            style={{ padding: "14px", fontSize: 14, fontWeight: 800, width: "100%", marginTop: 8 }}
+          >
+            {savingSettings ? t("admin.savingSettings") : t("admin.saveSettings")}
+          </button>
+        </div>
+      ) : adminTab === "airdrop" ? (
+        <div className="glass" style={styles.card}>
+          <h3 style={styles.cardTitle}>{t("admin.tgeTitle")}</h3>
+          <p style={{ ...styles.cardSub }}>
+            {t("admin.tgeDesc")}
+          </p>
+          <div style={styles.tgeRow}>
+            <label style={{ color: C.muted, fontSize: 13, fontWeight: 700 }}>
+              {t("admin.tgeDaysLabel")}
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={365}
+              value={tgeDays}
+              onChange={(e) => setTgeDays(Math.max(0, Number(e.target.value) || 0))}
+              style={{ ...styles.inputNum, color: C.text }}
+            />
+            <span style={{ color: C.muted, fontSize: 12 }}>{t("admin.tgeDaysSuffix")}</span>
+          </div>
+          <p style={{ color: C.faint, fontSize: 11.5, margin: "8px 0 0" }}>
+            {settings.tgeTarget > 0
+              ? t("admin.tgeCurrentTarget", { date: new Date(settings.tgeTarget).toLocaleString(lang === "ar" ? "ar-EG" : lang) })
+              : t("admin.tgeNoTarget")}
+          </p>
+          <button
+            onClick={saveAirdrop}
+            disabled={savingSettings}
+            className="btn btn-primary"
+            style={{ padding: "14px", fontSize: 14, fontWeight: 800, width: "100%", marginTop: 8 }}
+          >
+            {savingSettings ? t("admin.savingSettings") : t("admin.saveSettings")}
+          </button>
+        </div>
+      ) : adminTab === "levels" ? (
+        <div className="glass" style={styles.card}>
+          <h3 style={styles.cardTitle}>{t("admin.levels.title")}</h3>
+          <p style={{ ...styles.cardSub }}>{t("admin.levels.desc")}</p>
+          <div style={styles.lvlHead}>
+            <span style={styles.lvlColNum}>#</span>
+            <span style={{ ...styles.lvlCol, flex: 2 }}>{t("admin.levels.name")}</span>
+            <span style={styles.lvlCol}>{t("admin.levels.minXp")}</span>
+            <span style={styles.lvlCol}>{t("admin.levels.color")}</span>
+            <span style={styles.lvlCol}>{t("admin.levels.rate")}</span>
+          </div>
+          {levelPlan.map((l, i) => (
+            <div key={l.level} style={styles.lvlRow}>
+              <span style={{ ...styles.lvlNum, color: l.color }}>{l.level}</span>
+              <input value={l.name} onChange={(e) => updateLevel(i, "name", e.target.value)} style={{ ...styles.lvlInput, flex: 2, color: C.text }} />
+              <input type="number" value={l.minXp} onChange={(e) => updateLevel(i, "minXp", Number(e.target.value))} style={styles.lvlInputNum} />
+              <input type="color" value={l.color} onChange={(e) => updateLevel(i, "color", e.target.value)} style={styles.lvlColor} />
+              <input type="number" step="0.01" value={l.miningRate} onChange={(e) => updateLevel(i, "miningRate", Number(e.target.value))} style={styles.lvlInputNum} />
+            </div>
+          ))}
+          <button
+            onClick={saveLevels}
+            disabled={savingSettings}
+            className="btn btn-primary"
+            style={{ padding: "14px", fontSize: 14, fontWeight: 800, width: "100%", marginTop: 12 }}
+          >
+            {savingSettings ? t("admin.savingSettings") : t("admin.levels.save")}
+          </button>
+        </div>
       ) : (
         <>
         <div style={styles.statsGrid}>
@@ -174,49 +344,6 @@ export default function AdminPanelPage({ token }: { token: string }) {
           </div>
         ))}
       </div>
-
-      <div className="glass" style={styles.tableCard}>
-        <h3 style={styles.cardTitle}>طلبات سحب العملات المعلقة (🟠 قيد الانتظار)</h3>
-        {pendingList.length === 0 ? (
-          <p style={styles.noData}>ممتاز! لا توجد أي طلبات سحب معلقة حالياً. ✅</p>
-        ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr style={styles.thRow}>
-                  <th style={styles.th}>المستخدم</th>
-                  <th style={styles.th}>الكمية المطلوبة</th>
-                  <th style={styles.th}>محفظة Solana المستقبلة</th>
-                  <th style={styles.th}>إجراءات الإدارة</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingList.map((req) => (
-                  <tr key={req.id} style={styles.tdRow}>
-                    <td style={styles.td}>{req.user?.email || "مستخدم مجهول"}</td>
-                    <td style={{ ...styles.td, color: C.teal, fontWeight: 800 }}>{Number(req.amount).toFixed(4)}</td>
-                    <td style={styles.td} title={req.walletAddress}>
-                      {req.walletAddress.substring(0, 6)}...{req.walletAddress.substring(req.walletAddress.length - 6)}
-                    </td>
-                    <td style={styles.tdActions}>
-                      <input
-                        className="input"
-                        type="text"
-                        placeholder="أدخل Tx Signature بعد التحويل"
-                        value={txHashes[req.id] || ""}
-                        onChange={(e) => setTxHashes({ ...txHashes, [req.id]: e.target.value })}
-                        style={{ width: 160, padding: "8px 10px", fontSize: 12 }}
-                      />
-                      <button onClick={() => handleAction(req.id, "completed")} disabled={processingId === req.id} className="btn btn-green" style={{ padding: "8px 14px", fontSize: 12 }}>موافقة 🟢</button>
-                      <button onClick={() => handleAction(req.id, "failed")} disabled={processingId === req.id} style={{ ...styles.actionBtn, ...styles.rejectBtn }}>رفض 🔴</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        </div>
         </>
       )}
     </div>
@@ -239,6 +366,12 @@ const styles: { [key: string]: React.CSSProperties } = {
   tableCard: { padding: 24 },
   cardTitle: { fontSize: 16, fontWeight: 800, color: C.text, margin: "0 0 15px 0", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: 10 },
   noData: { color: C.green, textAlign: "center", fontSize: 14, margin: "20px 0", fontWeight: 800 },
+  card: { padding: 24, marginBottom: 18 },
+  cardSub: { color: C.muted, fontSize: 12, margin: "-6px 0 14px", lineHeight: 1.7 },
+  toggleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "14px 16px", marginBottom: 14 },
+  textarea: { width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "12px 14px", fontSize: 13, fontFamily: font, outline: "none", resize: "vertical" },
+  tgeRow: { display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "14px 16px", marginBottom: 10 },
+  inputNum: { width: 80, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "8px 12px", fontSize: 14, fontFamily: font, outline: "none", textAlign: "center" },
   tableWrapper: { overflowX: "auto" },
   table: { width: "100%", borderCollapse: "collapse", textAlign: "right", fontSize: 13 },
   thRow: { borderBottom: "1px solid rgba(255,255,255,0.12)" },
@@ -247,5 +380,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   td: { padding: "14px 8px", color: C.text },
   tdActions: { padding: "14px 8px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
   actionBtn: { borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 800, cursor: "pointer", border: "none", fontFamily: font },
-  rejectBtn: { background: "rgba(255,77,77,0.15)", border: "1px solid rgba(255,77,77,0.4)", color: "#ff4d4d" }
+  rejectBtn: { background: "rgba(255,77,77,0.15)", border: "1px solid rgba(255,77,77,0.4)", color: "#ff4d4d" },
+  // 🏆 محرر المستويات
+  lvlHead: { display: "flex", gap: 8, alignItems: "center", padding: "4px 2px 8px", color: C.muted, fontSize: 11, fontWeight: 800 },
+  lvlColNum: { width: 28, textAlign: "center" },
+  lvlCol: { flex: 1, textAlign: "center" },
+  lvlRow: { display: "flex", gap: 8, alignItems: "center", padding: "7px 2px", borderTop: "1px solid rgba(255,255,255,0.06)" },
+  lvlNum: { width: 28, textAlign: "center", fontWeight: 900, fontSize: 14 },
+  lvlInput: { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 9, padding: "8px 10px", fontSize: 12.5, fontFamily: font, outline: "none" },
+  lvlInputNum: { width: 64, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 9, padding: "8px 6px", fontSize: 12.5, fontFamily: font, outline: "none", color: C.text, textAlign: "center" },
+  lvlColor: { width: 38, height: 34, border: "none", background: "transparent", cursor: "pointer", padding: 0 },
 };

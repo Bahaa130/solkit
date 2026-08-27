@@ -1,3 +1,4 @@
+import { apiFetch } from "../lib/api";
 // src/pages/BonusPage.tsx
 // 📅 البونص اليومي — مستوى التقدم + قفل 24 ساعة بعدّاد حي + سلسلة 7 أيام
 import React, { useCallback, useEffect, useState } from "react";
@@ -32,7 +33,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
   const fetchBonus = useCallback(async () => {
     if (!userId) return;
     try {
-      const res = await fetch(`/api/users/${userId}`);
+      const res = await apiFetch(`/api/users/${userId}`);
       if (res.ok) {
         const data = await res.json();
         setLevel(Number(data.currentLevel || 1));
@@ -79,7 +80,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
     if (!token || locked || claiming) return;
     try {
       setClaiming(true);
-      const res = await fetch("/api/users/claim-daily", {
+      const res = await apiFetch("/api/users/claim-daily", {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}` }
       });

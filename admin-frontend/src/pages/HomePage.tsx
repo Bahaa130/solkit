@@ -1,56 +1,68 @@
+import { apiFetch } from "../lib/api";
 // src/pages/HomePage.tsx
 // 🏠 الرئيسية — دمج التعدين والألعاب في صفحة واحدة حيوية وجذابة
 import React, { useCallback, useEffect, useState } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
+import CoinIcon from "../components/CoinIcon";
+import { useBranding } from "../branding";
 import { useToast } from "../components/Toast";
 import { fetchGamesStatus } from "../components/games/gamesApi";
 import type { GamesStatus } from "../components/games/gamesApi";
 import { formatCooldown } from "../components/games/gamesUtils";
 import CountUp from "../components/games/CountUp";
 import LuckyWheel from "../components/games/LuckyWheel";
-import TapFrenzy from "../components/games/TapFrenzy";
-import CoinCatch from "../components/games/CoinCatch";
+import CoinCatcher from "../components/games/CoinCatcher";
+import XO from "../components/games/XO";
 
 interface HomePageProps {
   userId: number;
   token: string;
+  onNavigateTab?: (t: string) => void;
 }
 
-type GameKey = "wheel" | "tap" | "catch";
+type GameKey = "wheel" | "xo" | "catch";
 
 const GAMES: { key: GameKey; icon: string; titleKey: string; tagKey: string; btn: string; color: string; glow: string }[] = [
   { key: "wheel", icon: "🎰", titleKey: "game.wheelTitle", tagKey: "game.wheelTag", btn: "btn-purple", color: C.purple, glow: "rgba(124,92,255,0.35)" },
-  { key: "tap", icon: "👆", titleKey: "game.tapTitle", tagKey: "game.tapTag", btn: "btn-green", color: C.green, glow: "rgba(34,229,132,0.35)" },
   { key: "catch", icon: "🪙", titleKey: "game.catchTitle", tagKey: "game.catchTag", btn: "btn-amber", color: C.amber, glow: "rgba(255,176,32,0.35)" },
+  { key: "xo", icon: "❌", titleKey: "game.xoTitle", tagKey: "game.xoTag", btn: "btn-amber", color: C.amber, glow: "rgba(255,176,32,0.35)" },
 ];
 
-export default function HomePage({ userId, token }: HomePageProps) {
+export default function HomePage({ userId, token, onNavigateTab }: HomePageProps) {
   const { dir, t } = useLang();
+  const { branding } = useBranding();
   const [balance, setBalance] = useState(0);
   const [level, setLevel] = useState(1);
+  const [levelPlan, setLevelPlan] = useState<{ level: number; name: string; minXp: number; color: string; miningRate: number }[]>([]);
   const [miningStatus, setMiningStatus] = useState({ status: "stopped", miningRate: 0.5, timeLeft: 0, pendingMinedAmount: 0 });
   const [gamesStatus, setGamesStatus] = useState<GamesStatus | null>(null);
   const [activeGame, setActiveGame] = useState<GameKey | null>(null);
   const [sessionTotal, setSessionTotal] = useState(0);
   const toast = useToast();
 
+  // 🔑 الرصيد الأساسي من الخادم (دون المكتسب اللحظي غير المُقيد بعد) — مرجع لحساب الرصيد الحي أثناء التعدين
+  const baseBalanceRef = React.useRef(0);
+
   // ⚡ تحديث شامل: رصيد الحساب + حالة التعدين + حالة الألعاب
   const refresh = useCallback(async () => {
     if (!token || !userId) return;
     try {
       let currentBaseBalance = 0;
-      const userRes = await fetch(`/api/users/${userId}`, { headers: { "Authorization": `Bearer ${token}` } });
+      const userRes = await apiFetch(`/api/users/${userId}`, { headers: { "Authorization": `Bearer ${token}` } });
       if (userRes.ok) {
         const u = await userRes.json();
         currentBaseBalance = Number(u.balance || 0);
         setLevel(Number(u.currentLevel || 1));
       }
-      const miningRes = await fetch("/api/users/mining-status", { headers: { "Authorization": `Bearer ${token}` } });
+      const miningRes = await apiFetch("/api/users/mining-status", { headers: { "Authorization": `Bearer ${token}` } });
       if (miningRes.ok) {
         const m = await miningRes.json();
         setMiningStatus(m);
-        setBalance(currentBaseBalance + Number(m.pendingMinedAmount || 0));
+        // الرصيد الأساسي من الخادم (دون المكتسب اللحظي غير المُقيد بعد) + المكتسب اللحظي الحالي
+        const liveBalance = currentBaseBalance + Number(m.pendingMinedAmount || 0);
+        baseBalanceRef.current = currentBaseBalance;
+        setBalance(liveBalance);
       }
       try {
         setGamesStatus(await fetchGamesStatus(token));
@@ -68,7 +80,20 @@ export default function HomePage({ userId, token }: HomePageProps) {
     return () => clearInterval(iv);
   }, [refresh]);
 
-  // ⏱️ عدّاد التعدين الحي مع تصاعد الرصيد كل ثانية
+  // 🏆 خطة المستويات (لتلوين حلقة التعدين وعرض صندوق المستوى)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch("/api/users/levels");
+        if (res.ok) { const d = await res.json(); setLevelPlan(d.plan || []); }
+      } catch { /* تجاهل */ }
+    })();
+  }, []);
+
+  const levelColor = levelPlan.find((l) => l.level === level)?.color || C.teal;
+
+  // ⏱️ عدّاد التعدين الحي: تنازلي للوقت كل ثانية + رصيد حي مشتق من المكتسب اللحظي من الخادم
+  // (لا نتراكم يدوياً ثم نعيد الضبط مع refresh — لتفادي الازدواجية وضياع الدقة)
   useEffect(() => {
     let timer: ReturnType<typeof setInterval>;
     if (miningStatus.status === "active" && miningStatus.timeLeft > 0) {
@@ -79,9 +104,15 @@ export default function HomePage({ userId, token }: HomePageProps) {
             refresh();
             return { ...prev, status: "stopped", timeLeft: 0, pendingMinedAmount: 0 };
           }
-          return { ...prev, timeLeft: prev.timeLeft - 1 };
+          // تصاعد المكتسب اللحظي محلياً (rate/3600 لكل ثانية) — يُزامَن مع الخادم كل دقيقة عبر refresh
+          const rate = Number(prev.miningRate) || 0.5;
+          const nextPending = prev.pendingMinedAmount + rate / 3600;
+          setBalance((_prevBalance) => {
+            // أعد حساب الرصيد الحي = الرصيد الأساسي (دون pending) + المكتسب اللحظي
+            return baseBalanceRef.current + nextPending;
+          });
+          return { ...prev, timeLeft: prev.timeLeft - 1, pendingMinedAmount: nextPending };
         });
-        setBalance((prev) => prev + (Number(miningStatus.miningRate) / 3600));
       }, 1000);
     }
     return () => clearInterval(timer);
@@ -89,7 +120,7 @@ export default function HomePage({ userId, token }: HomePageProps) {
 
   const handleStartMining = async () => {
     try {
-      const res = await fetch("/api/users/mining-start", {
+      const res = await apiFetch("/api/users/mining-start", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       });
@@ -136,7 +167,7 @@ export default function HomePage({ userId, token }: HomePageProps) {
             <span className="pill" style={styles.badgeGame}>{t("home.gamesLevel", { n: gameLevel })} ×{multiplier.toFixed(2)}</span>
           </div>
         </div>
-        <div className="floaty" style={{ fontSize: 54, position: "relative", zIndex: 2 }}>💎</div>
+        <div className="floaty" style={{ fontSize: 54, position: "relative", zIndex: 2 }}><CoinIcon size={54} /></div>
       </div>
 
       {/* 💰 الرصيد */}
@@ -145,7 +176,22 @@ export default function HomePage({ userId, token }: HomePageProps) {
         <h1 className="gradient-text" style={styles.balanceValue}>
           <CountUp value={balance} decimals={8} />
         </h1>
-        <span style={styles.balanceUnit}>SOLKIT TOKEN</span>
+        <span style={{ ...styles.balanceUnit, display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
+          <CoinIcon size={14} />
+          {t("home.balanceUnit")}
+        </span>
+      </div>
+
+      {/* 🏆 صندوق عرض المستوى (قابل للنقر → صفحة المستويات) */}
+      <div className="glass" style={styles.levelBox} onClick={() => onNavigateTab && onNavigateTab("levels")}>
+        <div style={{ ...styles.lbBadge, background: `${levelColor}22`, borderColor: `${levelColor}55` }}>
+          <span style={{ ...styles.lbNum, color: levelColor }}>{level}</span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ ...styles.lbName, color: levelColor }}>{levelPlan.find((l) => l.level === level)?.name || t("home.accountLevel", { n: level })}</div>
+          <div style={{ ...styles.lbHint, color: C.muted }}>{t("levels.viewLevels")}</div>
+        </div>
+        <span style={{ fontSize: 20 }}>🏆</span>
       </div>
 
       {/* ⛏️ التعدين */}
@@ -158,12 +204,12 @@ export default function HomePage({ userId, token }: HomePageProps) {
         </div>
         <div style={styles.miningBody}>
           <div style={styles.circleGlow}>
-            <div style={{ ...styles.circularProgressBar, background: `conic-gradient(${C.teal} ${percentage}%, rgba(255,255,255,0.06) 0)` }}>
+            <div style={{ ...styles.circularProgressBar, background: `conic-gradient(${levelColor} ${percentage}%, rgba(255,255,255,0.06) 0)` }}>
               <div style={styles.innerCircle}>
                 {isActive ? (
                   <>
                     <span style={styles.timerText}>{formatTime(miningStatus.timeLeft)}</span>
-                    <span style={styles.rateText}>{t("home.miningRate", { rate: Number(miningStatus.miningRate).toFixed(4) })}</span>
+                    <span style={{ ...styles.rateText, color: levelColor }}>{t("home.miningRate", { rate: Number(miningStatus.miningRate).toFixed(4) })}</span>
                   </>
                 ) : (
                   <span style={styles.stoppedText}>{t("home.miningReady")}</span>
@@ -198,17 +244,17 @@ export default function HomePage({ userId, token }: HomePageProps) {
               <button onClick={() => setActiveGame(null)} className="btn btn-ghost" style={{ padding: "8px 16px", fontSize: 12 }}>{t("home.back")}</button>
               <div style={styles.sessionBox}>
                 <span style={{ color: C.muted, fontSize: 12 }}>{t("home.sessionEarned")}</span>
-                <span className="gradient-text" style={styles.sessionValue}><CountUp value={sessionTotal} decimals={2} /> SOLKIT</span>
+                <span className="gradient-text" style={styles.sessionValue}><CountUp value={sessionTotal} decimals={2} /> {branding.tokenSymbol}</span>
               </div>
             </div>
             {activeGame === "wheel" && (
               <LuckyWheel userId={userId} token={token} multiplier={multiplier} cooldown={gamesStatus?.cooldowns.wheel || 0} onReward={handleReward} onStatusRefresh={refresh} />
             )}
-            {activeGame === "tap" && (
-              <TapFrenzy token={token} multiplier={multiplier} cooldown={gamesStatus?.cooldowns.tap || 0} onReward={handleReward} onStatusRefresh={refresh} />
-            )}
             {activeGame === "catch" && (
-              <CoinCatch token={token} multiplier={multiplier} cooldown={gamesStatus?.cooldowns.catch || 0} onReward={handleReward} onStatusRefresh={refresh} />
+              <CoinCatcher token={token} multiplier={multiplier} cooldown={gamesStatus?.cooldowns.catch || 0} onReward={handleReward} onStatusRefresh={refresh} />
+            )}
+            {activeGame === "xo" && (
+              <XO token={token} multiplier={multiplier} cooldown={gamesStatus?.cooldowns.xo || 0} onReward={handleReward} onStatusRefresh={refresh} />
             )}
           </div>
         ) : (
@@ -313,6 +359,12 @@ const styles: { [key: string]: React.CSSProperties } = {
   balanceLabel: { color: C.muted, fontSize: 12.5, display: "block", marginBottom: 6 },
   balanceValue: { fontSize: 32, margin: 0, fontWeight: 900, letterSpacing: "0.5px" },
   balanceUnit: { color: C.faint, fontSize: 10.5, fontWeight: 800, letterSpacing: 2, marginTop: 4, display: "block" },
+  // 🏆 صندوق المستوى
+  levelBox: { display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", cursor: "pointer", border: "1px solid rgba(255,255,255,0.08)" },
+  lbBadge: { width: 40, height: 40, borderRadius: 12, border: "1px solid", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  lbNum: { fontSize: 18, fontWeight: 900, lineHeight: 1 },
+  lbName: { fontWeight: 800, fontSize: 13.5 },
+  lbHint: { fontSize: 11, marginTop: 2 },
   // ⛏️ التعدين
   miningCard: { padding: "18px 18px 20px" },
   cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
@@ -324,7 +376,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   circularProgressBar: { width: 168, height: 168, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.5s ease" },
   innerCircle: { width: 148, height: 148, background: "#070b16", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "50%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
   timerText: { fontSize: 26, fontWeight: 900, color: C.text, letterSpacing: 1, fontVariantNumeric: "tabular-nums" },
-  rateText: { fontSize: 10, color: C.teal, marginTop: 6, fontWeight: 800 },
+  rateText: { fontSize: 10, marginTop: 6, fontWeight: 800 },
   stoppedText: { fontSize: 15, color: C.muted, fontWeight: 800 },
   miningInfo: { flex: 1, minWidth: 210, display: "flex", flexDirection: "column", gap: 14 },
   miningDesc: { color: C.muted, fontSize: 12, lineHeight: 1.8, margin: 0 },

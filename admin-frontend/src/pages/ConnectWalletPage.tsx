@@ -1,8 +1,11 @@
+import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
+import { useBranding } from "../branding";
+import CoinIcon from "../components/CoinIcon";
 import { useToast } from "../components/Toast";
-import { getInjectedProvider, isMobile, openInWalletApp, ensureConnected, signMessage } from "../lib/walletEnv";
+import { useSolanaWallet } from "../lib/walletProvider";
 
 interface ConnectWalletPageProps {
   onWalletConnected: (jwtToken: string, walletAddress: string, role: string, activationStatus: string) => void;
@@ -10,6 +13,8 @@ interface ConnectWalletPageProps {
 
 export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPageProps) {
   const { dir, t } = useLang();
+  const { branding } = useBranding();
+  const { connectWallet, signMessageBase64 } = useSolanaWallet();
   const [loading, setLoading] = useState(false);
   const [referralCodeFromUrl, setReferralCodeFromUrl] = useState<string | null>(null);
   const toast = useToast();
@@ -24,37 +29,21 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
     }
   }, []);
 
-  // 2. دالة الاتصال بمحفظة Phantom والتسجيل الأمني الآمن
+  // 2. دالة الاتصال بالمحفظة (Phantom على الويب / WalletConnect على الموبايل) والتسجيل الآمن
   const handleConnectPhantom = async () => {
-    // 📱 على الهاتف خارج تطبيق المحفظة: افتح التطبيق عبر الرابط الموحّد الرسمي
-    // (داخل التطبيق يتوفر window.solana فيعمل التسجيل والتوقيع بأمان تام).
-    if (isMobile() && !getInjectedProvider()) {
-      toast.warning(t("connect.openingWallet"));
-      openInWalletApp();
-      return;
-    }
-
-    const provider = getInjectedProvider();
-
-    if (!provider) {
-      toast.warning(t("connect.noPhantom"));
-      window.open("https://phantom.app", "_blank");
-      return;
-    }
-
     try {
       setLoading(true);
-      // 🔌 التأكد من الاتصال (يُظهر modal التأكيد داخل Phantom عند الحاجة)
-      const walletAddress = await ensureConnected();
+      // 🔌 الاتصال بالمحفظة عبر المحوّل الموحّد (يبقى داخل التطبيق على الموبايل)
+      const walletAddress = await connectWallet();
       if (!walletAddress) {
-        toast.warning(t("connect.noPhantom"));
+        // على الموبايل بدون WalletConnect: فُتح التطبيق داخل متصفح Phantom ويتابع المستخدم هناك
         return;
       }
 
       console.log("تمت قراءة عنوان محفظة سولانا بنجاح:", walletAddress);
 
       // 1️⃣ جلب رسالة التحدّي من السيرفر
-      const challengeRes = await fetch("/api/users/login-challenge", {
+      const challengeRes = await apiFetch("/api/users/login-challenge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress })
@@ -66,16 +55,16 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
       }
       const { message } = await challengeRes.json();
 
-      // 2️⃣ توقيع الرسالة داخل Phantom (تظهر نافذة التوقيع = تأكيد الربط المرئي)
+      // 2️⃣ توقيع الرسالة داخل المحفظة (تظهر نافذة التوقيع = تأكيد الربط المرئي)
       toast.info(t("connect.signing"));
-      const signature = await signMessage(message);
+      const signature = await signMessageBase64(message);
       if (!signature) {
         toast.warning(t("connect.toastCancelled"));
         return;
       }
 
       // 3️⃣ إرسال التوقيع للسيرفر للتحقق من ملكية المحفظة
-      const response = await fetch("/api/users/login-wallet", {
+      const response = await apiFetch("/api/users/login-wallet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -128,8 +117,8 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
   return (
     <div style={{ ...styles.container, direction: dir }}>
       <div className="glass" style={styles.card}>
-        <div className="floaty" style={{ fontSize: 52, marginBottom: 6 }}>💎</div>
-        <h1 style={styles.title}>{t("connect.title")} <span className="gradient-text">SOLKIT</span></h1>
+        <div className="floaty" style={{ fontSize: 52, marginBottom: 6 }}><CoinIcon size={52} /></div>
+        <h1 style={styles.title}>{t("connect.title")} <span className="gradient-text">{branding.projectName}</span></h1>
         <p style={styles.subtitle}>{t("connect.subtitle")}</p>
 
         {referralCodeFromUrl && (
@@ -156,7 +145,6 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
 
         <div style={styles.features}>
           <span className="pill" style={featurePill}>{t("connect.featureMining")}</span>
-          <span className="pill" style={featurePill}>{t("connect.featureWithdraw")}</span>
           <span className="pill" style={featurePill}>{t("connect.featureReferral")}</span>
         </div>
       </div>
@@ -175,7 +163,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: "100vh",
+    minHeight: "100dvh",
     fontFamily: font,
     padding: 20,
     direction: "rtl"

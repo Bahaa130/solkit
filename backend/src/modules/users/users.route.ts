@@ -9,13 +9,32 @@ import bs58 from "bs58"; // 🔐 فك ترميز عنوان المحفظة (base
 import { ed25519 } from "@noble/curves/ed25519"; // ✍️ التحقق من توقيع ed25519
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
+import { getSettings, updateSettings, type SiteSettings } from "../../config/settings.js";
+import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; // 🎯 نظام المستويات حسب النشاط
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_SOLKIT_KEY_2026";
 export const ADMIN_WALLET = process.env.ADMIN_WALLET || "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
-const MINING_RATES: { [key: number]: number } = { 1: 0.5, 2: 0.525, 3: 0.55 };
+
 const DAILY_REWARDS = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0];
+
+// ⛏️ دالة مساعدة: إنهاء جلسة تعدين وقيد أرباحها اللحظية لرصيد المستخدم
+// تُستخدم عند اكتمال الـ 24 ساعة (في mining-status) أو عند بدء جلسة جديدة فوق جلسة منتهية (mining-start)
+const finishMiningSession = async (session: any, minedAmount: number, userId: number) => {
+  await prisma.$transaction([
+    (prisma as any).miningSession.update({
+      where: { id: session.id },
+      data: { status: "completed", minedAmount }
+    }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { balance: { increment: minedAmount } } as any
+    })
+  ]);
+  // 🎯 منح نقاط النشاط لإكمال جلسة التعدين (24 ساعة)
+  try { await awardActivity(userId, 30); } catch (e) { console.error("mining activity error:", e); }
+};
 
 // 🪪 مخزن مؤقت لرموز التحدّي (nonce) بصلاحية 5 دقائق — يمنع إعادة استخدام التوقيع
 const challengeStore = new Map<string, { nonce: string; expires: number }>();
@@ -30,11 +49,6 @@ const registerSchema = z.object({
   signature: z.string().optional(),
   message: z.string().optional(),
 }).passthrough();
-
-const withdrawSchema = z.object({
-  amount: z.number().positive(),
-  walletAddress: z.string().min(32).max(44),
-});
 
 // ==========================================
 // 🪪 0. توليد رسالة تحدّي للتوقيع (إثبات ملكية المحفظة)
@@ -57,7 +71,8 @@ router.post("/login-challenge", async (req: Request, res: Response) => {
     // 💾 خزّن الـ nonce مربوطاً بالمحفظة (صلاحية 5 دقائق)
     challengeStore.set(walletAddress, { nonce, expires: Date.now() + 5 * 60_000 });
     return res.json({ message, nonce });
-  } catch {
+  } catch (error: any) {
+    console.error("Login challenge error:", error);
     return res.status(500).json({ message: "تعذّر توليد رسالة التحدّي" });
   }
 });
@@ -120,6 +135,19 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
     }
 
     const role = walletAddress === ADMIN_WALLET ? "admin" : "user";
+
+    // 🎯 منح نقاط النشاط لتسجيل الدخول (مرة واحدة يومياً) — يقيس نشاط الحساب
+    try {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const last = user.lastLoginActivityAt ? new Date(user.lastLoginActivityAt) : null;
+      const lastDay = last ? new Date(last).setHours(0, 0, 0, 0) : 0;
+      if (lastDay < today.getTime()) {
+        await awardActivity(user.id, 10);
+        await prisma.user.update({ where: { id: user.id }, data: { lastLoginActivityAt: new Date() } } as any);
+      }
+    } catch (actErr) {
+      console.error("login activity error:", actErr);
+    }
     // 🛡️ محفظة المدير مفعّلة دائماً — لا تتطلب دفع رسوم التفعيل
     const effectiveStatus = role === "admin" ? "active" : user.activationStatus;
 
@@ -141,8 +169,11 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
         activationStatus: effectiveStatus // 🟢 المشرف دائماً active
       }
     });
-  } catch (error) {
-    return res.status(500).json({ message: "Internal server error" });
+  } catch (error: any) {
+    // 🛠️ تسجيل الخطأ الحقيقي في السيرفر لتسهيل التشخيص (لا يُكشف للمستخدم)
+    console.error("Login wallet error:", error);
+    const msg = error?.message ? error.message : "حدث خطأ غير متوقع أثناء تسجيل الدخول";
+    return res.status(500).json({ message: `تعذّر تسجيل الدخول: ${msg}` });
   }
 });
 
@@ -250,6 +281,11 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
       }
     });
 
+    // 🎯 منح نقاط النشاط لصاحب الإحالة عند تفعيل المحالّ له بنجاح
+    if (user.referrerId) {
+      try { await awardActivity(user.referrerId, 50); } catch (e) { console.error("referrer activity error:", e); }
+    }
+
     return res.json({ message: "تم تفعيل حسابك كمستخدم نشط بنجاح باهر عبر البلوكشين! 🎉", activationStatus: "active" });
   } catch (error) {
     return res.status(500).json({ message: "حدث خطأ داخلي أثناء معالجة تفعيل الحساب" });
@@ -257,64 +293,6 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
 });
 
 
-
-// ==========================================
-// 💸 1. مسارات سحب الأرباح (مرفوعة هنا للأعلى لمنع الـ 404 والـ 500)
-// ==========================================
-
-// أ. مسار تقديم طلب سحب مالي جديد
-router.post("/withdraw", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user!.id;
-    const parsed = withdrawSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ message: "صيغة المدخلات الممررة غير سليمة" });
-    }
-
-    const { amount, walletAddress } = parsed.data;
-    const MIN_WITHDRAW = 10;
-    const GAS_FEE = 0.000005;
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    
-    if (!user || Number(user.balance) < amount) {
-      return res.status(400).json({ message: "عذراً، رصيدك المتاح غير كافٍ لإتمام السحب!" });
-    }
-
-    if (amount < MIN_WITHDRAW) {
-      return res.status(400).json({ message: `الحد الأدنى المسموح به للسحب هو ${MIN_WITHDRAW} عملة!` });
-    }
-
-    // خصم وتسجيل المعاملة
-    await prisma.$transaction([
-      prisma.user.update({ where: { id: userId }, data: { balance: { decrement: amount } } as any }),
-      (prisma as any).withdrawal.create({ data: { userId, amount, walletAddress, gasFee: GAS_FEE, status: "pending" } })
-    ]);
-
-    return res.status(201).json({ message: "تم تقديم طلب السحب بنجاح 🟠 قيد التدقيق" });
-  } catch (error) {
-    console.error("Withdrawal error:", error);
-    return res.status(500).json({ message: "Failed to process withdrawal" });
-  }
-});
-
-// ب. مسار جلب سجل السحوبات الموثق للمستخدم الحالي
-router.get("/withdraw-history", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user!.id;
-    
-    // جلب السجلات والتأكد من مطابقة الأنواع
-    const history = await (prisma as any).withdrawal.findMany({ 
-      where: { userId }, 
-      orderBy: { createdAt: "desc" } 
-    });
-    
-    return res.json(history || []); // إرجاع مصفوفة فارغة بدلاً من تجميد السيرفر بالخطأ 500 لو الجدول فارغ
-  } catch (error) {
-    console.error("Withdraw history fetch error:", error);
-    return res.status(500).json({ message: "Error fetching history data safely" });
-  }
-});
 
 // ✅ مسار شبكة الإحالة المصلح والمحمي بالكامل 100% ضد الـ Array Syntax Crash
 router.get("/referral-network", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
@@ -387,23 +365,31 @@ router.get("/mining-status", authenticateJWT, async (req: AuthenticatedRequest, 
       orderBy: { startedAt: "desc" }
     });
 
-    const currentRate = MINING_RATES[user.currentLevel || 1] || 0.5;
+    const currentRate = rateForLevel(user.currentLevel || 1);
     if (!activeSession) return res.json({ status: "stopped", miningRate: currentRate, timeLeft: 0, pendingMinedAmount: 0 });
 
     const now = new Date();
     const timeLeftSeconds = Math.max(0, Math.floor((new Date(activeSession.endsAt).getTime() - now.getTime()) / 1000));
 
+    // ✅ عند انتهاء جلسة الـ 24 ساعة: قيد الأرباح اللحظية الفعلية (ما مضى فعلاً) لرصيد المستخدم وأكمل الجلسة
     if (timeLeftSeconds <= 0) {
-      const minedAmount = 24 * currentRate;
-      await prisma.$transaction([
-        (prisma as any).miningSession.update({ where: { id: activeSession.id }, data: { status: "completed", minedAmount } }),
-        prisma.user.update({ where: { id: userId }, data: { balance: { increment: minedAmount } } as any })
-      ]);
+      const secondsPassed = 24 * 60 * 60; // الجلسة اكتملت كاملة
+      const minedAmount = (secondsPassed * currentRate) / 3600;
+      await finishMiningSession(activeSession, minedAmount, userId);
       return res.json({ status: "stopped", miningRate: currentRate, timeLeft: 0, pendingMinedAmount: 0 });
     }
 
+    // 🔄 جلسة نشطة: أرباح لحظية = الزمن المنقضي فعلياً × المعدّل
     const secondsPassed = Math.floor((now.getTime() - new Date(activeSession.startedAt).getTime()) / 1000);
-    return res.json({ status: "active", miningRate: currentRate, timeLeft: timeLeftSeconds, endsAt: activeSession.endsAt, pendingMinedAmount: (secondsPassed * currentRate) / 3600 });
+    const pendingMinedAmount = (secondsPassed * currentRate) / 3600;
+    return res.json({
+      status: "active",
+      miningRate: currentRate,
+      timeLeft: timeLeftSeconds,
+      endsAt: activeSession.endsAt,
+      pendingMinedAmount,
+      sessionId: activeSession.id
+    });
   } catch { return res.status(500).json({ message: "Error" }); }
 });
 
@@ -413,12 +399,36 @@ router.post("/mining-start", authenticateJWT, async (req: AuthenticatedRequest, 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.activationStatus !== "active") return res.status(403).json({ message: "Forbidden" });
 
-    const currentRate = MINING_RATES[user.currentLevel || 1] || 0.5;
+    // 🔒 منع الجلسات المزدوجة + قيد أرباح أي جلسة سابقة انتهت لحظياً قبل بدء جديدة
+    const existing = await (prisma as any).miningSession.findFirst({
+      where: { userId, status: "active" },
+      orderBy: { startedAt: "desc" }
+    });
+    if (existing) {
+      const now = new Date();
+      const endsAt = new Date(existing.endsAt);
+      if (endsAt.getTime() > now.getTime()) {
+        // جلسة لا تزال قيد التشغيل → ارفض البدء المزدوج
+        const secondsPassed = Math.floor((now.getTime() - new Date(existing.startedAt).getTime()) / 1000);
+        return res.status(400).json({
+          message: "Already mining",
+          status: "active",
+          timeLeft: Math.floor((endsAt.getTime() - now.getTime()) / 1000),
+          pendingMinedAmount: (secondsPassed * Number(existing.miningRate)) / 3600
+        });
+      }
+      // جلسة سابقة انتهت ولم تُقيد بعد → قيد أرباحها اللحظية أولاً
+      const secondsPassed = 24 * 60 * 60;
+      const minedAmount = (secondsPassed * Number(existing.miningRate)) / 3600;
+      await finishMiningSession(existing, minedAmount, userId);
+    }
+
+    const currentRate = rateForLevel(user.currentLevel || 1);
     const startedAt = new Date();
     const endsAt = new Date(startedAt.getTime() + 24 * 60 * 60 * 1000);
 
-    await (prisma as any).miningSession.create({ data: { userId, miningRate: currentRate, startedAt, endsAt, status: "active" } });
-    return res.status(201).json({ message: "Mining started" });
+    const created = await (prisma as any).miningSession.create({ data: { userId, miningRate: currentRate, startedAt, endsAt, status: "active" } });
+    return res.status(201).json({ message: "Mining started", sessionId: created.id, startedAt, endsAt });
   } catch { return res.status(500).json({ message: "Error" }); }
 });
 
@@ -450,18 +460,16 @@ router.post("/claim-daily", authenticateJWT, async (req: AuthenticatedRequest, r
     }
 
     const baseReward = DAILY_REWARDS[currentStreak - 1];
-    const finalReward = baseReward * (user.currentLevel === 2 ? 1.05 : user.currentLevel === 3 ? 1.10 : 1.0);
-    let newXp = (user.currentXp || 0) + 15;
-    let newLevel = user.currentLevel || 1;
-    if (newXp >= 100) {
-      newXp -= 100;
-      newLevel += 1;
-    }
+    const lvl = user.currentLevel || 1;
+    const finalReward = baseReward * (1 + (lvl - 1) * 0.05);
     await prisma.$transaction([
       (prisma as any).dailyBonus.create({ data: { userId, streakDay: currentStreak, rewardAmount: finalReward, claimedAt: now } }),
-      prisma.user.update({ where: { id: userId }, data: { balance: { increment: finalReward }, currentXp: newXp, currentLevel: newLevel } as any })
+      prisma.user.update({ where: { id: userId }, data: { balance: { increment: finalReward } } as any })
     ]);
-    return res.json({ message: `تمت المطالبة ببونص اليوم ${currentStreak} بنجاح! 🎉`, reward: finalReward, currentLevel: newLevel, xpProgress: `${newXp}/100` });
+    // 🎯 منح نقاط النشاط للمطالبة بالبونص اليومي
+    await awardActivity(userId, 15);
+    const updated = await prisma.user.findUnique({ where: { id: userId }, select: { currentLevel: true, currentXp: true } });
+    return res.json({ message: `تمت المطالبة ببونص اليوم ${currentStreak} بنجاح! 🎉`, reward: finalReward, currentLevel: updated?.currentLevel || lvl, xpProgress: `${updated?.currentXp || 0}` });
   } catch (error) {
     return res.status(500).json({ message: "Failed to process bonus" });
   }
@@ -490,10 +498,9 @@ router.get("/admin/stats", authenticateJWT, async (req: AuthenticatedRequest, re
   try {
     if (!isAdmin(req, res)) return;
 
-    const [totalUsers, activeMiners, pendingWithdrawals, payments] = await Promise.all([
+    const [totalUsers, activeMiners, payments] = await Promise.all([
       prisma.user.count(),
       (prisma as any).miningSession.count({ where: { status: "active" } }),
-      (prisma as any).withdrawal.count({ where: { status: "pending" } }),
       (prisma as any).payment.findMany({ select: { amount: true, txHash: true } })
     ]);
 
@@ -506,63 +513,10 @@ router.get("/admin/stats", authenticateJWT, async (req: AuthenticatedRequest, re
       }
     }
 
-    return res.json({ totalUsers, activeMiners, pendingWithdrawals, totalRevenue });
+    return res.json({ totalUsers, activeMiners, totalRevenue });
   } catch (error) {
     console.error("Admin stats error:", error);
     return res.status(500).json({ message: "فشل السيرفر في معالجة طلب الإدارة الحية" });
-  }
-});
-
-// ب. قائمة طلبات السحب المعلقة
-router.get("/admin/pending-withdrawals", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    if (!isAdmin(req, res)) return;
-    const list = await (prisma as any).withdrawal.findMany({
-      where: { status: "pending" },
-      include: { user: { select: { email: true, walletAddress: true } } },
-      orderBy: { createdAt: "asc" }
-    });
-    return res.json(list || []);
-  } catch (error) {
-    console.error("Admin pending withdrawals error:", error);
-    return res.status(500).json({ message: "فشل جلب قائمة سحوبات شبكة سولانا المعلقة" });
-  }
-});
-
-// ج. موافقة/رفض طلب سحب مع إمكانية إعادة الرصيد عند الرفض
-const processWithdrawalSchema = z.object({
-  status: z.enum(["completed", "failed"]),
-  txHash: z.string().min(30).nullable().optional(),
-});
-
-router.post("/admin/process-withdrawal/:id", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    if (!isAdmin(req, res)) return;
-    const withdrawalId = Number(req.params.id);
-    const parsed = processWithdrawalSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: "صيغة المدخلات غير سليمة" });
-
-    const { status, txHash } = parsed.data;
-    const withdrawal = await (prisma as any).withdrawal.findUnique({ where: { id: withdrawalId } });
-    if (!withdrawal) return res.status(404).json({ message: "طلب السحب غير موجود" });
-    if (withdrawal.status !== "pending") return res.status(400).json({ message: "تمت معالجة هذا الطلب مسبقاً" });
-
-    await prisma.$transaction([
-      (prisma as any).withdrawal.update({
-        where: { id: withdrawalId },
-        data: { status, txHash: status === "completed" ? txHash : null }
-      }),
-      ...(status === "failed"
-        ? [prisma.user.update({ where: { id: withdrawal.userId }, data: { balance: { increment: Number(withdrawal.amount) } } as any })]
-        : [])
-    ]);
-
-    return res.json({
-      message: status === "completed" ? "تم تأكيد عملية السحب بنجاح! 🟢" : "تم رفض الطلب وإعادة الرصيد للمستخدم 🔴"
-    });
-  } catch (error) {
-    console.error("Admin process withdrawal error:", error);
-    return res.status(500).json({ message: "فشل تحديث حالة السحب" });
   }
 });
 
@@ -570,10 +524,26 @@ router.post("/admin/process-withdrawal/:id", authenticateJWT, async (req: Authen
 // 🎁 7. مسارات توزيع جوائز التوكن (يدوياً من لوحة المدير)
 // ==========================================
 
-const TOKEN_MINT = process.env.TOKEN_MINT || "";
-const TOKEN_DECIMALS = Number(process.env.TOKEN_DECIMALS || 9);
-const SOLANA_NETWORK = process.env.SOLANA_NETWORK || "devnet";
-const getRpcUrl = () => process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";
+// 🪙 إعداد عقد التوكن: يُقرأ من إعدادات الموقع (ربط يدوي من لوحة المدير) مع تراجع لبيئة التشغيل (.env)
+const getTokenConfig = () => {
+  const s = getSettings();
+  return {
+    mint: (s.tokenMint || process.env.TOKEN_MINT || "").trim(),
+    decimals: s.tokenDecimals || Number(process.env.TOKEN_DECIMALS || 9),
+    network: (s.solanaNetwork || process.env.SOLANA_NETWORK || "devnet").trim(),
+    treasury: (s.treasuryWallet || ADMIN_WALLET).trim(),
+    name: (s.tokenName || process.env.TOKEN_NAME || s.tokenMint || "SOLKIT").trim(),
+    symbol: (s.tokenSymbol || process.env.TOKEN_SYMBOL || "SOLKIT").trim(),
+    icon: (s.tokenIcon || "").trim(),
+  };
+};
+
+const getRpcUrlFor = (network: string) =>
+  process.env.SOLANA_RPC_URL ||
+  process.env.RPC_URL ||
+  (network === "mainnet-beta" ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com");
+
+const getRpcUrl = () => getRpcUrlFor(getTokenConfig().network);
 
 // دالة مساعدة: جلب خطة التوزيع النشطة (تُنشئ الافتراضية إن لم توجد)
 const getActivePlan = async () => {
@@ -632,11 +602,12 @@ const verifyTokenReceipt = async (
 router.get("/admin/distribution/overview", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!isAdmin(req, res)) return;
+    const cfg = getTokenConfig();
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const configured = Boolean(TOKEN_MINT);
+    const configured = Boolean(cfg.mint);
     let treasuryBalance = 0;
     if (configured) {
-      treasuryBalance = await getTreasuryTokenBalance(connection, new PublicKey(TOKEN_MINT), new PublicKey(ADMIN_WALLET));
+      treasuryBalance = await getTreasuryTokenBalance(connection, new PublicKey(cfg.mint), new PublicKey(cfg.treasury));
     }
 
     const [accruedAgg, totalUsers, activeUsers, miningAgg, tasksAgg, gamesAgg, bonusAgg, poolUsers] = await Promise.all([
@@ -662,10 +633,10 @@ router.get("/admin/distribution/overview", authenticateJWT, async (req: Authenti
 
     return res.json({
       configured,
-      mint: TOKEN_MINT || null,
-      decimals: TOKEN_DECIMALS,
-      network: SOLANA_NETWORK,
-      treasuryWallet: ADMIN_WALLET,
+      mint: cfg.mint || null,
+      decimals: cfg.decimals,
+      network: cfg.network,
+      treasuryWallet: cfg.treasury,
       treasuryBalance,
       accruedBalance: Number(accruedAgg._sum.balance || 0),
       poolUsers,
@@ -729,11 +700,14 @@ router.post("/admin/distribution/plan", authenticateJWT, async (req: Authenticat
 router.get("/admin/distribution/prepare", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!isAdmin(req, res)) return;
-    if (!TOKEN_MINT) return res.status(400).json({ message: "لم يتم إعداد التوكن بعد — شغّل سكربت setup-token أولاً" });
+    const rawPct = Number((req.query.percentage as string) || 100);
+    const pct = Math.min(100, Math.max(1, Number.isFinite(rawPct) ? rawPct : 100)) / 100;
+    const cfg = getTokenConfig();
+    if (!cfg.mint) return res.status(400).json({ message: "لم يتم ربط عقد التوكن بعد — اربطه من تبويب «ربط عقد التوكن»" });
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const mint = new PublicKey(TOKEN_MINT);
-    const treasury = new PublicKey(ADMIN_WALLET);
+    const mint = new PublicKey(cfg.mint);
+    const treasury = new PublicKey(cfg.treasury);
 
     const treasuryBalance = await getTreasuryTokenBalance(connection, mint, treasury);
 
@@ -742,19 +716,20 @@ router.get("/admin/distribution/prepare", authenticateJWT, async (req: Authentic
       where: { activationStatus: "active", walletAddress: { not: null }, balance: { gt: 0 } },
       select: { id: true, walletAddress: true, currentLevel: true, balance: true }
     });
-    const pool = poolUsers.reduce((s, u) => s + Number(u.balance), 0);
+    const fullPool = poolUsers.reduce((s, u) => s + Number(u.balance), 0);
+    const pool = fullPool * pct; // رصيد المجمع المراد توزيعه حسب النسبة المختارة
 
-    if (pool <= 0) return res.status(400).json({ message: "رصيد المجمع صفر — لا توجد أرصدة متراكمة بعد" });
+    if (fullPool <= 0) return res.status(400).json({ message: "رصيد المجمع صفر — لا توجد أرصدة متراكمة بعد" });
     if (treasuryBalance < pool) {
       return res.status(400).json({
-        message: `رصيد خزانة التوكن (${treasuryBalance.toFixed(2)}) أقل من رصيد المجمع (${pool.toFixed(2)}) — امنح التوكن للخزانة أولاً`
+        message: `رصيد خزانة التوكن (${treasuryBalance.toFixed(2)}) أقل من رصيد المجمع المطلوب توزيعه (${pool.toFixed(2)}) — امنح التوكن للخزانة أولاً`
       });
     }
 
-    // توزيع نسبي: كل مشترك يستلم حصته = رصيده الحالي (مساهمته في المجمع)
+    // توزيع نسبي: كل مشترك يستلم حصته = رصيده الحالي × النسبة المختارة
     const recipients: any[] = [];
     for (const u of poolUsers) {
-      const amount = Math.floor(Number(u.balance) * 1e8) / 1e8; // تقريب لـ 8 خانات دون تجاوز
+      const amount = Math.floor(Number(u.balance) * pct * 1e8) / 1e8; // تقريب لـ 8 خانات دون تجاوز
       if (amount <= 0) continue;
       const ata = await getAssociatedTokenAddress(mint, new PublicKey(u.walletAddress!));
       const info = await connection.getAccountInfo(ata);
@@ -771,11 +746,13 @@ router.get("/admin/distribution/prepare", authenticateJWT, async (req: Authentic
     const treasuryAta = await getAssociatedTokenAddress(mint, treasury);
 
     return res.json({
-      mint: TOKEN_MINT,
-      decimals: TOKEN_DECIMALS,
-      network: SOLANA_NETWORK,
+      mint: cfg.mint,
+      decimals: cfg.decimals,
+      network: cfg.network,
       pool,
-      treasuryWallet: ADMIN_WALLET,
+      fullPool,
+      requestedPercentage: Math.round(pct * 100),
+      treasuryWallet: cfg.treasury,
       treasuryAta: treasuryAta.toBase58(),
       recipientCount: recipients.length,
       recipients
@@ -804,13 +781,14 @@ const confirmDistributionSchema = z.object({
 router.post("/admin/distribution/confirm", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!isAdmin(req, res)) return;
-    if (!TOKEN_MINT) return res.status(400).json({ message: "لم يتم إعداد التوكن بعد" });
+    const cfg = getTokenConfig();
+    if (!cfg.mint) return res.status(400).json({ message: "لم يتم ربط عقد التوكن بعد" });
     const parsed = confirmDistributionSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "صيغة بيانات التوزيع غير سليمة" });
     const { recipients } = parsed.data;
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const mint = new PublicKey(TOKEN_MINT);
+    const mint = new PublicKey(cfg.mint);
 
     // 1) تحقق بلوكشيني صارم: كل مستلم استلم مبلغه فعلاً في معاملته
     for (const r of recipients) {
@@ -847,17 +825,17 @@ router.post("/admin/distribution/confirm", authenticateJWT, async (req: Authenti
             status: "confirmed"
           }
         });
-        // 🔄 تصفير رصيد المشترك بعد استلام حصته — مع الحفاظ على مستوى الحساب والخبرة وتقدّم الألعاب
+        // 🔄 خصم الرصيد الموزَّع من حساب المشترك بعد استلام حصته — مع الحفاظ على مستوى الحساب والخبرة وتقدّم الألعاب
         await (tx as any).user.update({
           where: { id: r.userId },
-          data: { balance: 0 }
+          data: { balance: { decrement: r.amount } }
         });
       }
       return b;
     });
 
     return res.json({
-      message: "تم توزيع رصيد المجمع وتصفير الأرصدة بنجاح 🎉",
+      message: "تم توزيع رصيد المجمع وتحديث الأرصدة بنجاح 🎉",
       batchId: batch.id,
       totalTokens,
       recipientCount: recipients.length
@@ -921,6 +899,101 @@ router.get("/distribution/summary", authenticateJWT, async (req: AuthenticatedRe
 //  👤 5. مسار الحساب العام بالـ ID//
 //  ==========================================
 
+// ⚙️ قراءة الإعدادات العامة (قبل /:id حتى لا يلتقطها معرّف المسار) — متاح للجميع
+router.get("/settings", async (_req: Request, res: Response) => {
+  try {
+    const s: SiteSettings = getSettings();
+    const cfg = getTokenConfig();
+    return res.json({
+      maintenanceMode: s.maintenanceMode,
+      maintenanceMessage: s.maintenanceMessage,
+      tgeTarget: s.tgeTarget,
+      tokenMint: cfg.mint,
+      tokenDecimals: cfg.decimals,
+      solanaNetwork: cfg.network,
+      treasuryWallet: cfg.treasury,
+      projectName: s.projectName || "SOLKIT",
+      tokenName: cfg.name,
+      tokenSymbol: cfg.symbol,
+      tokenIcon: cfg.icon,
+      levelPlan: getLevelPlan(),
+    });
+  } catch (error: any) {
+    console.error("GET /settings error:", error);
+    return res.status(500).json({ message: "Error" });
+  }
+});
+
+// 🎯 مسار المستويات العام: خطة المستويات التسعة + أعلى 50 حساباً نشاطاً (لوحة القادة)
+router.get("/levels", async (_req: Request, res: Response) => {
+  try {
+    const plan = getLevelPlan();
+    const leaderboard = await prisma.user.findMany({
+      orderBy: { currentXp: "desc" },
+      take: 50,
+      select: { id: true, walletAddress: true, currentLevel: true, currentXp: true, activationStatus: true },
+    });
+    return res.json({ plan, leaderboard });
+  } catch (error: any) {
+    console.error("GET /levels error:", error);
+    return res.status(500).json({ message: "Error" });
+  }
+});
+
+// ⚙️ تحديث الإعدادات — للمدير فقط
+const settingsSchema = z.object({
+  maintenanceMode: z.boolean().optional(),
+  maintenanceMessage: z.string().min(1).max(300).optional(),
+  tgeTarget: z.number().int().min(0).optional(),
+  tokenMint: z.string().max(60).optional(),
+  tokenDecimals: z.number().int().min(0).max(9).optional(),
+  solanaNetwork: z.enum(["devnet", "mainnet-beta"]).optional(),
+  treasuryWallet: z.string().max(60).optional(),
+  projectName: z.string().min(1).max(40).optional(),
+  tokenName: z.string().min(1).max(40).optional(),
+  tokenSymbol: z.string().min(1).max(20).optional(),
+  tokenIcon: z.string().max(2_500_000).refine(
+    (v) => !v || /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/.test(v),
+    "يجب أن تكون الأيقونة رابط بيانات صورة base64 صالحاً"
+  ).optional(),
+  levelPlan: z.array(z.object({
+    level: z.number().int().min(1).max(9),
+    name: z.string().min(1).max(40),
+    minXp: z.number().int().min(0),
+    color: z.string().min(4).max(20),
+    miningRate: z.number().min(0),
+  })).optional()
+});
+
+router.post("/admin/settings", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const parsed = settingsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "صيغة الإعدادات غير صالحة" });
+
+    const updated = updateSettings(parsed.data);
+    const cfg = getTokenConfig();
+    return res.json({
+      message: "تم حفظ الإعدادات بنجاح ✅",
+      maintenanceMode: updated.maintenanceMode,
+      maintenanceMessage: updated.maintenanceMessage,
+      tgeTarget: updated.tgeTarget,
+      tokenMint: cfg.mint,
+      tokenDecimals: cfg.decimals,
+      solanaNetwork: cfg.network,
+      treasuryWallet: cfg.treasury,
+      projectName: updated.projectName || "SOLKIT",
+      tokenName: cfg.name,
+      tokenSymbol: cfg.symbol,
+      tokenIcon: cfg.icon,
+      levelPlan: getLevelPlan(),
+    });
+  } catch (error: any) {
+    console.error("Update settings error:", error);
+    return res.status(500).json({ message: "فشل حفظ الإعدادات" });
+  }
+});
+
   router.get("/:id", async (req, res) => {
     try {
       const user = await prisma.user.findUnique({
@@ -939,4 +1012,5 @@ router.get("/distribution/summary", authenticateJWT, async (req: AuthenticatedRe
       return res.status(500).json({ message: "Error" });
     }
   });
+
   export default router;

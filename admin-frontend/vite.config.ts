@@ -12,8 +12,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // 🔧 شيم محلي يوفّر Buffer كتصدير مُسمّى — يحل "Buffer is not defined" في spl-token-metadata
-      buffer: path.resolve(configDir, "src/shims/buffer.ts"),
+      // 🔧 حزمة buffer الأصلية (تدعم المسارات الفرعية مثل buffer/) — تحل "Buffer is not defined"
+      // في مكتبات السولانا (spl-token, spl-token-metadata, web3) وكذلك استيراد buffer/ في سلاسل WalletConnect.
+      buffer: path.resolve(configDir, "node_modules/buffer"),
       // منع Vite من اعتبار process وحدة Node خارجية — مكتبات السولانا تعتمد عليها
       process: "process/browser",
     },
