@@ -3,12 +3,18 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import jwt from "jsonwebtoken";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 
 const app = express();
+
+// 🧭 خلف Render يوجد وسيط (proxy) واحد يمرّر X-Forwarded-For، لذا نُخبر Express
+// أن يثق بأول وسيط ليحصل req.ip على عنوان الزائر الحقيقي وليس عنوان الوكيل.
+// (بدون ذلك تبدو كل الطلبات من نفس IP ويتشارك جميع الزوار عتبة الحد مما يسبب إيقافاً جماعياً)
+app.set("trust proxy", 1);
 
 // 📦 مسار مجلد الواجهة المبنية (متوافق مع ESM في كل من src/ و dist/)
 const __filename = fileURLToPath(import.meta.url);
@@ -54,6 +60,19 @@ const limiter = rateLimit({
   message: { message: "طلبات كثيرة جداً، يرجى المحاولة لاحقاً بعد 15 دقيقة." },
   standardHeaders: true,
   legacyHeaders: false,
+  // 🔑 التحديد لكل مستخدم على حدة:
+  // - المعرّف (المحفظة/معرّف المستخدم) من توكن الجلسة إن وُجد → لا يشارك المستخدمون العتبة.
+  // - وإلا (زوار قبل تسجيل الدخول) → عنوان IP الحقيقي بعد trust proxy.
+  keyGenerator: (req) => {
+    try {
+      const parts = (req.headers.authorization || "").split(" ");
+      if (parts[0] === "Bearer" && parts[1]) {
+        const d = jwt.decode(parts[1]) as { id?: number; walletAddress?: string } | null;
+        if (d && (d.id || d.walletAddress)) return `u:${d.id ?? d.walletAddress}`;
+      }
+    } catch { /* تجاهل */ }
+    return `ip:${req.ip}`;
+  },
 });
 app.use("/api", limiter);
 
