@@ -33,31 +33,14 @@ app.use(
   })
 );
 
-// 🔓 نسمح بأصل الواجهة المصرّح به (CLIENT_URL، يمكن أن يكون قائمة مفصولة بفواصل)
-// إضافةً إلى أصل تطبيق Capacitor على الموبايل (https://localhost / capacitor://localhost)
-// وأي نطاق فرعي للمشروع، مع عكس أصل الطلب لتمكين الـ credentials.
-const configuredOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-
+// 🔓 نسمح بأي أصل (Access-Control-Allow-Origin: *) لأن تطبيق Capacitor يعمل من
+// أصل https://localhost (وقد يُرسل Origin: null في بعض إعدادات WebView).
+// التطبيق لا يعتمد على ملفات تعريف الارتباط (يستخدم ترويسة Authorization)،
+// لذا الإعداد بلا credentials آمن ويتجنّب رفض المتصفح لطلبات الـWebView.
 app.use(
   cors({
-    origin: (incomingOrigin, cb) => {
-      if (
-        !incomingOrigin ||
-        configuredOrigins.includes(incomingOrigin) ||
-        incomingOrigin === "https://localhost" ||
-        incomingOrigin === "capacitor://localhost" ||
-        incomingOrigin.endsWith(".solkit.app")
-      ) {
-        cb(null, incomingOrigin);
-      } else {
-        // نسمح بأي أصل آخر عبر عكسه (يناسب بيئات الاختبار المختلفة)
-        cb(null, incomingOrigin);
-      }
-    },
-    credentials: true,
+    origin: "*",
+    credentials: false,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
