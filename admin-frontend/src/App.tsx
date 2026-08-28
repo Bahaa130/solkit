@@ -139,41 +139,67 @@ export default function App() {
   }, [splash]);
 
   // ⬇️ سحب من أعلى لأسفل → تحديث الصفحة (pull-to-refresh)
+  // مستمع على مستوى المستند كاملاً (يعمل حتى لو بدأ السحب من الهيدر) عبر Pointer
+  // Events، مع قفل touch-action فور تأكيد السحب حتّى لا يلغي متصفح الـWebView الجيستشر.
   const mainRef = useRef<HTMLElement | null>(null);
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const pullActiveRef = useRef(false);
   useEffect(() => {
-    const el = mainRef.current;
-    if (!el) return;
+    let active = false;
+    let engaged = false;
+    let pid: number | null = null;
     let startY = 0;
-    let p = 0;
+    let pullVal = 0;
     const PULL_T = 64;
-    const onStart = (e: TouchEvent) => {
-      if (el.scrollTop <= 0 && !pullActiveRef.current) {
-        pullActiveRef.current = true;
-        startY = e.touches[0].clientY;
-        p = 0;
-        setPull(0);
-      }
+
+    const setTouchAction = (v: string) => {
+      try { document.documentElement.style.touchAction = v; } catch { /* تجاهل */ }
     };
-    const onMove = (e: TouchEvent) => {
-      if (!pullActiveRef.current) return;
-      const dy = e.touches[0].clientY - startY;
-      if (dy <= 0 || el.scrollTop > 0) {
-        pullActiveRef.current = false;
+
+    const onDown = (e: PointerEvent) => {
+      const el = mainRef.current;
+      if ((el ? el.scrollTop : 0) > 0 || active) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      active = true;
+      engaged = false;
+      pid = e.pointerId;
+      startY = e.clientY;
+      pullVal = 0;
+      setPull(0);
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (!active || e.pointerId !== pid) return;
+      const el = mainRef.current;
+      const atTop = el ? el.scrollTop <= 0 : true;
+      const dy = e.clientY - startY;
+
+      if (dy <= 0) {
+        if (pullVal > 0) return; // حركة عكسية طفيفة أثناء السحب
+        active = false;
+        engaged = false;
+        setTouchAction("");
         setPull(0);
         return;
       }
-      if (p === 0 && dy < 6) return;
+      if (!atTop) { active = false; engaged = false; return; }
+
+      if (!engaged) {
+        engaged = true;
+        setTouchAction("none"); // نمنع المتصفح من أخذ الجيستشر
+      }
       e.preventDefault();
-      p = Math.min(dy, PULL_T + 46) * 0.55;
-      setPull(p);
+      pullVal = Math.min(dy, PULL_T + 46) * 0.55;
+      setPull(pullVal);
     };
-    const onEnd = () => {
-      if (!pullActiveRef.current) return;
-      pullActiveRef.current = false;
-      if (p >= PULL_T) {
+
+    const onEnd = (e: PointerEvent) => {
+      if (!active || e.pointerId !== pid) return;
+      active = false;
+      engaged = false;
+      setTouchAction("");
+      pid = null;
+      if (pullVal >= PULL_T) {
         setRefreshing(true);
         setPull(PULL_T);
         try { sessionStorage.setItem("solkit_skip_splash", "1"); } catch { /* تجاهل */ }
@@ -182,15 +208,19 @@ export default function App() {
         setPull(0);
       }
     };
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: false });
-    el.addEventListener("touchend", onEnd);
+
+    document.addEventListener("pointerdown", onDown, { passive: true });
+    document.addEventListener("pointermove", onMove, { passive: false });
+    document.addEventListener("pointerup", onEnd);
+    document.addEventListener("pointercancel", onEnd);
     return () => {
-      el.removeEventListener("touchstart", onStart);
-      el.removeEventListener("touchmove", onMove);
-      el.removeEventListener("touchend", onEnd);
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onEnd);
+      document.removeEventListener("pointercancel", onEnd);
+      setTouchAction("");
     };
-  }, [session]);
+  }, []);
 
   const handleLogout = () => {
     localStorage.clear();
