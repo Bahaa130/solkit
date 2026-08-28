@@ -120,6 +120,7 @@ export default function App() {
   };
   const [payLoading, setPayLoading] = useState<boolean>(false);
   const [payStatus, setPayStatus] = useState<PayPhase>(null);
+  const [refCode, setRefCode] = useState<string>("");
   const [langOpen, setLangOpen] = useState(false);
   // 🔧 حالة الصيانة (تُجلب من الخادم عند التحميل)
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
@@ -360,7 +361,28 @@ export default function App() {
         throw new Error(t("app.payCheckRefFailed"));
       }
       const userData = await checkUserRes.json();
-      const referrerWalletAddress: string | null = userData?.referrer?.walletAddress || null;
+      let referrerWalletAddress: string | null = userData?.referrer?.walletAddress || null;
+
+      // 🔗 لصق كود إحالة أثناء الدفع: إن لم يكن للمستخدم محيل من قبل والكود مكتوب،
+      // نتحقق منه عبر الخادم ونستخدم محفظة صاحبه لبناء المعاملة المقسّمة.
+      let appliedReferralCode: string | undefined;
+      const typedCode = refCode.trim();
+      if (!referrerWalletAddress && typedCode) {
+        const refRes = await apiFetch("/api/users/resolve-referral", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.jwtToken}`
+          },
+          body: JSON.stringify({ referralCode: typedCode })
+        });
+        const refData = await refRes.json().catch(() => ({}));
+        if (!refRes.ok || !refData?.valid) {
+          throw new Error(refData?.message || t("app.refCodeInvalid"));
+        }
+        referrerWalletAddress = refData.walletAddress;
+        appliedReferralCode = typedCode;
+      }
 
       // 2. بناء المعاملة الموحّدة: تقسيم 0.015 + 0.015 مع إحالة، أو 0.03 كاملة بدونها
       const transaction = new Transaction();
@@ -435,7 +457,7 @@ export default function App() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${session.jwtToken}`
         },
-        body: JSON.stringify({ txHash: txSignature })
+        body: JSON.stringify({ txHash: txSignature, referralCode: appliedReferralCode })
       });
 
       const data = await res.json();
@@ -578,6 +600,24 @@ export default function App() {
                 <span style={{ fontWeight: 800, color: C.text }}>0.015 SOL</span>
               </div>
               <p style={{ ...T2.hint, marginTop: 8 }}>{t("app.splitHint")}</p>
+            </div>
+
+            {/*
+              🔗 حقل لصق كود الإحالة (اختياري): المستخدم الذي سجّل بدون رابط دعوة
+              يستطيع لصق كود صديقه هنا قبل الدفع — فيتحول الدفع تلقائياً لقسيم 0.015 + 0.015.
+            */}
+            <div style={{ ...styles.splitBox, textAlign, marginTop: 16 }}>
+              <label style={{ display: "block", color: C.muted, fontSize: 12, marginBottom: 8 }}>{t("app.refCodeLabel")}</label>
+              <div style={styles.refCodeRow}>
+                <input
+                  className="input"
+                  value={refCode}
+                  onChange={(e) => setRefCode(e.target.value.replace(/\s/g, ""))}
+                  placeholder={t("app.refCodePlaceholder")}
+                  dir="ltr"
+                  style={{ textAlign: "center", fontWeight: 700, color: C.teal }}
+                />
+              </div>
             </div>
 
             {payStatus && (
@@ -774,6 +814,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: "right"
   },
   splitRow: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 },
+  refCodeRow: { display: "flex", gap: 10 },
   payStatus: {
     marginTop: 16,
     padding: "12px 14px",

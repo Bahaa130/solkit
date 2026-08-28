@@ -223,7 +223,7 @@ const findEligiblePayment = async (
 router.post("/activate-account", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    let { txHash } = req.body;
+    let { txHash, referralCode } = req.body;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -232,6 +232,18 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
 
     if (!user) return res.status(404).json({ message: "المستخدم غير موجود" });
     if (user.activationStatus === "active") return res.status(400).json({ message: "حسابك مفعّل مسبقاً!" });
+
+    // 🔗 لصق كود إحالة أثناء إتمام الدفع: إن لم يكن للمستخدم محيل من قبل وأُلصق كود
+    // صالح، نربطه به قبل التوثيق فيُحتسب التقسيم 0.015 + 0.015 ووصول حصة المحيل على البلوكشين.
+    if (!user.referrerId && typeof referralCode === "string" && referralCode.trim()) {
+      const code = referralCode.trim();
+      const ref = await prisma.user.findUnique({ where: { referralCode: code } });
+      if (ref && ref.id !== user.id && ref.walletAddress && ref.walletAddress !== ADMIN_WALLET) {
+        await prisma.user.update({ where: { id: user.id }, data: { referrerId: ref.id } });
+        user.referrerId = ref.id;
+        user.referrer = ref;
+      }
+    }
 
     const solanaRpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";
 
@@ -335,9 +347,15 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
       }
     });
 
-    // 🎯 منح نقاط النشاط لصاحب الإحالة عند تفعيل المحالّ له بنجاح
-    if (user.referrerId) {
-      try { await awardActivity(user.referrerId, 50); } catch (e) { console.error("referrer activity error:", e); }
+    // 🪙 مكافأة صاحب الإحالة: 10 عملات تُضاف لرصيده فور تفعيل المحالّ له بنجاح
+    const referrerId = user.referrerId;
+    if (referrerId) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.user.update({ where: { id: referrerId }, data: { balance: { increment: 10 } } as any });
+          await (tx as any).reward.create({ data: { userId: referrerId, type: "referral_bonus", amount: 10, sourceUserId: userId } });
+        });
+      } catch (e) { console.error("referrer 10-coin bonus error:", e); }
     }
 
     return res.json({ message: "تم تفعيل حسابك كمستخدم نشط بنجاح باهر عبر البلوكشين! 🎉", activationStatus: "active" });
@@ -346,6 +364,32 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
   }
 });
 
+
+
+// 🔍 التحقق الفوري من كود إحالة أُلصق قبل إتمام الدفع: يعيد محفظة صاحبه
+// ليستطيع التطبيق بناء المعاملة المقسّمة 0.015 + 0.015 قبل توقيعها.
+router.post("/resolve-referral", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const code = String(req.body?.referralCode || "").trim();
+    if (!code) return res.status(400).json({ message: "أدخل كود الإحالة أولاً" });
+
+    const referrer = await prisma.user.findUnique({
+      where: { referralCode: code },
+      select: { id: true, walletAddress: true }
+    });
+
+    if (!referrer) return res.status(400).json({ message: "كود الإحالة غير صحيح، تأكد منه وأعد المحاولة" });
+    if (referrer.id === req.user!.id) return res.status(400).json({ message: "لا يمكنك إدخال كود الإحالة الخاص بك!" });
+    if (!referrer.walletAddress || referrer.walletAddress === ADMIN_WALLET) {
+      return res.status(400).json({ message: "هذا الكود غير صالح للتقسيم حالياً" });
+    }
+
+    return res.json({ valid: true, walletAddress: referrer.walletAddress });
+  } catch (e) {
+    console.error("resolve-referral error:", e);
+    return res.status(500).json({ message: "خطأ أثناء التحقق من الكود، أعد المحاولة" });
+  }
+});
 
 
 // ✅ مسار شبكة الإحالة المصلح والمحمي بالكامل 100% ضد الـ Array Syntax Crash
