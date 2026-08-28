@@ -18,8 +18,10 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
   const { dir, t } = useLang();
   const { branding } = useBranding();
   const { connectWallet, signMessageBase64 } = useSolanaWallet();
-  const [loading, setLoading] = useState(false);
   const [referralCodeFromUrl, setReferralCodeFromUrl] = useState<string | null>(null);
+  const [phase, setPhase] = useState<"idle" | "connecting" | "ready" | "signing">("idle");
+  const [linkedAddress, setLinkedAddress] = useState<string | null>(null);
+  const [challengeMsg, setChallengeMsg] = useState<string | null>(null);
   const toast = useToast();
 
   // 1. التقاط كود الإحالة تلقائياً من الرابط عند فتح الصفحة
@@ -32,20 +34,27 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
     }
   }, []);
 
-  // 2. دالة الاتصال بالمحفظة (Phantom على الويب / WalletConnect على الموبايل) والتسجيل الآمن
-  const handleConnectPhantom = async () => {
+  // ⏸️ هل المستخدم ألغى/رفض فعلاً؟ (نفرّق بين الرفض الحقيقي والأخطاء التقنية)
+  const isUserCancel = (m?: string) =>
+    !m || /rejected|denied|declined|cancel|not\s*approved/i.test(m);
+
+  // 2️⃣ الخطوة الأولى: ربط المحفظة ثم جلب رسالة التحدّي (لا توقيع هنا).
+  // التوقيع يُترك لخطوة مستقلة ليتم ضمن نقرة المستخدم المباشرة —
+  // متصفح Phantom الداخلي يرفض "Unexpected error" عند استدعاء التوقيع
+  // من خارج سياق النقرة (بعد انتظار الشبكة).
+  const handleConnectWallet = async () => {
     try {
-      setLoading(true);
-      // 🔌 الاتصال بالمحفظة عبر المحوّل الموحّد (يبقى داخل التطبيق على الموبايل)
+      setPhase("connecting");
       const walletAddress = await connectWallet();
       if (!walletAddress) {
-        // على الموبايل بدون WalletConnect: فُتح التطبيق داخل متصفح Phantom ويتابع المستخدم هناك
+        if (isUserCancel()) toast.warning(t("connect.toastCancelled"));
+        setPhase("idle");
         return;
       }
 
       console.log("تمت قراءة عنوان محفظة سولانا بنجاح:", walletAddress);
 
-      // 1️⃣ جلب رسالة التحدّي من السيرفر
+      // جلب رسالة التحدّي قبل التوقيع (مستقلة عن النقرة — لا مشكلة في انتظارها هنا)
       const challengeRes = await apiFetch("/api/users/login-challenge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,27 +63,47 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
       if (!challengeRes.ok) {
         const err = await challengeRes.json().catch(() => ({}));
         toast.error(err.message || t("connect.toastAuthFailed"));
+        setPhase("idle");
         return;
       }
       const { message } = await challengeRes.json();
+      setLinkedAddress(walletAddress);
+      setChallengeMsg(message);
+      setPhase("ready");
+      toast.info(t("connect.walletLinked"));
+    } catch (err: any) {
+      console.error("Wallet Connect Error:", err);
+      const msg = err?.message;
+      if (msg === "no_injected_provider") toast.warning(t("connect.noInjected"));
+      else if (msg === "connect_no_address") toast.warning(t("connect.noAddress"));
+      else if (typeof msg === "string" && msg && !isUserCancel(msg)) toast.warning(msg);
+      else toast.warning(t("connect.toastCancelled"));
+      setPhase("idle");
+    }
+  };
 
-      // 2️⃣ توقيع الرسالة داخل المحفظة (تظهر نافذة التوقيع = تأكيد الربط المرئي)
+  // 3️⃣ الخطوة الثانية (ضمن نقرة المستخدم مباشرة): توقيع رسالة التحدّي فوراً
+  // ثم إرسالها للسيرفر — التوقيع يحدث الآن داخل نفس النقرة فيقبله Phantom.
+  const handleSignAndLogin = async () => {
+    if (!linkedAddress || !challengeMsg) return;
+    try {
+      setPhase("signing");
       toast.info(t("connect.signing"));
-      const signature = await signMessageBase64(message);
+      const signature = await signMessageBase64(challengeMsg);
       if (!signature) {
         toast.warning(t("connect.toastCancelled"));
+        setPhase("ready");
         return;
       }
 
-      // 3️⃣ إرسال التوقيع للسيرفر للتحقق من ملكية المحفظة
       const response = await apiFetch("/api/users/login-wallet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          walletAddress: walletAddress,
+          walletAddress: linkedAddress,
           referralCode: referralCodeFromUrl || null,
           signature,
-          message
+          message: challengeMsg
         })
       });
 
@@ -92,41 +121,30 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
           localStorage.setItem("solkit_token", data.token);
           localStorage.setItem("solkit_role", data.user?.role || "user");
           localStorage.setItem("solkit_user_id", data.user?.id?.toString() || "0");
-          localStorage.setItem("solkit_wallet", walletAddress);
-          localStorage.setItem("solkit_status", userStatus); // 🟢 تثبيت الحالة الحقيقية (active) كاش للمتصفح
+          localStorage.setItem("solkit_wallet", linkedAddress);
+          localStorage.setItem("solkit_status", userStatus);
 
           // تمرير البيانات المحدثة لملف التحكم الرئيسي لتحديث الواجهة فوراً
-          onWalletConnected(data.token, walletAddress, data.user?.role || "user", userStatus);
+          onWalletConnected(data.token, linkedAddress, data.user?.role || "user", userStatus);
         } else {
           toast.error(t("connect.toastNoToken"));
+          setPhase("ready");
         }
       } else {
-        // في حال وجود خطأ بالخلفية، يتم فك تشفير رسالة السيرفر بأمان
         try {
           const errData = JSON.parse(rawText);
           toast.error(errData.message || t("connect.toastAuthFailed"));
         } catch {
           toast.error(t("connect.toastConnFailed"));
         }
+        setPhase("ready");
       }
     } catch (err: any) {
-      console.error("Wallet Connection Error:", err);
+      console.error("Wallet Login Error:", err);
       const msg = err?.message;
-      // 🎯 فقط عند الإلغاء/الرفض الحقيقي من المستخدم نقول "إلغاء"،
-      // وإلا نعرض السبب التقني الفعلي بدقة بدل رسالة مضللة.
-      const isUserCancel = (m?: string) =>
-        !m || /rejected|denied|declined|cancel|not\s*approved/i.test(m);
-      if (msg === "no_injected_provider") {
-        toast.warning(t("connect.noInjected"));
-      } else if (msg === "connect_no_address") {
-        toast.warning(t("connect.noAddress"));
-      } else if (typeof msg === "string" && msg && !isUserCancel(msg)) {
-        toast.warning(msg);
-      } else {
-        toast.warning(t("connect.toastCancelled"));
-      }
-    } finally {
-      setLoading(false);
+      if (typeof msg === "string" && msg && !isUserCancel(msg)) toast.warning(msg);
+      else toast.warning(t("connect.toastCancelled"));
+      setPhase("ready");
     }
   };
 
@@ -143,21 +161,45 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
           </div>
         )}
 
-        <button
-          onClick={handleConnectPhantom}
-          disabled={loading}
-          className="btn btn-purple btn-block"
-          style={{ padding: "16px", fontSize: 15, marginTop: 8 }}
-        >
-          {loading ? (
-            <>
-              <span className="spinner" style={{ borderTopColor: "#fff" }} />
-              {t("connect.loadingBtn")}
-            </>
-          ) : (
-            t("connect.connectBtn")
-          )}
-        </button>
+        {phase === "idle" && (
+          <button
+            onClick={handleConnectWallet}
+            className="btn btn-purple btn-block"
+            style={{ padding: "16px", fontSize: 15, marginTop: 8 }}
+          >
+            {t("connect.connectBtn")}
+          </button>
+        )}
+
+        {phase === "connecting" && (
+          <button disabled className="btn btn-purple btn-block" style={{ padding: "16px", fontSize: 15, marginTop: 8 }}>
+            <span className="spinner" style={{ borderTopColor: "#fff" }} />
+            {t("connect.loadingBtn")}
+          </button>
+        )}
+
+        {phase === "ready" && (
+          <>
+            <div className="pill" style={{ ...styles.badge, marginBottom: 14 }}>
+              ✅ {t("connect.walletLinked")}
+            </div>
+            <button
+              onClick={handleSignAndLogin}
+              className="btn btn-primary btn-block"
+              style={{ padding: "16px", fontSize: 15, marginTop: 8 }}
+            >
+              {t("connect.signBtn")}
+            </button>
+            <p style={{ ...styles.hint, marginTop: 12 }}>{t("connect.signHint")}</p>
+          </>
+        )}
+
+        {phase === "signing" && (
+          <button disabled className="btn btn-primary btn-block" style={{ padding: "16px", fontSize: 15, marginTop: 8 }}>
+            <span className="spinner" style={{ borderTopColor: "#fff" }} />
+            {t("connect.loadingBtn")}
+          </button>
+        )}
 
         <div style={styles.features}>
           <span className="pill" style={featurePill}>{t("connect.featureMining")}</span>
@@ -205,6 +247,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     animation: "pulseGlow 2s ease-out infinite"
   },
   features: { display: "flex", justifyContent: "center", gap: 8, marginTop: 26, flexWrap: "wrap" },
+  hint: { color: C.muted, fontSize: 11.5, lineHeight: 1.8 },
   version: {
     marginTop: 18,
     fontSize: 10,
