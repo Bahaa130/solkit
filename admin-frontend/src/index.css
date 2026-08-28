@@ -10,6 +10,11 @@
 * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
 html, body { overscroll-behavior-y: contain; touch-action: manipulation; }
 
+/* 🔒 منع تحديد النصوص والصور (مع إبقاء الحقول قابلة للكتابة والاختيار) */
+* { user-select: none; -webkit-user-select: none; }
+input, textarea, [contenteditable="true"] { user-select: text; -webkit-user-select: text; }
+img, svg, canvas, video { -webkit-user-drag: none; user-select: none; -webkit-user-select: none; }
+
 html, body, #root { min-height: 100%; }
 
 body {
