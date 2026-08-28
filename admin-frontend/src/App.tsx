@@ -21,21 +21,62 @@ import { useSolanaWallet } from "./lib/walletProvider";
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
 const SOLANA_RPC_URL = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
 
-// 🔁 جلب آخر blockhash مع إعادة محاولة تلقائية لتجاوز أوقات الازدحام/بطء الشبكة
+// 🔁 جلب آخر blockhash مع إعادة محاولة تلقائية لتجاوز أوقات الازدحام/بطء الشبكة.
+// المسار الأول عبر web3.js Connection، والثاني عبر fetch مباشر (نفس آلية apiFetch
+// التي تعمل لتسجيل الدخول داخل تطبيق الموبايل) — فيرمي خطأً يحوي تفاصيل آخر فشل.
 async function fetchBlockhashWithRetry(
   connection: Connection,
-  retries = 3,
-): Promise<{ blockhash: string; lastValidBlockHeight: number } | null> {
-  for (let i = 0; i < retries; i++) {
+  report: (label: string, err: unknown) => void,
+): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  let lastErr: unknown = null;
+
+  // 1️⃣ عبر web3.js Connection
+  for (let i = 0; i < 3; i++) {
     try {
       const info = await connection.getLatestBlockhash("confirmed");
       return { blockhash: info.blockhash, lastValidBlockHeight: info.lastValidBlockHeight };
     } catch (e) {
-      console.warn(`blockhash retry ${i + 1}/${retries} failed:`, e);
-      await new Promise((res) => setTimeout(res, 1200 * (i + 1)));
+      lastErr = e;
+      report(`web3 (${i + 1}/3)`, e);
+      await sleep(1000 * (i + 1));
     }
   }
-  return null;
+
+  // 2️⃣ عبر fetch مباشر (يُرسل نفس طلب JSON-RPC للبروكسي)
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(SOLANA_RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getLatestBlockhash",
+          params: [{ commitment: "confirmed" }],
+        }),
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data?.result?.value?.blockhash) {
+          return {
+            blockhash: data.result.value.blockhash,
+            lastValidBlockHeight: data.result.value.lastValidBlockHeight,
+          };
+        }
+        lastErr = new Error(`http ${res.status}`);
+      } else {
+        lastErr = new Error(`http ${res.status}`);
+      }
+    } catch (e) {
+      lastErr = e;
+      report(`direct (${i + 1}/3)`, e);
+    }
+    await sleep(1000 * (i + 1));
+  }
+
+  const detail = lastErr instanceof Error ? lastErr.message : "network";
+  throw new Error(`RPC unreachable :: ${detail}`);
 }
 
 // 💰 مبالغ التفعيل المحدّثة: 0.015 SOL لكل محفظة (الإجمالي 0.03 SOL)
@@ -253,9 +294,15 @@ export default function App() {
       }
 
       transaction.feePayer = userPublicKey;
-      const latestBlockHashInfo = await fetchBlockhashWithRetry(connection);
-      if (!latestBlockHashInfo) {
-        setPayStatus({ type: "error", text: `${t("app.payRpcFailed")} [${SOLANA_RPC_URL}]` });
+      let latestBlockHashInfo: { blockhash: string; lastValidBlockHeight: number } | null = null;
+      try {
+        latestBlockHashInfo = await fetchBlockhashWithRetry(connection, (label, err) =>
+          console.warn("[blockhash]", label, err),
+        );
+      } catch (err) {
+        const detail =
+          err instanceof Error ? err.message.replace(/^RPC unreachable :: /, "") : "network";
+        setPayStatus({ type: "error", text: `${t("app.payRpcFailed")} [${SOLANA_RPC_URL}] (${detail})` });
         return;
       }
       transaction.recentBlockhash = latestBlockHashInfo.blockhash;
