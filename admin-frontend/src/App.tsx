@@ -313,6 +313,10 @@ export default function App() {
 
       if (!txSignature) throw new Error(t("app.payNoSig"));
 
+      // 💾 تذكّر التوقيع محلياً: إن انقطع التطبيق قبل إرسال التوثيق يمكن استرجاع الدفعة
+      // لاحقاً دون دفع مزدوج (السيرفر يتحقق من المعاملة على البلوكشين).
+      localStorage.setItem("solkit_pending_tx", txSignature);
+
       setPayStatus({ type: "confirming", text: t("app.payConfirming") });
       // 🔁 التأكيد المحلي "أفضل جهد": لا يدعم Render WebSocket، لذا نضع مهلة قصوى
       // (15 ثانية) ولا ننتظرها أبداً — تأكيد السيرفر المباشر عبر RPC هو المرجع الحقيقي.
@@ -343,6 +347,7 @@ export default function App() {
       if (res.ok) {
         setPayStatus({ type: "success", text: data.message || t("app.paySuccess") });
         localStorage.setItem("solkit_status", "active");
+        localStorage.removeItem("solkit_pending_tx");
         setSession(prev => prev ? { ...prev, activationStatus: "active" } : null);
       } else {
         setPayStatus({ type: "error", text: data.message || t("app.payServerRefused") });
@@ -350,6 +355,38 @@ export default function App() {
     } catch (error) {
       console.error("Payment activation error:", error);
       setPayStatus({ type: "error", text: error instanceof Error ? error.message : t("app.payError") });
+    } finally {
+      setPayLoading(false);
+    }
+  };
+
+  // 🔄 استرجاع التفعيل من دفعة سابقة = بُثّت على البلوكشين ولم يكتمل التفعيل.
+  // يُرسل بدون txHash، والسيرفر يبحث عن الدفعة المؤهلة ويفعّل بها دون دفع مزدوج.
+  const handleResumeActivation = async () => {
+    if (!session?.jwtToken) return;
+    try {
+      setPayLoading(true);
+      setPayStatus({ type: "loading", text: t("app.payConfirming") });
+      const res = await apiFetch("/api/users/activate-account", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.jwtToken}`
+        },
+        body: JSON.stringify({})
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        localStorage.setItem("solkit_status", "active");
+        localStorage.removeItem("solkit_pending_tx");
+        setSession(prev => prev ? { ...prev, activationStatus: "active" } : null);
+        setPayStatus({ type: "success", text: data.message || t("app.paySuccess") });
+      } else {
+        setPayStatus({ type: "error", text: data.message || t("app.payServerRefused") });
+      }
+    } catch (error: any) {
+      console.error("Activation resume error:", error);
+      setPayStatus({ type: "error", text: error?.message || t("app.payError") });
     } finally {
       setPayLoading(false);
     }
@@ -458,6 +495,14 @@ export default function App() {
 
             <button onClick={handlePaymentActivation} disabled={payLoading} className="btn btn-purple btn-block" style={{ marginTop: 20, padding: "16px" }}>
               {payLoading ? t("app.payBtnLoading") : t("app.payBtn")}
+            </button>
+            <button
+              onClick={handleResumeActivation}
+              disabled={payLoading}
+              className="btn btn-block"
+              style={{ marginTop: 10, padding: "12px", fontSize: 12, background: "rgba(124,92,255,0.08)", border: "1px dashed rgba(124,92,255,0.45)", color: "#b3a1ff" }}
+            >
+              {t("app.resumePayBtn")}
             </button>
             <p style={{ ...T.hint, marginTop: 14 }}>{t("app.payHint")}</p>
           </div>

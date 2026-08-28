@@ -180,12 +180,50 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
 // ==========================================
 // 💳 2. مسار تفعيل الحساب الصارم والتحقق الفعلي عبر البلوكشين (Solana RPC)
 // ==========================================
+// 🔍 استرجاع دفعة مؤهلة من البلوكشين: يفحص آخر تحويلات لمحفظة الموقع بحثاً عن
+// تحويل مؤهَّل صادر من محفظة المستخدم بالمبلغ المطلوب. يُستخدم عند انقطاع التطبيق
+// بعد بثّ الدفعة وقبل إكمال التفعيل — لتفادي دفع مزدوج.
+const findEligiblePayment = async (
+  solanaRpcUrl: string,
+  userWallet: string,
+  hasReferrer: boolean,
+): Promise<string | null> => {
+  const connection = new Connection(solanaRpcUrl, "confirmed");
+  const minRequired = hasReferrer ? 15000000 : 30000000;
+  try {
+    const signatures = await connection.getSignaturesForAddress(
+      new PublicKey(ADMIN_WALLET),
+      { limit: 30 },
+    );
+    for (const sig of signatures) {
+      if (sig.err) continue;
+      const tx = await connection.getTransaction(sig.signature, {
+        commitment: "confirmed",
+        maxSupportedTransactionVersion: 0,
+      });
+      if (!tx || !tx.meta || tx.meta.err) continue;
+      const keys = tx.transaction.message.getAccountKeys();
+      let adminIdx = -1;
+      let fromIdx = -1;
+      for (let i = 0; i < keys.length; i++) {
+        const addr = keys.get(i)?.toString();
+        if (addr === ADMIN_WALLET) adminIdx = i;
+        if (addr === userWallet) fromIdx = i;
+      }
+      if (adminIdx === -1 || fromIdx === -1) continue;
+      const adminDelta = tx.meta.postBalances[adminIdx] - tx.meta.preBalances[adminIdx];
+      if (adminDelta >= minRequired) return sig.signature;
+    }
+  } catch (err) {
+    console.error("findEligiblePayment error:", err);
+  }
+  return null;
+};
+
 router.post("/activate-account", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const { txHash } = req.body;
-
-    if (!txHash) return res.status(400).json({ message: "رمز توقيع المعاملة TxHash مطلوب للتوثيق!" });
+    let { txHash } = req.body;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -195,20 +233,36 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
     if (!user) return res.status(404).json({ message: "المستخدم غير موجود" });
     if (user.activationStatus === "active") return res.status(400).json({ message: "حسابك مفعّل مسبقاً!" });
 
+    const solanaRpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";
+
+    if (!txHash) {
+      // 🔍 الاسترجاع: التطبيق بُثّ الدفعة لكنه انقطع قبل إرسال التوثيق — ابحث لها على البلوكشين
+      txHash = await findEligiblePayment(solanaRpcUrl, user.walletAddress!, Boolean(user.referrerId));
+      if (!txHash) return res.status(400).json({ message: "رمز توقيع المعاملة TxHash مطلوب للتوثيق!" });
+    }
+
     try {
       // 🌐 استخدام الـ Endpoint الصحيح والمستقر من البيئة أو Devnet كاحتياطي
-      const solanaRpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";
       const connection = new Connection(solanaRpcUrl, "confirmed");
       // 🔁 إعادة محاولة قراءة المعاملة: devnet قد لا يُرجعها فوراً (تأخير الفهرسة)
       let txStatus = null;
       for (let attempt = 0; attempt < 5; attempt++) {
-        txStatus = await connection.getTransaction(txHash, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        txStatus = await connection.getTransaction(txHash!, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
         if (txStatus) break;
         await new Promise((r) => setTimeout(r, 2500)); // انتظر 2.5s بين المحاولات
       }
 
       if (!txStatus) {
-        return res.status(400).json({ message: "لم يتم العثور على المعاملة على البلوكشين بعد، أعد المحاولة خلال ثوانٍ" });
+        // 🔍 محاولة أخيرة: المستخدم أرسل توقيعاً قديماً/غير مدرج — ابحث عن أحدث دفعة بديلة
+        const recovered = await findEligiblePayment(solanaRpcUrl, user.walletAddress!, Boolean(user.referrerId));
+        if (!recovered) {
+          return res.status(400).json({ message: "لم يتم العثور على المعاملة على البلوكشين بعد، أعد المحاولة خلال ثوانٍ" });
+        }
+        txHash = recovered;
+        txStatus = await connection.getTransaction(txHash!, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        if (!txStatus) {
+          return res.status(400).json({ message: "لم يتم العثور على المعاملة على البلوكشين بعد، أعد المحاولة خلال ثوانٍ" });
+        }
       }
 
       // 🔍 فحص أمني متقدم وثابت: التحقق من المستلم الحقيقي والمبلغ الفعلي للتحويل
