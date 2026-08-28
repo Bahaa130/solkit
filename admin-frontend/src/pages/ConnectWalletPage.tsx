@@ -112,12 +112,16 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
     } catch (err: any) {
       console.error("Wallet Connection Error:", err);
       const msg = err?.message;
+      // 🎯 فقط عند الإلغاء/الرفض الحقيقي من المستخدم نقول "إلغاء"،
+      // وإلا نعرض السبب التقني الفعلي بدقة بدل رسالة مضللة.
+      const isUserCancel = (m?: string) =>
+        !m || /rejected|denied|declined|cancel|not\s*approved/i.test(m);
       if (msg === "no_injected_provider") {
         toast.warning(t("connect.noInjected"));
       } else if (msg === "connect_no_address") {
         toast.warning(t("connect.noAddress"));
-      } else if (msg) {
-        toast.warning(`${t("connect.toastCancelled")} [${msg}]`);
+      } else if (typeof msg === "string" && msg && !isUserCancel(msg)) {
+        toast.warning(msg);
       } else {
         toast.warning(t("connect.toastCancelled"));
       }

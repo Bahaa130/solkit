@@ -45,24 +45,38 @@ export const ensureConnected = async (): Promise<string | null> => {
 
 // ✍️ توقيع رسالة نصية عبر محفظة Phantom (يُظهر نافذة التوقيع الحقيقية داخل التطبيق).
 // نعيد التوقيع Base64 جاهزاً للإرسال عبر JSON إلى السيرفر للتحقق منه.
+// 🔁 تُعاد المحاولة تلقائياً مرة واحدة إن فشل التوقيع بخطأ تقني عابر (تزاحم طلبات
+// الامتداد يرمي أحياناً "User rejected" زائفة بعد قبول المستخدم)؛ أما الإلغاء الحقيقي
+// من المستخدم فنعترف به فوراً ولا نعيد المحاولة.
 export const signMessage = async (message: string): Promise<string | null> => {
   const provider = getInjectedProvider();
   if (!provider || typeof provider.signMessage !== "function") return null;
-  try {
-    const encoded = new TextEncoder().encode(message);
-    // Phantom يُرجع { signature: Uint8Array, publicKey }، وأحيانًا Uint8Array مباشرةً
-    const result: any = await provider.signMessage(encoded);
-    let signature: Uint8Array | undefined;
-    if (result instanceof Uint8Array) signature = result;
-    else signature = result?.signature;
-    if (!signature || !signature.length) return null;
-    // تحويل Uint8Array → Base64
-    let binary = "";
-    for (let i = 0; i < signature.length; i++) binary += String.fromCharCode(signature[i]);
-    return btoa(binary);
-  } catch {
-    return null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const encoded = new TextEncoder().encode(message);
+      // Phantom يُرجع { signature: Uint8Array, publicKey }، وأحيانًا Uint8Array مباشرةً
+      const result: any = await provider.signMessage(encoded);
+      let signature: Uint8Array | undefined;
+      if (result instanceof Uint8Array) signature = result;
+      else signature = result?.signature;
+      if (!signature || !signature.length) return null;
+      // تحويل Uint8Array → Base64
+      let binary = "";
+      for (let i = 0; i < signature.length; i++) binary += String.fromCharCode(signature[i]);
+      return btoa(binary);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      // إلغاء/رفض حقيقي من المستخدم — لا نعاد المحاولة
+      if (/rejected|denied|declined|cancel|not\s*approved/i.test(msg)) return null;
+      // خطأ تقني عابر (تزاحم الطلبات) — نعيد المحاولة بعد مهلة قصيرة
+      if (attempt === 1) {
+        await new Promise((r) => setTimeout(r, 700));
+        continue;
+      }
+      return null;
+    }
   }
+  return null;
 };
 
 

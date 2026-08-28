@@ -233,10 +233,23 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
         }
         return null;
       }
-      // 💻 محوّل الويب/سطح المكتب
-      if (!signMessage) throw new Error("signMessage_unavailable");
-      const sig = await signMessage(new TextEncoder().encode(message));
-      return base64FromUint8(sig);
+      // 💻 محوّل الويب/سطح المكتب (مع إعادة محاولة واحدة للخطأ العابر،
+      // وإرجاع null بدل رمي استثناء لتظهر الواجهة الرسالة الصحيحة)
+      if (!signMessage) return null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const sig = await signMessage(new TextEncoder().encode(message));
+          if (sig) return base64FromUint8(sig);
+        } catch (e: any) {
+          const msg = e?.message || "";
+          if (/rejected|denied|declined|cancel|not\s*approved/i.test(msg)) return null;
+          if (attempt === 1) {
+            await new Promise((r) => setTimeout(r, 700));
+            continue;
+          }
+        }
+      }
+      return null;
     },
     [nativeMobile, phantomAddress, signMessage],
   );
