@@ -32,12 +32,31 @@ app.use(helmet({
         },
     },
 }));
-// 🔓 نسمح بأي أصل (Access-Control-Allow-Origin: *) لأن تطبيق Capacitor يعمل من
-// أصل https://localhost (وقد يُرسل Origin: null في بعض إعدادات WebView).
-// التطبيق لا يعتمد على ملفات تعريف الارتباط (يستخدم ترويسة Authorization)،
-// لذا الإعداد بلا credentials آمن ويتجنّب رفض المتصفح لطلبات الـWebView.
+// 🔐 CORS بقائمة بيضاء (بدل *) — طبقة دفاع عميقة: المتصفحات فقط تُقيَّد بـ CORS،
+// بينما الطلبات بلا متصفح (خادم-إلى-خادم، curl، WebSocket) تمرّ دائماً.
+// النطاقات المصرَّح بها: موقع Render الرسمي + أصول WebView في Capacitor + بيئة التطوير + أية نطاقات مخصصة.
+const ALLOWED_ORIGINS = new Set([
+    process.env.CLIENT_URL || "",
+    ...(process.env.CLIENT_URLS || "").split(",").map((s) => s.trim()),
+    "https://solkit-jfym.onrender.com",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://localhost",
+    "https://localhost",
+    "capacitor://localhost",
+    "ionic://localhost",
+    "http://127.0.0.1",
+].filter(Boolean));
 app.use(cors({
-    origin: "*",
+    // ✅ الطلب مقبول إذا: لا ترويسة Origin أصلاً (غير متصفح) أو `null` (بعض WebViews) أو ضمن القائمة.
+    // ❌ أي نطاق آخر: لا نُرسل Access-Control-Allow-Origin فيرفضه المتصفح تلقائياً.
+    origin: (origin, cb) => {
+        if (!origin || origin === "null" || ALLOWED_ORIGINS.has(origin))
+            return cb(null, true);
+        console.warn(`[CORS] blocked origin: ${origin}`);
+        return cb(null, false);
+    },
     credentials: false,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
