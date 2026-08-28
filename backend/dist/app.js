@@ -27,12 +27,15 @@ app.use(helmet({
         },
     },
 }));
-const allowedOrigin = process.env.CLIENT_URL || "http://localhost:5173";
+// 🔓 نسمح بأي أصل (Access-Control-Allow-Origin: *) لأن تطبيق Capacitor يعمل من
+// أصل https://localhost (وقد يُرسل Origin: null في بعض إعدادات WebView).
+// التطبيق لا يعتمد على ملفات تعريف الارتباط (يستخدم ترويسة Authorization)،
+// لذا الإعداد بلا credentials آمن ويتجنّب رفض المتصفح لطلبات الـWebView.
 app.use(cors({
-    origin: allowedOrigin,
-    credentials: true,
+    origin: "*",
+    credentials: false,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.use(express.json());
 const limiter = rateLimit({
