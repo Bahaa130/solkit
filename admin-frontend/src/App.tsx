@@ -5,6 +5,7 @@ import HomePage from "./pages/HomePage";
 import ReferralPage from "./pages/ReferralPage";
 import TasksPage from "./pages/TasksPage";
 import BonusPage from "./pages/BonusPage";
+import HelpPage from "./pages/HelpPage";
 import AdminPanelPage from "./pages/AdminPanelPage";
 import AirdropPage from "./pages/AirdropPage";
 import LevelsPage from "./pages/LevelsPage";
@@ -104,7 +105,7 @@ export default function App() {
   const { address: walletAddressHook, connectWallet, sendTransaction } = useSolanaWallet();
   const [session, setSession] = useState<Session | null>(null);
   // 🗺️ قائمة التبويبات المعروفة (تُستخدم لفلترة المسارات غير الصالحة → 404)
-  const KNOWN_TABS = ["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels"];
+  const KNOWN_TABS = ["home", "airdrop", "referral", "tasks", "bonus", "protect", "admin", "levels"];
   // 🔗 قراءة التبويب من معامل ?tab= في الرابط عند التحميل (قيمة غير معروفة → "404")
   const [activeTab, setActiveTab] = useState<string>(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
@@ -530,6 +531,7 @@ export default function App() {
     { key: "referral", icon: "🔗", adminOnly: false },
     { key: "tasks", icon: "🎁", adminOnly: false },
     { key: "bonus", icon: "📅", adminOnly: false },
+    { key: "protect", icon: "🛡️", adminOnly: false },
     { key: "admin", icon: "👑", adminOnly: true },
   ].filter((tb) => !tb.adminOnly || session.walletAddress === ADMIN_WALLET);
 
@@ -631,10 +633,11 @@ export default function App() {
               {activeTab === "referral" && <ReferralPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "tasks" && <TasksPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "bonus" && <BonusPage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "protect" && <HelpPage />}
               {activeTab === "admin" && session.walletAddress === ADMIN_WALLET && <AdminPanelPage token={session.jwtToken || ""} />}
               {activeTab === "levels" && <LevelsPage userId={session.userId} token={session.jwtToken || ""} />}
               {/* 🚫 تبويب غير معروف → صفحة 404 آمنة */}
-              {!["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels"].includes(activeTab) && (
+              {!["home", "airdrop", "referral", "tasks", "bonus", "protect", "admin", "levels"].includes(activeTab) && (
                 <NotFoundPage onNavigateTab={navigateTab} />
               )}
             </div>

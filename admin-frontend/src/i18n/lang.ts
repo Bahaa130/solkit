@@ -16,5 +16,5 @@ export const LANGS: LangMeta[] = [
   { code: "tr", flag: "🇹🇷", label: "Türkçe", dir: "ltr" },
 ];
 
-export const DEFAULT_LANG = "ar";
+export const DEFAULT_LANG = "en";
 export const LANG_STORAGE_KEY = "solkit_lang";
