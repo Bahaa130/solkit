@@ -169,10 +169,11 @@ export async function signMessagePhantomMobile(message: string): Promise<string>
   return bytesToBase64(bs58.decode(decrypted.signature));
 }
 
-// 📤 توقيع معاملة: يفتح Phantom للتأكيد، ثم نبثّ المعاملة بأنفسنا عبر RPC
+// 📤 توقيع وبثّ معاملة: يفتح Phantom للتأكيد، ويقوم Phantom بالبثّ على الشبكة
+// (أكثر موثوقية من بثّنا للمعاملة الموقّعة عبر البروكسي) ويعيد التوقيع (base58).
 export async function sendTransactionPhantomMobile(
   serialized: Uint8Array,
-  connection: Connection,
+  connection?: Connection,
 ): Promise<string> {
   if (!session) throw new Error("not_connected");
   const txB58 = bs58.encode(serialized);
@@ -181,7 +182,7 @@ export async function sendTransactionPhantomMobile(
     session.sharedSecret,
   );
 
-  const resp = await openPhantomAndAwait("signTransaction", {
+  const resp = await openPhantomAndAwait("signAndSendTransaction", {
     dapp_encryption_public_key: bs58.encode(session.dappKeyPair.publicKey),
     nonce: nonceB58,
     payload: payloadB58,
@@ -189,9 +190,11 @@ export async function sendTransactionPhantomMobile(
   assertError(resp);
 
   const decrypted = decryptResponse(resp.get("data")!, resp.get("nonce")!, session.sharedSecret);
-  // المعاملة الموقّعة base58 → نبثّها عبر RPC ونعيد توقيع المعاملة (base58) للسيرفر
-  const txSignature = await connection.sendRawTransaction(bs58.decode(decrypted.transaction), {
-    maxRetries: 3,
-  });
-  return txSignature;
+  // Phantom يُرجع التوقيع base58 بعد بثّ المعاملة
+  if (decrypted.signature) return decrypted.signature as string;
+  // احتياطي: أعد معاملة موقّعة لنبثّها بأنفسنا عبر RPC
+  if (decrypted.transaction && connection) {
+    return await connection.sendRawTransaction(bs58.decode(decrypted.transaction), { maxRetries: 3 });
+  }
+  throw new Error("no_signature_in_response");
 }
