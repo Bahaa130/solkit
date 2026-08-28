@@ -8,7 +8,7 @@ export interface InjectedProvider {
   isSolflare?: boolean;
   publicKey?: { toString(): string };
   connect: (opts?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey: { toString(): string } }>;
-  signMessage: (message: Uint8Array) => Promise<{ signature: Uint8Array; publicKey: { toString(): string } }>;
+  signMessage: (message: Uint8Array, display?: string) => Promise<{ signature: Uint8Array; publicKey: { toString(): string } }>;
   signAndSendTransaction: (...args: any[]) => Promise<any>;
   [key: string]: any;
 }
@@ -52,8 +52,9 @@ export const signMessage = async (message: string): Promise<string | null> => {
   if (!provider || typeof provider.signMessage !== "function") return null;
   try {
     const encoded = new TextEncoder().encode(message);
-    // Phantom يُرجع { signature: Uint8Array, publicKey }، وأحيانًا Uint8Array مباشرةً
-    const result: any = await provider.signMessage(encoded);
+    // ⚠️ حاسم: رسالة نصية UTF-8 يجب أن تُوقَّع مع تمرير "utf8" كوسيط ثانٍ،
+    // وإلا يرفضها Phantom بـ "Unexpected error" (خطأ موثّق رسمياً).
+    const result: any = await provider.signMessage(encoded, "utf8");
     let signature: Uint8Array | undefined;
     if (result instanceof Uint8Array) signature = result;
     else signature = result?.signature;
