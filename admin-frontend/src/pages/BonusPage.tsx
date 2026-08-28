@@ -127,7 +127,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
       {/* 📆 سلسلة الـ 7 أيام */}
       <div className="glass" style={styles.xpCard}>
         <h3 style={styles.gridTitle}>{t("bonus.streakGrid")}</h3>
-        <div style={styles.grid}>
+        <div className="bonus-streak" style={styles.grid}>
           {STREAK_REWARDS.map((r, i) => {
             const day = i + 1;
             const isClaimed = day <= claimedUpTo;
@@ -135,6 +135,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
             return (
               <div
                 key={day}
+                className="bonus-day"
                 style={{
                   ...styles.dayCard,
                   borderColor: isNext ? (locked ? "rgba(255,176,32,0.5)" : "rgba(255,176,32,0.8)") : isClaimed ? "rgba(34,229,132,0.3)" : "rgba(255,255,255,0.07)",
@@ -155,6 +156,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
             );
           })}
         </div>
+        <span className="bonus-scrollHint">{t("bonus.scrollHint")}</span>
         <p style={styles.streakDesc}>{t("bonus.streakDesc")}</p>
       </div>
 

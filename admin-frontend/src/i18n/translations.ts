@@ -56,6 +56,7 @@ const ar: Dict = {
   "app.payError": "حدث خطأ أثناء تفعيل الدفع. حاول مرة أخرى.",
   "app.payRpcFailed": "تعذّر الاتصال بشبكة Solana لتجهيز الدفعة. تأكد من الإنترنت وأعد المحاولة، وإن استمرت المشكلة أعد تثبيت أحدث نسخة من التطبيق.",
   "app.resumePayBtn": "الدفع تمّ سابقاً (بُثّت المعاملة)؟ تفعيل حسابي الآن دون دفع مزدوج",
+  "app.splashLoading": "جاري تحميل التطبيق...",
 
   // ─── شريط التنقل ───
   "nav.home": "الرئيسية",
@@ -343,6 +344,7 @@ const ar: Dict = {
   "bonus.todayNext": "البونص التالي",
   "bonus.lockedFuture": "مقفل 🔒",
   "bonus.streakDesc": "ادخل كل يوم واحصل على بونص متصاعد — غياب يوم واحد يعيد السلسلة من البداية",
+  "bonus.scrollHint": "اسحب لاستعراض بقية الأيام",
   "bonus.claimBtn": "🎁 المطالبة ببونص اليوم",
   "bonus.claimLocked": "البونص القادم خلال",
   "bonus.claimAvailable": "البونص متاح الآن!",
@@ -528,6 +530,7 @@ const en: Dict = {
   "app.payError": "An error occurred while activating payment. Try again.",
   "app.payRpcFailed": "Could not reach the Solana network to prepare the payment. Check your connection and retry; if it persists, reinstall the latest app version.",
   "app.resumePayBtn": "Paid already (transaction broadcast)? Activate my account now without paying twice",
+  "app.splashLoading": "Loading the app...",
 
   "nav.home": "Home",
   "nav.airdrop": "Airdrop",
@@ -801,6 +804,7 @@ const en: Dict = {
   "bonus.todayNext": "Next bonus",
   "bonus.lockedFuture": "Locked 🔒",
   "bonus.streakDesc": "Log in daily for a growing bonus — missing a day resets the streak",
+  "bonus.scrollHint": "Swipe to see the rest of the days",
   "bonus.claimBtn": "🎁 Claim today's bonus",
   "bonus.claimLocked": "Next bonus in",
   "bonus.claimAvailable": "Bonus available now!",

@@ -11,7 +11,7 @@ import LevelsPage from "./pages/LevelsPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import MaintenancePage from "./pages/MaintenancePage";
 import { Connection, PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
-import { C, font, styles as T } from "./theme";
+import { C, font, styles as T2 } from "./theme";
 import { LANGS } from "./i18n/lang.ts";
 import { useLang } from "./i18n/index.tsx";
 import { useBranding } from "./branding";
@@ -122,6 +122,12 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false);
   // 🔧 حالة الصيانة (تُجلب من الخادم عند التحميل)
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
+  // 💫 شاشة التحميل الترحيبية (تظهر 3 ثوانٍ عند كل زيارة)
+  const [splash, setSplash] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => setSplash(false), 3000);
+    return () => clearTimeout(id);
+  }, []);
 
   const handleLogout = () => {
     localStorage.clear();
@@ -394,15 +400,23 @@ export default function App() {
 
   if (!session) {
     return (
-      <ConnectWalletPage
-        onWalletConnected={(t, w, r, s) => handleWalletConnected(t, w, r, s || "inactive")}
-      />
+      <>
+        <ConnectWalletPage
+          onWalletConnected={(t, w, r, s) => handleWalletConnected(t, w, r, s || "inactive")}
+        />
+        {splash && <SplashOverlay />}
+      </>
     );
   }
 
   // 🔧 وضع الصيانة — يُعرض للجميع ما عدا محفظة المدير
   if (maintenance?.enabled && session.walletAddress !== ADMIN_WALLET) {
-    return <MaintenancePage onLogout={handleLogout} />;
+    return (
+      <>
+        <MaintenancePage onLogout={handleLogout} />
+        {splash && <SplashOverlay />}
+      </>
+    );
   }
 
   const shortWallet = session.walletAddress
@@ -473,7 +487,7 @@ export default function App() {
                 <span className="pill" style={{ background: "rgba(124,92,255,0.12)", color: "#b3a1ff", border: "1px solid rgba(124,92,255,0.3)" }}>{t("app.referrer")}</span>
                 <span style={{ fontWeight: 800, color: C.text }}>0.015 SOL</span>
               </div>
-              <p style={{ ...T.hint, marginTop: 8 }}>{t("app.splitHint")}</p>
+              <p style={{ ...T2.hint, marginTop: 8 }}>{t("app.splitHint")}</p>
             </div>
 
             {payStatus && (
@@ -504,12 +518,12 @@ export default function App() {
             >
               {t("app.resumePayBtn")}
             </button>
-            <p style={{ ...T.hint, marginTop: 14 }}>{t("app.payHint")}</p>
+            <p style={{ ...T2.hint, marginTop: 14 }}>{t("app.payHint")}</p>
           </div>
         </div>
       ) : (
         <>
-          <main style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 96 }}>
+          <main style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
             <div key={activeTab} className="animate-fade-up">
               {activeTab === "home" && <HomePage userId={session.userId} token={session.jwtToken || ""} onNavigateTab={navigateTab} />}
               {activeTab === "airdrop" && <AirdropPage userId={session.userId} token={session.jwtToken || ""} />}
@@ -547,6 +561,7 @@ export default function App() {
           </nav>
         </>
       )}
+      {splash && <SplashOverlay />}
     </div>
   );
 }
@@ -669,3 +684,45 @@ const styles: { [key: string]: React.CSSProperties } = {
   navIcon: { fontSize: 20, transition: "transform .2s ease" },
   navLabel: { fontSize: 11, fontWeight: 700 }
 };
+
+// 💫 شاشة تحميل التطبيق — تظهر 3 ثوانٍ عند كل زيارة فوق كل المحتوى
+function SplashOverlay() {
+  const { t } = useLang();
+  const { branding } = useBranding();
+  return (
+    <div className="splash" dir="rtl" style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      background:
+        "radial-gradient(560px 380px at 85% -10%, rgba(0,255,204,0.12), transparent 60%)," +
+        "radial-gradient(620px 460px at -10% 110%, rgba(124,92,255,0.16), transparent 60%)," +
+        "radial-gradient(480px 380px at 50% 130%, rgba(0,184,255,0.09), transparent 60%)," +
+        "#070b16",
+      overflow: "hidden", touchAction: "none", paddingBottom: "env(safe-area-inset-bottom, 0px)"
+    }}>
+      <div className="splash-ring" style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        width: 126, height: 126, borderRadius: "50%",
+        background: "rgba(0,255,204,0.06)", border: "1px solid rgba(0,255,204,0.18)"
+      }}>
+        <div className="floaty" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <CoinIcon size={74} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 24 }}>
+        <span style={{ fontSize: 15, color: "#00ffcc", fontWeight: "bold" }}>⟠</span>
+        <span className="gradient-text" style={{ fontSize: 30, fontWeight: 900, letterSpacing: 1 }}>{branding.projectName || "SOLKIT"}</span>
+        <span style={{ fontSize: 15, color: "#00ffcc", fontWeight: "bold" }}>⟠</span>
+      </div>
+
+      <div className="splash-bar">
+        <div className="splash-barFill" />
+      </div>
+
+      <div className="splash-tag" style={{ marginTop: 14, color: "#8b93ab", fontSize: 12, fontWeight: 700 }}>
+        {t("app.splashLoading")}
+      </div>
+    </div>
+  );
+}
