@@ -140,15 +140,15 @@ export default function App() {
   }, [splash]);
 
   // ⬇️ سحب من أعلى لأسفل → تحديث الصفحة (pull-to-refresh)
-  // مستمع على مستوى المستند كاملاً (يعمل حتى لو بدأ السحب من الهيدر) عبر Pointer
-  // Events، مع قفل touch-action فور تأكيد السحب حتّى لا يلغي متصفح الـWebView الجيستشر.
+  // يعمل على مستوى المستند كاملاً (حتى لو بدأ السحب من الهيدر)، والمحرّك الأساسي هو
+  // أحداث اللمس touchmove غير السلبية: الـWebView يسلّمها دائماً ويمنعـ preventDefault
+  // التمريرَ الأصلي، فلا يلغي المتصفح الجيستشر ولا يسرقه.
   const mainRef = useRef<HTMLElement | null>(null);
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
     let active = false;
     let engaged = false;
-    let pid: number | null = null;
     let startY = 0;
     let pullVal = 0;
     const PULL_T = 64;
@@ -156,50 +156,45 @@ export default function App() {
     const setTouchAction = (v: string) => {
       try { document.documentElement.style.touchAction = v; } catch { /* تجاهل */ }
     };
+    const reset = () => {
+      active = false;
+      engaged = false;
+      pullVal = 0;
+      setPull(0);
+      setTouchAction("");
+    };
 
-    const onDown = (e: PointerEvent) => {
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
       const el = mainRef.current;
       if ((el ? el.scrollTop : 0) > 0 || active) return;
-      if (e.pointerType === "mouse" && e.button !== 0) return;
       active = true;
       engaged = false;
-      pid = e.pointerId;
-      startY = e.clientY;
+      startY = e.touches[0].clientY;
       pullVal = 0;
       setPull(0);
     };
 
-    const onMove = (e: PointerEvent) => {
-      if (!active || e.pointerId !== pid) return;
+    const onMove = (e: TouchEvent) => {
+      if (!active) return;
       const el = mainRef.current;
-      const atTop = el ? el.scrollTop <= 0 : true;
-      const dy = e.clientY - startY;
-
-      if (dy <= 0) {
-        if (pullVal > 0) return; // حركة عكسية طفيفة أثناء السحب
-        active = false;
-        engaged = false;
-        setTouchAction("");
-        setPull(0);
-        return;
-      }
-      if (!atTop) { active = false; engaged = false; return; }
-
+      if ((el ? el.scrollTop : 0) > 0) { reset(); return; }
+      const dy = e.touches[0].clientY - startY;
+      if (dy <= 0) { reset(); return; }
       if (!engaged) {
         engaged = true;
-        setTouchAction("none"); // نمنع المتصفح من أخذ الجيستشر
+        setTouchAction("none"); // نمنع المتصفح من أخذ الحركة كتمرير
       }
-      e.preventDefault();
+      e.preventDefault(); // يلغي التمرير الأصلي نهائياً (مضمون في أي WebView)
       pullVal = Math.min(dy, PULL_T + 46) * 0.55;
       setPull(pullVal);
     };
 
-    const onEnd = (e: PointerEvent) => {
-      if (!active || e.pointerId !== pid) return;
+    const onEnd = () => {
+      if (!active) return;
       active = false;
       engaged = false;
       setTouchAction("");
-      pid = null;
       if (pullVal >= PULL_T) {
         setRefreshing(true);
         setPull(PULL_T);
@@ -210,23 +205,15 @@ export default function App() {
       }
     };
 
-    // شبكة أمان: منع التمرير الأصلي أثناء السحب النشط (بعض الـWebViews يتجاهل
-    // تغيير touch-action أثناء الجيستشر، لكن preventDefault على touchmove يلغي التمرير)
-    const onTouchMoveBlock = (e: TouchEvent) => {
-      if (engaged) e.preventDefault();
-    };
-
-    document.addEventListener("pointerdown", onDown, { passive: true });
-    document.addEventListener("pointermove", onMove, { passive: false });
-    document.addEventListener("pointerup", onEnd);
-    document.addEventListener("pointercancel", onEnd);
-    document.addEventListener("touchmove", onTouchMoveBlock, { passive: false });
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd);
+    document.addEventListener("touchcancel", onEnd);
     return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onEnd);
-      document.removeEventListener("pointercancel", onEnd);
-      document.removeEventListener("touchmove", onTouchMoveBlock);
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", onEnd);
       setTouchAction("");
     };
   }, []);
@@ -531,7 +518,7 @@ export default function App() {
     { key: "referral", icon: "🔗", adminOnly: false },
     { key: "tasks", icon: "🎁", adminOnly: false },
     { key: "bonus", icon: "📅", adminOnly: false },
-    { key: "protect", icon: "🛡️", adminOnly: false },
+    { key: "protect", icon: "📲", adminOnly: false },
     { key: "admin", icon: "👑", adminOnly: true },
   ].filter((tb) => !tb.adminOnly || session.walletAddress === ADMIN_WALLET);
 

@@ -1,5 +1,5 @@
 // src/pages/HelpPage.tsx
-// 🛡️ الحماية والتعليمات — دليل التثبيت والتعامل مع تحذير Google Play Protect
+// 📲 تخطي حماية Google Play عند التثبيت — دليل عملي خطوة بخطوة
 import { C, styles as T } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 
@@ -7,9 +7,9 @@ export default function HelpPage() {
   const { dir, t } = useLang();
 
   const steps = [
-    { icon: "🔍", title: t("help.step1t"), desc: t("help.step1d") },
+    { icon: "⚙️", title: t("help.step1t"), desc: t("help.step1d") },
     { icon: "📲", title: t("help.step2t"), desc: t("help.step2d") },
-    { icon: "⚙️", title: t("help.step3t"), desc: t("help.step3d") },
+    { icon: "⚠️", title: t("help.step3t"), desc: t("help.step3d") },
     { icon: "✅", title: t("help.step4t"), desc: t("help.step4d") },
   ];
 
