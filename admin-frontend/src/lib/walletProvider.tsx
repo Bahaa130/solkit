@@ -151,12 +151,22 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
   );
 
   const connectWallet = useCallback(async (): Promise<string | null> => {
-    // 🪟 داخل متصفح المحفظة المدمج (window.solana متاح): استخدم المحقون مباشرة
+    // 🪟 متصفح المحفظة المدمج / الويب مع امتداد Phantom (window.solana متاح):
+    // نستخدم المزوّد المحقون مباشرةً، وonlyIfTrusted:true أولًا لإعادة الربط الصامتة
+    // (بلا نافذة تكرار) ثم false عند الحاجة لعرض التأكيد. ونخزّن العنوان حتى لا
+    // تعتقد الصفحة أن الربط مفقود.
     if (isInsideWalletApp()) {
       const provider = getInjectedProvider();
       if (!provider) throw new Error("no_injected_provider");
-      const resp = await provider.connect({ onlyIfTrusted: false });
-      return resp.publicKey?.toString() || null;
+      let resp: any;
+      try {
+        resp = await provider.connect({ onlyIfTrusted: true });
+      } catch {
+        resp = await provider.connect({ onlyIfTrusted: false });
+      }
+      const addr = resp?.publicKey?.toString() || null;
+      if (addr) setPhantomAddress(addr);
+      return addr;
     }
 
     // 📱 تطبيق الموبايل الأصلي (Capacitor)
@@ -168,7 +178,9 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
         if (target) {
           select(target.adapter.name);
           await connect();
-          return target.adapter.publicKey?.toBase58() ?? null;
+          const addr = target.adapter.publicKey?.toBase58() ?? null;
+          if (addr) setPhantomAddress(addr);
+          return addr;
         }
       }
       // وإلا افتح رابط Phantom الموحّد الذي يُظهر نافذة "ربط التطبيق" الحقيقية
@@ -177,13 +189,15 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
       return addr;
     }
 
-    // 💻 الويب/سطح المكتب
+    // 💻 الويب/سطح المكتب (بدون امتداد محقون): محوّل wallet-adapter كاحتياطي
     const target =
       wallets.find((w) => w.adapter.name === "Phantom") || wallets[0];
     if (!target) throw new Error("no_wallet_adapter");
     select(target.adapter.name);
     await connect();
-    return target.adapter.publicKey?.toBase58() ?? null;
+    const addr = target.adapter.publicKey?.toBase58() ?? null;
+    if (addr) setPhantomAddress(addr);
+    return addr;
   }, [wallets, select, connect, hasWalletConnect]);
 
   const disconnectWallet = useCallback(async () => {
