@@ -14,8 +14,16 @@ import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; //
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_SOLKIT_KEY_2026";
-export const ADMIN_WALLET = process.env.ADMIN_WALLET || "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
+// 🔐 إغلاق آمن: رفض البدائل العامة (كانت معروفة في مستودع مفتوح = ثغرة تزوير توكنات).
+// الخادم يتوقف فوراً إن لم تُضبط المتغيرات على Render؛ اضبطها من لوحة Render
+// (Settings ← Environment): JWT_SECRET (قيمة عشوائية طويلة) و ADMIN_WALLET (عنوان مدير Phantom).
+const requireEnv = (name: string): string => {
+  const v = process.env[name];
+  if (!v || !v.trim()) throw new Error(`Missing required env var: ${name}`);
+  return v;
+};
+const JWT_SECRET = requireEnv("JWT_SECRET");
+export const ADMIN_WALLET = requireEnv("ADMIN_WALLET");
 
 const DAILY_REWARDS = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0];
 
@@ -116,6 +124,9 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
       if (!stored || stored.nonce !== nonce || stored.expires < Date.now()) {
         return res.status(401).json({ message: "انتهت صلاحية رمز التحدّي، أعد المحاولة" });
       }
+      // 🚫 استعمال واحد فقط: حذف رمز التحدّي فور نجاح التحقق لمنع إعادة استخدام
+      // طلب مسجَّل (replay attack) — أي محاولة لاحقة تتطلب تحدّياً جديداً.
+      challengeStore.delete(walletAddress);
     } catch (sigErr) {
       console.error("فشل التحقق من التوقيع:", sigErr);
       return res.status(401).json({ message: "تعذّر التحقق من توقيع المحفظة" });
@@ -177,10 +188,9 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    // 🛠️ تسجيل الخطأ الحقيقي في السيرفر لتسهيل التشخيص (لا يُكشف للمستخدم)
+    // 🛠️ تسجيل الخطأ الحقيقي في السيرفر فقط — لا نكشف تفاصيله الداخلية للمهاجم
     console.error("Login wallet error:", error);
-    const msg = error?.message ? error.message : "حدث خطأ غير متوقع أثناء تسجيل الدخول";
-    return res.status(500).json({ message: `تعذّر تسجيل الدخول: ${msg}` });
+    return res.status(500).json({ message: "تعذّر تسجيل الدخول حالياً، أعد المحاولة لاحقاً" });
   }
 });
 

@@ -8,7 +8,8 @@ import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.mi
 import { awardActivity } from "../users/levelSystem.js"; // 🎯 نقاط النشاط عند لعب لعبة
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_SOLKIT_KEY_2026";
+// 🔐 إغلاق آمن: لا بديل عام لمفتاح التوكن — أضف JWT_SECRET على Render قبل التشغيل
+const JWT_SECRET = process.env.JWT_SECRET || (() => { throw new Error("JWT_SECRET must be set"); })();
 
 // ==========================================
 // ⚙️ الإعدادات القابلة للضبط (في مكان واحد)

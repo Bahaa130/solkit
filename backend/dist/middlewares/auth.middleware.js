@@ -1,6 +1,14 @@
 import jwt from "jsonwebtoken";
-const JWT_SECRET = process.env.JWT_SECRET || "SUPER_SECRET_SOLKIT_KEY_2026";
-const ADMIN_WALLET = process.env.ADMIN_WALLET || "ضع_عنوان_محفظتك_الخاصة_كمدير_من_فانتوم";
+// 🔐 إغلاق آمن: لا يوجد بديل عام — أي بديل ثابت في مستودع مفتوح = تزوير توكنات (تحذير حرج).
+// إذا لم تُضبط المتغيرات على Render يتوقف الخادم فوراً ولا يبدأ بحالة غير آمنة.
+const requireEnv = (name) => {
+    const v = process.env[name];
+    if (!v || !v.trim())
+        throw new Error(`Missing required env var: ${name}`);
+    return v;
+};
+const JWT_SECRET = requireEnv("JWT_SECRET");
+const ADMIN_WALLET = requireEnv("ADMIN_WALLET");
 // ميدل وير للتحقق من أي مستخدم مسجل دخول
 export const authenticateJWT = (req, res, next) => {
     const authHeader = req.headers.authorization;
