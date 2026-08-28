@@ -218,6 +218,8 @@ const ar: Dict = {
   "connect.toastAuthFailed": "فشل التحقق الأمني الرقمي من المحفظة.",
   "connect.toastConnFailed": "فشل الاتصال الأمني بالخادم الفولاذي.",
   "connect.toastCancelled": "تم إلغاء عملية ربط المحفظة وتصريح الدخول.",
+  "connect.noInjected": "لم يتم العثور على محفظة Phantom في المتصفح. تأكد من تنصيب الامتداد.",
+  "connect.noAddress": "المحفظة لم تُرجِع عنواناً. جرّب مرة أخرى أو أعد فتح المتصفح.",
 
   // ─── السحب ───
 

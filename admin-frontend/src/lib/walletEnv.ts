@@ -50,9 +50,11 @@ export const signMessage = async (message: string): Promise<string | null> => {
   if (!provider || typeof provider.signMessage !== "function") return null;
   try {
     const encoded = new TextEncoder().encode(message);
-    // Phantom يُرجع { signature: Uint8Array, publicKey }
+    // Phantom يُرجع { signature: Uint8Array, publicKey }، وأحيانًا Uint8Array مباشرةً
     const result: any = await provider.signMessage(encoded);
-    const signature: Uint8Array | undefined = result?.signature;
+    let signature: Uint8Array | undefined;
+    if (result instanceof Uint8Array) signature = result;
+    else signature = result?.signature;
     if (!signature || !signature.length) return null;
     // تحويل Uint8Array → Base64
     let binary = "";

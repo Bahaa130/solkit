@@ -161,11 +161,13 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
       let resp: any;
       try {
         resp = await provider.connect({ onlyIfTrusted: true });
-      } catch {
-        resp = await provider.connect({ onlyIfTrusted: false });
+      } catch (e: any) {
+        console.error("[PHANTOM] connect silent failed:", e);
+        resp = await provider.connect();
       }
       const addr = resp?.publicKey?.toString() || null;
-      if (addr) setPhantomAddress(addr);
+      if (!addr) throw new Error("connect_no_address");
+      setPhantomAddress(addr);
       return addr;
     }
 
@@ -219,7 +221,17 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
       // 🪟 داخل متصفح المحفظة المدمج
       if (isInsideWalletApp()) {
         const sig = await signWithInjected(message);
-        return sig;
+        if (sig) return sig;
+        // احتياطي عبر محوّل الويب في حال فشل المزوّد المحقون
+        if (signMessage) {
+          try {
+            const s = await signMessage(new TextEncoder().encode(message));
+            return base64FromUint8(s);
+          } catch (e: any) {
+            console.error("[PHANTOM] signMessage adapter fallback failed:", e);
+          }
+        }
+        return null;
       }
       // 💻 محوّل الويب/سطح المكتب
       if (!signMessage) throw new Error("signMessage_unavailable");

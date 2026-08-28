@@ -108,7 +108,16 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
       }
     } catch (err: any) {
       console.error("Wallet Connection Error:", err);
-      toast.warning(err?.message || t("connect.toastCancelled"));
+      const msg = err?.message;
+      if (msg === "no_injected_provider") {
+        toast.warning(t("connect.noInjected"));
+      } else if (msg === "connect_no_address") {
+        toast.warning(t("connect.noAddress"));
+      } else if (msg) {
+        toast.warning(`${t("connect.toastCancelled")} [${msg}]`);
+      } else {
+        toast.warning(t("connect.toastCancelled"));
+      }
     } finally {
       setLoading(false);
     }
