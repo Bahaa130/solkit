@@ -603,6 +603,12 @@ export default function App() {
             </div>
 
             {/*
+              💡 عبارة توضح سياسة الشفافية: لماذا رسوم اشتراك أصلية عند التسجيل؟
+              لمنع الحسابات الوهمية وبناء فريق تسويقي حقيقي بصدق ووضوح.
+            */}
+            <p style={{ ...styles.feeWhy, textAlign }}>{t("app.feeWhy")}</p>
+
+            {/*
               🔗 حقل لصق كود الإحالة (اختياري): المستخدم الذي سجّل بدون رابط دعوة
               يستطيع لصق كود صديقه هنا قبل الدفع — فيتحول الدفع تلقائياً لقسيم 0.015 + 0.015.
             */}
@@ -815,6 +821,16 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   splitRow: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 },
   refCodeRow: { display: "flex", gap: 10 },
+  feeWhy: {
+    marginTop: 12,
+    fontSize: 11,
+    lineHeight: 1.8,
+    color: C.faint,
+    background: "rgba(255,170,0,0.06)",
+    border: "1px dashed rgba(255,170,0,0.25)",
+    borderRadius: 10,
+    padding: "10px 12px"
+  },
   payStatus: {
     marginTop: 16,
     padding: "12px 14px",

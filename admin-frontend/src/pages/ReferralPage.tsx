@@ -52,11 +52,10 @@ export default function ReferralPage({ userId, token }: ReferralPageProps) {
     fetchReferralData();
   }, [userId, token]);
 
-  // دالة نسخ رابط الإحالة للمستخدم لمشاركته على السوشيال ميديا
+  // دالة نسخ كود الإحالة الخاص بالمستخدم لمشاركته مع الأصدقاء
   const handleCopyLink = () => {
     if (!data) return;
-    const inviteLink = `${window.location.origin}?ref=${data.referralCode}`;
-    navigator.clipboard.writeText(inviteLink);
+    navigator.clipboard.writeText(data.referralCode);
     toast.success(t("referral.copySuccess"));
   };
 
@@ -106,7 +105,7 @@ export default function ReferralPage({ userId, token }: ReferralPageProps) {
         </div>
       </div>
 
-      {/* بطاقة رابط الإحالة الفاخرة */}
+      {/* بطاقة كود الإحالة الفاخرة */}
       <div className="glass" style={styles.card}>
         <h3 style={styles.cardTitle}>{t("referral.linkTitle")}</h3>
         <p style={{ color: C.muted, fontSize: 12, marginBottom: 15, lineHeight: 1.8 }}>
@@ -114,13 +113,20 @@ export default function ReferralPage({ userId, token }: ReferralPageProps) {
           <strong style={{ color: C.teal }}>{t("referral.linkReward")}</strong>
         </p>
         <div style={styles.copyBox}>
-          <input
-            className="input"
-            type="text"
-            readOnly
-            value={`${window.location.origin}?ref=${data.referralCode}`}
-            style={{ textAlign: "center", color: C.teal, fontWeight: 700 }}
-          />
+          <div style={{
+            flex: 1,
+            background: "rgba(0,255,204,0.07)",
+            border: "1px solid rgba(0,255,204,0.25)",
+            borderRadius: 10,
+            padding: "12px 10px",
+            textAlign: "center",
+            color: C.teal,
+            fontWeight: 800,
+            letterSpacing: 3,
+            fontSize: 17
+          }}>
+            {data.referralCode}
+          </div>
           <button onClick={handleCopyLink} className="btn btn-primary" style={{ whiteSpace: "nowrap" }}>{t("referral.copyBtn")}</button>
         </div>
         <button onClick={handleShareLink} className="btn btn-purple btn-block" style={{ marginTop: 12, padding: "13px" }}>
