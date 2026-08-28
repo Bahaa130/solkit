@@ -1,5 +1,5 @@
 import { apiFetch } from "./lib/api";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ConnectWalletPage from "./pages/ConnectWalletPage";
 import HomePage from "./pages/HomePage";
 import ReferralPage from "./pages/ReferralPage";
@@ -122,12 +122,75 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false);
   // 🔧 حالة الصيانة (تُجلب من الخادم عند التحميل)
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
-  // 💫 شاشة التحميل الترحيبية (تظهر 3 ثوانٍ عند كل زيارة)
-  const [splash, setSplash] = useState(true);
+  // 💫 شاشة التحميل الترحيبية (تظهر 3 ثوانٍ عند كل زيارة، وتُتخطّى عند سحب التحديث)
+  const [splash, setSplash] = useState(() => {
+    try {
+      if (sessionStorage.getItem("solkit_skip_splash")) {
+        sessionStorage.removeItem("solkit_skip_splash");
+        return false;
+      }
+    } catch { /* تجاهل */ }
+    return true;
+  });
   useEffect(() => {
+    if (!splash) return;
     const id = setTimeout(() => setSplash(false), 3000);
     return () => clearTimeout(id);
-  }, []);
+  }, [splash]);
+
+  // ⬇️ سحب من أعلى لأسفل → تحديث الصفحة (pull-to-refresh)
+  const mainRef = useRef<HTMLElement | null>(null);
+  const [pull, setPull] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const pullActiveRef = useRef(false);
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    let startY = 0;
+    let p = 0;
+    const PULL_T = 64;
+    const onStart = (e: TouchEvent) => {
+      if (el.scrollTop <= 0 && !pullActiveRef.current) {
+        pullActiveRef.current = true;
+        startY = e.touches[0].clientY;
+        p = 0;
+        setPull(0);
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!pullActiveRef.current) return;
+      const dy = e.touches[0].clientY - startY;
+      if (dy <= 0 || el.scrollTop > 0) {
+        pullActiveRef.current = false;
+        setPull(0);
+        return;
+      }
+      if (p === 0 && dy < 6) return;
+      e.preventDefault();
+      p = Math.min(dy, PULL_T + 46) * 0.55;
+      setPull(p);
+    };
+    const onEnd = () => {
+      if (!pullActiveRef.current) return;
+      pullActiveRef.current = false;
+      if (p >= PULL_T) {
+        setRefreshing(true);
+        setPull(PULL_T);
+        try { sessionStorage.setItem("solkit_skip_splash", "1"); } catch { /* تجاهل */ }
+        window.location.reload();
+      } else {
+        setPull(0);
+      }
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+    };
+  }, [session]);
 
   const handleLogout = () => {
     localStorage.clear();
@@ -523,7 +586,7 @@ export default function App() {
         </div>
       ) : (
         <>
-          <main style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
+          <main ref={(el) => { mainRef.current = el; }} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
             <div key={activeTab} className="animate-fade-up">
               {activeTab === "home" && <HomePage userId={session.userId} token={session.jwtToken || ""} onNavigateTab={navigateTab} />}
               {activeTab === "airdrop" && <AirdropPage userId={session.userId} token={session.jwtToken || ""} />}
@@ -559,6 +622,48 @@ export default function App() {
               );
             })}
           </nav>
+
+          {pull > 0 && (
+            <div style={{
+              position: "fixed",
+              left: "50%",
+              transform: "translateX(-50%)",
+              top: Math.max(8, Math.min(pull, 110) - 58),
+              zIndex: 300,
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              padding: "9px 16px",
+              borderRadius: 999,
+              background: "rgba(10,15,30,0.94)",
+              border: "1px solid rgba(0,255,204,0.3)",
+              boxShadow: "0 10px 26px rgba(0,0,0,0.5)",
+              fontSize: 12.5,
+              color: C.text,
+              fontWeight: 800,
+              transition: "top .08s linear",
+              whiteSpace: "nowrap",
+            }}>
+              {refreshing ? (
+                <>
+                  <span className="spinner" style={{ borderTopColor: "#00ffcc" }} />
+                  {t("app.refreshingHint")}
+                </>
+              ) : (
+                <>
+                  <span style={{
+                    display: "inline-block",
+                    fontSize: 15,
+                    lineHeight: 1,
+                    color: pull >= 64 ? C.teal : C.muted,
+                    transform: `rotate(${Math.min(180, (pull / 64) * 180)}deg)`,
+                    transition: "transform .12s ease",
+                  }}>↓</span>
+                  <span style={{ color: pull >= 64 ? C.teal : C.text }}>{pull >= 64 ? t("app.releaseHint") : t("app.pullHint")}</span>
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
       {splash && <SplashOverlay />}

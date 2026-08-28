@@ -57,6 +57,9 @@ const ar: Dict = {
   "app.payRpcFailed": "تعذّر الاتصال بشبكة Solana لتجهيز الدفعة. تأكد من الإنترنت وأعد المحاولة، وإن استمرت المشكلة أعد تثبيت أحدث نسخة من التطبيق.",
   "app.resumePayBtn": "الدفع تمّ سابقاً (بُثّت المعاملة)؟ تفعيل حسابي الآن دون دفع مزدوج",
   "app.splashLoading": "جاري تحميل التطبيق...",
+  "app.pullHint": "اسحب للأسفل للتحديث",
+  "app.releaseHint": "أفلت لتحديث الصفحة",
+  "app.refreshingHint": "جاري تحديث الصفحة...",
 
   // ─── شريط التنقل ───
   "nav.home": "الرئيسية",
@@ -531,6 +534,9 @@ const en: Dict = {
   "app.payRpcFailed": "Could not reach the Solana network to prepare the payment. Check your connection and retry; if it persists, reinstall the latest app version.",
   "app.resumePayBtn": "Paid already (transaction broadcast)? Activate my account now without paying twice",
   "app.splashLoading": "Loading the app...",
+  "app.pullHint": "Pull down to refresh",
+  "app.releaseHint": "Release to refresh",
+  "app.refreshingHint": "Refreshing...",
 
   "nav.home": "Home",
   "nav.airdrop": "Airdrop",

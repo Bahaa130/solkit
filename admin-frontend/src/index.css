@@ -40,6 +40,12 @@ body::before {
 ::-webkit-scrollbar-thumb:hover { background: rgba(0,255,204,0.35); }
 ::-webkit-scrollbar-track { background: transparent; }
 
+/* 📱 على شاشات اللمس (تطبيق الموبايل): إخفاء شريط التمرير الظاهر مع بقاء التمرير يعمل */
+@media (pointer: coarse) {
+  ::-webkit-scrollbar { display: none; }
+  html, body, #root, main { scrollbar-width: none; -ms-overflow-style: none; }
+}
+
 /* ===== بطاقات زجاجية ===== */
 .glass {
   background: rgba(255,255,255,0.045);
