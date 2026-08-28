@@ -209,15 +209,23 @@ export default function App() {
       }
     };
 
+    // شبكة أمان: منع التمرير الأصلي أثناء السحب النشط (بعض الـWebViews يتجاهل
+    // تغيير touch-action أثناء الجيستشر، لكن preventDefault على touchmove يلغي التمرير)
+    const onTouchMoveBlock = (e: TouchEvent) => {
+      if (engaged) e.preventDefault();
+    };
+
     document.addEventListener("pointerdown", onDown, { passive: true });
     document.addEventListener("pointermove", onMove, { passive: false });
     document.addEventListener("pointerup", onEnd);
     document.addEventListener("pointercancel", onEnd);
+    document.addEventListener("touchmove", onTouchMoveBlock, { passive: false });
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onEnd);
       document.removeEventListener("pointercancel", onEnd);
+      document.removeEventListener("touchmove", onTouchMoveBlock);
       setTouchAction("");
     };
   }, []);
