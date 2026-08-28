@@ -103,7 +103,14 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
       // الواجهة ترسل التوقيع Base64 (Uint8Array → Base64)
       const sigBytes = Buffer.from(signature, "base64");
       const valid = ed25519.verify(sigBytes, msgBytes, pubKeyBytes);
-      if (!valid) return res.status(401).json({ message: "توقيع غير صالح — تأكد أنك وقّعت بالمحفظة الصحيحة" });
+      if (!valid) {
+        // 🧪 تشخيص فني: سبب الرفض الفعلي (فشل ed25519) لمعالجة الشكاوى بدقة
+        console.warn(
+          `[LOGIN] signature verify FAILED wallet=${walletAddress.slice(0, 6)}… ` +
+          `sigLen=${sigBytes.length} msgLen=${msgBytes.length} base64Ok=${signature !== ""}`
+        );
+        return res.status(401).json({ message: "توقيع غير صالح — تأكد أنك وقّعت بالمحفظة الصحيحة" });
+      }
       // 🔒 تحقق من أن الرسالة تحوي الـ nonce الصحيح وغير منتهٍ
       const stored = challengeStore.get(walletAddress);
       if (!stored || stored.nonce !== nonce || stored.expires < Date.now()) {
