@@ -21,6 +21,23 @@ import { useSolanaWallet } from "./lib/walletProvider";
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
 const SOLANA_RPC_URL = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
 
+// 🔁 جلب آخر blockhash مع إعادة محاولة تلقائية لتجاوز أوقات الازدحام/بطء الشبكة
+async function fetchBlockhashWithRetry(
+  connection: Connection,
+  retries = 3,
+): Promise<{ blockhash: string; lastValidBlockHeight: number } | null> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const info = await connection.getLatestBlockhash("confirmed");
+      return { blockhash: info.blockhash, lastValidBlockHeight: info.lastValidBlockHeight };
+    } catch (e) {
+      console.warn(`blockhash retry ${i + 1}/${retries} failed:`, e);
+      await new Promise((res) => setTimeout(res, 1200 * (i + 1)));
+    }
+  }
+  return null;
+}
+
 // 💰 مبالغ التفعيل المحدّثة: 0.015 SOL لكل محفظة (الإجمالي 0.03 SOL)
 const HALF_LAMPORTS = 15000000; // 0.015 SOL
 const FULL_LAMPORTS = 30000000; // 0.03 SOL
@@ -236,7 +253,11 @@ export default function App() {
       }
 
       transaction.feePayer = userPublicKey;
-      const latestBlockHashInfo = await connection.getLatestBlockhash("confirmed");
+      const latestBlockHashInfo = await fetchBlockhashWithRetry(connection);
+      if (!latestBlockHashInfo) {
+        setPayStatus({ type: "error", text: `${t("app.payRpcFailed")} [${SOLANA_RPC_URL}]` });
+        return;
+      }
       transaction.recentBlockhash = latestBlockHashInfo.blockhash;
 
       // 3. استدعاء المحفظة لتوقيع وبث المعاملة (Phantom على الويب / WalletConnect على الموبايل)

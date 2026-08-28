@@ -54,6 +54,7 @@ const ar: Dict = {
   "app.payReferrerSame": "محفظة صاحب الإحالة هي نفسها محفظة الموقع، لا يمكن تقسيم المبلغ.",
   "app.payNoSig": "لم يتم إرجاع توقيع المعاملة من Phantom.",
   "app.payError": "حدث خطأ أثناء تفعيل الدفع. حاول مرة أخرى.",
+  "app.payRpcFailed": "تعذّر الاتصال بشبكة Solana لتجهيز الدفعة. تأكد من الإنترنت وأعد المحاولة، وإن استمرت المشكلة أعد تثبيت أحدث نسخة من التطبيق.",
 
   // ─── شريط التنقل ───
   "nav.home": "الرئيسية",
@@ -524,6 +525,7 @@ const en: Dict = {
   "app.payReferrerSame": "The referrer's wallet is the site wallet; the amount cannot be split.",
   "app.payNoSig": "No transaction signature was returned from Phantom.",
   "app.payError": "An error occurred while activating payment. Try again.",
+  "app.payRpcFailed": "Could not reach the Solana network to prepare the payment. Check your connection and retry; if it persists, reinstall the latest app version.",
 
   "nav.home": "Home",
   "nav.airdrop": "Airdrop",

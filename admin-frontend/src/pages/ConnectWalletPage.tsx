@@ -11,6 +11,9 @@ interface ConnectWalletPageProps {
   onWalletConnected: (jwtToken: string, walletAddress: string, role: string, activationStatus: string) => void;
 }
 
+const CONNECT_PAGE_VERSION = "2.5.0-mobile";
+const CONNECT_PAGE_RPC = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "default";
+
 export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPageProps) {
   const { dir, t } = useLang();
   const { branding } = useBranding();
@@ -156,6 +159,8 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
           <span className="pill" style={featurePill}>{t("connect.featureMining")}</span>
           <span className="pill" style={featurePill}>{t("connect.featureReferral")}</span>
         </div>
+
+        <div style={styles.version}>{CONNECT_PAGE_VERSION}<br />{CONNECT_PAGE_RPC}</div>
       </div>
     </div>
   );
@@ -195,5 +200,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: "1px solid rgba(0,255,119,0.25)",
     animation: "pulseGlow 2s ease-out infinite"
   },
-  features: { display: "flex", justifyContent: "center", gap: 8, marginTop: 26, flexWrap: "wrap" }
+  features: { display: "flex", justifyContent: "center", gap: 8, marginTop: 26, flexWrap: "wrap" },
+  version: {
+    marginTop: 18,
+    fontSize: 10,
+    color: "rgba(255,255,255,0.25)",
+    textAlign: "center",
+    direction: "ltr",
+    wordBreak: "break-all",
+    lineHeight: 1.6
+  }
 };
