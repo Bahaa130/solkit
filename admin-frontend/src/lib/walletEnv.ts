@@ -64,10 +64,9 @@ export const signMessage = async (message: string): Promise<string | null> => {
     for (let i = 0; i < signature.length; i++) binary += String.fromCharCode(signature[i]);
     return btoa(binary);
   } catch (err: any) {
-    // 🧪 تسجيل السبب الدقيق للتمكن من تشخيص المشكلة بدقة،
-    // ثم إعادة رمي الخطأ الفعلي للواجهة لعرضه كاملاً (وليس «أُلغي» مضلّلة).
-    console.warn("[PHANTOM] injected signMessage failed:", err);
-    throw err;
+    // 🧪 تسجيل السبب الدقيق للتمكن من تشخيص المشكلة بدقة
+    console.warn("[PHANTOM] injected signMessage failed:", err?.message || err);
+    return null;
   }
 };
 

@@ -805,8 +805,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: "background .15s ease",
   },
   langSoon: { color: C.faint, fontSize: 10.5, textAlign: "center", padding: "8px 4px 2px", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 4 },
-  payWrap: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "30px 18px" },
-  payCard: { maxWidth: 480, width: "100%", padding: 34, textAlign: "center" },
+  payWrap: { flex: 1, display: "flex", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "30px 18px calc(30px + env(safe-area-inset-bottom, 0px))" },
+  payCard: { maxWidth: 480, width: "100%", padding: 30, textAlign: "center", margin: "auto" },
   payTitle: { fontSize: 22, fontWeight: 900, color: C.amber, marginTop: 16, marginBottom: 8 },
   payDesc: { color: C.muted, fontSize: 14, lineHeight: 1.8, marginBottom: 20 },
   splitBox: {

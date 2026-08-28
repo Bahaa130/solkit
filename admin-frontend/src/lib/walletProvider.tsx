@@ -214,20 +214,24 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
 
   const signMessageBase64 = useCallback(
     async (message: string): Promise<string | null> => {
-      // 🧪 تحديد طريق التوقيع المستخدم لتشخيص البيئة من الكونسول
-      console.log(
-        "[LOGIN] sign path:",
-        nativeMobile ? "native-mobile-deeplink" : isInsideWalletApp() ? "inside-wallet-app(injected)" : "adapters/solana"
-      );
       // 📱 موبايل أصلي خارج المحفظة: استخدم رابط التوقيع الموحّد (يُظهر نافذة التوقيع)
       if (nativeMobile && phantomAddress) {
         return await signMessagePhantomMobile(message);
       }
-      // 🪟 داخل متصفح المحفظة المدمج (أو امتداد المتصفح)
+      // 🪟 داخل متصفح المحفظة المدمج
       if (isInsideWalletApp()) {
-        // no auto-retry؛ الخطأ الفعلي يُعاد رميه للواجهة لعرضه (ليست «أُلغي»).
-        // لا نتراجع لمحوّل الويب هنا لتجنّب نافذة توقيع ثانية مضللة.
-        return await signWithInjected(message);
+        const sig = await signWithInjected(message);
+        if (sig) return sig;
+        // احتياطي عبر محوّل الويب في حال فشل المزوّد المحقون
+        if (signMessage) {
+          try {
+            const s = await signMessage(new TextEncoder().encode(message));
+            return base64FromUint8(s);
+          } catch (e: any) {
+            console.error("[PHANTOM] signMessage adapter fallback failed:", e);
+          }
+        }
+        return null;
       }
       // 💻 محوّل الويب/سطح المكتب (إرجاع null بدل رمي استثناء لتظهر الواجهة الرسالة
       // الصحيحة؛ لا إعادة محاولة تلقائية لتجنّب نافذة توقيع ثانية مضللة)
