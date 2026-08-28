@@ -314,14 +314,17 @@ export default function App() {
       if (!txSignature) throw new Error(t("app.payNoSig"));
 
       setPayStatus({ type: "confirming", text: t("app.payConfirming") });
-      // 🔁 التأكيد المحلي "أفضل جهد": لو فشل (انتهاء بلوك/حجب WebSocket) نتابع للسيرفر
-      // لأن السيرفر يتحقق أصلاً من المعاملة عبر HTTPS RPC — فالدفع الذي هبط لا يضيع.
+      // 🔁 التأكيد المحلي "أفضل جهد": لا يدعم Render WebSocket، لذا نضع مهلة قصوى
+      // (15 ثانية) ولا ننتظرها أبداً — تأكيد السيرفر المباشر عبر RPC هو المرجع الحقيقي.
       try {
-        await connection.confirmTransaction({
-          signature: txSignature,
-          blockhash: latestBlockHashInfo.blockhash,
-          lastValidBlockHeight: latestBlockHashInfo.lastValidBlockHeight
-        }, "confirmed");
+        await Promise.race([
+          connection.confirmTransaction({
+            signature: txSignature,
+            blockhash: latestBlockHashInfo.blockhash,
+            lastValidBlockHeight: latestBlockHashInfo.lastValidBlockHeight
+          }, "confirmed").then(() => true),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15000)),
+        ]);
       } catch (confirmErr) {
         console.warn("Local confirmation skipped (server will re-verify):", confirmErr);
       }
