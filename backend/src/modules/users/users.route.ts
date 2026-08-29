@@ -214,22 +214,29 @@ const findEligiblePayment = async (
     );
     for (const sig of signatures) {
       if (sig.err) continue;
-      const tx = await connection.getTransaction(sig.signature, {
-        commitment: "confirmed",
-        maxSupportedTransactionVersion: 0,
-      });
-      if (!tx || !tx.meta || tx.meta.err) continue;
-      const keys = tx.transaction.message.getAccountKeys();
-      let adminIdx = -1;
-      let fromIdx = -1;
-      for (let i = 0; i < keys.length; i++) {
-        const addr = keys.get(i)?.toString();
-        if (addr === ADMIN_WALLET) adminIdx = i;
-        if (addr === userWallet) fromIdx = i;
+      // 🔁 عزل التوقيع: خطأ استرجاع معاملة قديمة (expired / block height exceeded)
+      // لا يُسقط الحلقة — نكمل فحص بقية التحويلات
+      try {
+        const tx = await connection.getTransaction(sig.signature, {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        });
+        if (!tx || !tx.meta || tx.meta.err) continue;
+        const keys = tx.transaction.message.getAccountKeys();
+        let adminIdx = -1;
+        let fromIdx = -1;
+        for (let i = 0; i < keys.length; i++) {
+          const addr = keys.get(i)?.toString();
+          if (addr === ADMIN_WALLET) adminIdx = i;
+          if (addr === userWallet) fromIdx = i;
+        }
+        if (adminIdx === -1 || fromIdx === -1) continue;
+        const adminDelta = tx.meta.postBalances[adminIdx] - tx.meta.preBalances[adminIdx];
+        if (adminDelta >= minRequired) return sig.signature;
+      } catch (sigErr) {
+        console.warn(`findEligiblePayment: skip signature ${sig.signature.slice(0, 8)}… (${(sigErr as Error)?.message || "rpc error"})`);
+        continue;
       }
-      if (adminIdx === -1 || fromIdx === -1) continue;
-      const adminDelta = tx.meta.postBalances[adminIdx] - tx.meta.preBalances[adminIdx];
-      if (adminDelta >= minRequired) return sig.signature;
     }
   } catch (err) {
     console.error("findEligiblePayment error:", err);
@@ -273,13 +280,8 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
     try {
       // 🌐 استخدام الـ Endpoint الصحيح والمستقر من البيئة أو Devnet كاحتياطي
       const connection = new Connection(solanaRpcUrl, "confirmed");
-      // 🔁 إعادة محاولة قراءة المعاملة: devnet قد لا يُرجعها فوراً (تأخير الفهرسة)
-      let txStatus = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        txStatus = await connection.getTransaction(txHash!, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
-        if (txStatus) break;
-        await new Promise((r) => setTimeout(r, 2500)); // انتظر 2.5s بين المحاولات
-      }
+      // 🔁 جلب المعاملة مع إعادة محاولة (لا يرمي error expired أبداً): devnet قد لا يُرجعها فوراً
+      let txStatus = await fetchTransactionWithRetry(connection, txHash!);
 
       if (!txStatus) {
         // 🔍 محاولة أخيرة: المستخدم أرسل توقيعاً قديماً/غير مدرج — ابحث عن أحدث دفعة بديلة
@@ -288,7 +290,7 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
           return res.status(400).json({ message: "لم يتم العثور على المعاملة على البلوكشين بعد، أعد المحاولة خلال ثوانٍ" });
         }
         txHash = recovered;
-        txStatus = await connection.getTransaction(txHash!, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        txStatus = await fetchTransactionWithRetry(connection, txHash!);
         if (!txStatus) {
           return res.status(400).json({ message: "لم يتم العثور على المعاملة على البلوكشين بعد، أعد المحاولة خلال ثوانٍ" });
         }
@@ -692,7 +694,9 @@ const verifyTokenReceipt = async (
   expectedAmount: number
 ): Promise<boolean> => {
   try {
-    const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+    // 🔁 إعادة محاولة جلب المعاملة: عقد devnet العامة تُباعد أحياناً في الفهرسة،
+    // وخطأ old/expired يُعالج كأنه "غير مرئية بعد" ثم نحسم عبر رصيد الحساب الحالي.
+    const txInfo = await fetchTransactionWithRetry(connection, signature);
     if (!txInfo || !txInfo.meta || txInfo.meta.err) return false;
     const postBalances = txInfo.meta.postTokenBalances || [];
     for (const entry of postBalances) {
@@ -711,6 +715,32 @@ const verifyTokenReceipt = async (
   } catch {
     return false;
   }
+};
+
+// 🔁 جلب معاملة مع إعادة محاولة (لا يرمي خطأ expired أبداً — يرجّع null كي يقرّر المتصل)
+const fetchTransactionWithRetry = async (
+  connection: Connection,
+  signature: string,
+  attempts = 5,
+  delayMs = 2500,
+): Promise<any | null> => {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const tx = await connection.getTransaction(signature, {
+        commitment: "confirmed",
+        maxSupportedTransactionVersion: 0,
+      });
+      if (tx) return tx;
+    } catch (err) {
+      const msg = (err as Error)?.message || "";
+      if (!/expired|block he?ight exceeded/i.test(msg)) {
+        // خطأ غير متوقع — نحتفظ به لأول محاولة فقط، ثم نكمل
+        if (attempt === 0) console.warn(`fetchTransactionWithRetry (${signature.slice(0, 8)}…): ${msg}`);
+      }
+    }
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
 };
 
 // أ. نظرة عامة على الأرصدة المجمعة وحالة التوكن

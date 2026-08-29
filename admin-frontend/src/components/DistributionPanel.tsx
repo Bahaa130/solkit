@@ -15,6 +15,25 @@ interface DistributionPanelProps {
 
 const MAX_PER_TX = 20; // حد عدد المستلمين في المعاملة الواحدة (حد حجم البايتات)
 
+// 🔁 تأكيد "أفضل جهد" لا يرمي أبداً خطأ انتهاء الارتفاع (block height exceeded):
+// العقد العامة (كـ devnet) تتذبذب في رصد الحالات — مهما حدث نعود true ونُحيل
+// الحكم النهائي على السيرفر (إعادة محاولة getTransaction ثم فحص رصيد المستلم).
+const waitForConfirmation = async (connection: Connection, signature: string, maxWaitMs = 16000) => {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const { value } = await connection.getSignatureStatus(signature, { searchTransactionHistory: true });
+      if (value) {
+        if (value.err) return false; // بُثّت لكنها فشلت فعلاً على السلسلة
+        const cs = value.confirmationStatus;
+        if (cs === "confirmed" || cs === "finalized") return true;
+      }
+    } catch { /* خطأ عابر في RPC → أعد المحاولة */ }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+  return true; // انتهت المهلة دون رصد — لا نمنع المتابعة، السيرفر هو المرجع
+};
+
 export default function DistributionPanel({ token }: DistributionPanelProps) {
   const [overview, setOverview] = useState<any>(null);
   const [preparing, setPreparing] = useState(false);
@@ -125,10 +144,10 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
         const sig = typeof signed === "string" ? signed : signed?.signature;
         if (!sig) throw new Error("لم يُرجع Phantom توقيع المعاملة");
 
-        await connection.confirmTransaction(
-          { signature: sig, blockhash: blockhash.blockhash, lastValidBlockHeight: blockhash.lastValidBlockHeight },
-          "confirmed"
-        );
+        // 🔁 تأكيد محلي "أفضل جهد" — لا يُرمى خطأ انتهاء الارتفاع (block height exceeded):
+        // العقد العامة تتذبذب في الرصد، والقراءة القاطعة تبقى في السيرفر
+        // (إعادة محاولة getTransaction ثم فحص رصيد حساب المستلم الحالي).
+        await waitForConfirmation(connection, sig);
         group.forEach((r) => results.push({ recipient: r, txSignature: sig }));
       }
 
@@ -156,7 +175,17 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       }
     } catch (e: any) {
       console.error("Distribution error:", e);
-      setStatus({ type: "error", text: e?.message || "فشل توزيع الجوائز على البلوكشين" });
+      const msg = e?.message || "";
+      // 🧭 خطأ "انتهاء صلاحية الارتفاع" شائع بسبب تذبذب عقد devnet — نترجمه برسالة
+      // عربية واضحة ونطمئن: الأموال محفوظة والتوثي النهائي يتم بالسيرفر عند المحاولة التالية.
+      if (/expired|block height exceeded/i.test(msg)) {
+        setStatus({
+          type: "error",
+          text: "بُثّت معاملات التوزيع لكن تأكيد البلوكشين لم يُرصد فوراً (تذبذب عقد الشبكة). الأموال محفوظة بأمان — أعد الضغط على «تنفيذ التوزيع» وسيتحقق السيرفر من الاستلام ويسجّل الجوائز دون تكرار."
+        });
+      } else {
+        setStatus({ type: "error", text: msg || "فشل توزيع الجوائز على البلوكشين" });
+      }
     } finally {
       setDistributing(false);
     }
