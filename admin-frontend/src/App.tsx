@@ -124,13 +124,18 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false);
   // 🔧 حالة الصيانة (تُجلب من الخادم عند التحميل)
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
-  // 💫 شاشة التحميل الترحيبية (تظهر 3 ثوانٍ عند كل زيارة، وتُتخطّى عند سحب التحديث)
+  // 💫 شاشة التحميل الترحيبية — تُعرض مرة واحدة فقط بعد كل تثبيت (localStorage ثابت عبر الإقلاعات)،
+  // وتُتخطّى تماماً عند سحب التحديث. هكذا فتح التطبيق من جديد لا يظهر كأنه «يتحدث تلقائياً».
   const [splash, setSplash] = useState(() => {
     try {
+      // سحب التحديث → لا نعيد شاشة التحميل بعد إعادة التحميل مباشرة
       if (sessionStorage.getItem("solkit_skip_splash")) {
         sessionStorage.removeItem("solkit_skip_splash");
         return false;
       }
+      // أول فتح بعد التثبيت فقط: نعرض الشاشة ونحتفظ بالعلامة إلى الأبد
+      if (localStorage.getItem("solkit_splash_shown")) return false;
+      localStorage.setItem("solkit_splash_shown", "1");
     } catch { /* تجاهل */ }
     return true;
   });
@@ -140,67 +145,102 @@ export default function App() {
     return () => clearTimeout(id);
   }, [splash]);
 
-  // ⬇️ سحب من أعلى لأسفل → تحديث الصفحة (pull-to-refresh)
-  // يعمل على مستوى المستند كاملاً (حتى لو بدأ السحب من الهيدر)، والمحرّك الأساسي هو
-  // أحداث اللمس touchmove غير السلبية: الـWebView يسلّمها دائماً ويمنعـ preventDefault
-  // التمريرَ الأصلي، فلا يلغي المتصفح الجيستشر ولا يسرقه.
+  // ⬇️ سحب من أعلى لأسفل → تحديث الصفحة (pull-to-refresh) — إصدار دقيق:
+  // 1) العتبة السلبية ENGAGE: اللمسات الصغيرة والحركات الدقيقة أثناء النقر لا تفعّل السحب
+  //    ولا تسرق التمرير (تحرّر الحركة للمتصفح).
+  // 2) مقياس الاتجاه: إن كان الحركة أفقية أكثر منها رأسية نُحجم فوراً (تجنّب سرقة سواقات).
+  // 3) نعمل فقط عندما تكون الصفحة فعلاً في أعلى الشاشة (المتصفح الرئيسي أو أي قائمة داخلية
+  //    تحت الإصبع هي التي أمسكت بالتمرير) — لا نعترض القوائم في منتصفها.
+  // 4) قفل الإقلاع BOOT_LOCK: أول ~1 ثانية من فتح التطبيق لا يلتقط أي لمسة — يمنع أي
+  //    إعادة تحميل غير مقصودة عند الفتح.
   const mainRef = useRef<HTMLElement | null>(null);
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
+    const PULL_T = 64;
+    const ENGAGE = 12;
+    const BOOT_LOCK_MS = 1000;
+    const bootedAt = Date.now();
+
     let active = false;
     let engaged = false;
+    let startX = 0;
     let startY = 0;
     let pullVal = 0;
-    const PULL_T = 64;
+    let fired = false;
 
     const setTouchAction = (v: string) => {
       try { document.documentElement.style.touchAction = v; } catch { /* تجاهل */ }
     };
-    const reset = () => {
+    const reset = (silent = false) => {
       active = false;
       engaged = false;
       pullVal = 0;
-      setPull(0);
+      if (!silent) setPull(0);
       setTouchAction("");
     };
 
+    // 📦 أقرب حاوية تمرير عمودية حقيقية تحت الإصبع (حتى لو كانت قائمة داخلية)
+    const scrollContainerOf = (node: EventTarget | null): HTMLElement | null => {
+      let n: HTMLElement | null = node as HTMLElement;
+      while (n && n.nodeType === 1 && n !== mainRef.current && n !== document.body && n !== document.documentElement) {
+        const s = getComputedStyle(n).overflowY;
+        if (/(auto|scroll)/.test(s) && n.scrollHeight > n.clientHeight + 2) return n;
+        n = n.parentElement;
+      }
+      return mainRef.current;
+    };
+
+    // هل الصفحة فعلاً في أعلى الشاشة؟ (النافذة + الحاوية الأقرب تحت الإصبع)
+    const isAtTop = (target: EventTarget | null) => {
+      if (window.scrollY > 0) return false;
+      const sc = scrollContainerOf(target);
+      return (sc ? sc.scrollTop : 0) <= 0;
+    };
+
     const onStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      const el = mainRef.current;
-      if ((el ? el.scrollTop : 0) > 0 || active) return;
+      if (Date.now() - bootedAt < BOOT_LOCK_MS) return; // 🛡️ قفل الإقلاع
+      if (e.touches.length !== 1 || fired) return;
+      if (!isAtTop(e.target)) return;
       active = true;
       engaged = false;
       startY = e.touches[0].clientY;
+      startX = e.touches[0].clientX;
       pullVal = 0;
-      setPull(0);
     };
 
     const onMove = (e: TouchEvent) => {
-      if (!active) return;
-      const el = mainRef.current;
-      if ((el ? el.scrollTop : 0) > 0) { reset(); return; }
-      const dy = e.touches[0].clientY - startY;
-      if (dy <= 0) { reset(); return; }
+      if (!active || fired) return;
+      const t = e.touches[0];
+      const dy = t.clientY - startY;
+      const dx = t.clientX - startX;
+      // 🔍 لم يتجاوز حد التموّت أو الحركة جانبية أكثر → نتخلى فوراً ونعيد التمرير الطبيعي
+      if (dy <= ENGAGE || Math.abs(dx) > Math.abs(dy)) {
+        if (engaged) reset();
+        return;
+      }
+      if (!isAtTop(e.target)) { reset(); return; }
       if (!engaged) {
         engaged = true;
-        setTouchAction("none"); // نمنع المتصفح من أخذ الحركة كتمرير
+        setTouchAction("none"); // فقط بعد التأكد من أنه سحب حقيقي
       }
-      e.preventDefault(); // يلغي التمرير الأصلي نهائياً (مضمون في أي WebView)
-      pullVal = Math.min(dy, PULL_T + 46) * 0.55;
+      e.preventDefault(); // يلغي التمرير الأصلي — مُضمون في أي WebView
+      pullVal = Math.min(dy - ENGAGE, PULL_T + 26) * 0.62;
       setPull(pullVal);
     };
 
     const onEnd = () => {
       if (!active) return;
       active = false;
+      const doRefresh = engaged && !fired && pullVal >= PULL_T;
       engaged = false;
       setTouchAction("");
-      if (pullVal >= PULL_T) {
+      if (doRefresh) {
+        fired = true; // 🚫 لا إعادة تحميل ثانية حتى لو جاءت لمسة أخرى
         setRefreshing(true);
         setPull(PULL_T);
         try { sessionStorage.setItem("solkit_skip_splash", "1"); } catch { /* تجاهل */ }
-        window.location.reload();
+        setTimeout(() => window.location.reload(), 120);
       } else {
         setPull(0);
       }
