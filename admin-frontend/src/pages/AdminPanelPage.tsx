@@ -202,29 +202,29 @@ export default function AdminPanelPage({ token }: { token: string }) {
         <h1 style={styles.title}>👑 {t("nav.admin")} — {branding.projectName}</h1>
       </div>
 
-      <div style={styles.tabBar}>
-        <button onClick={() => setAdminTab("general")} style={{ ...styles.tabBtn, ...(adminTab === "general" ? styles.tabActive : {}) }}>
+      <div className="admin-tabs">
+        <button onClick={() => setAdminTab("general")} className={`admin-tab${adminTab === "general" ? " admin-tab-active" : ""}`}>
           {t("admin.statsTitle")}
         </button>
-        <button onClick={() => setAdminTab("distribution")} style={{ ...styles.tabBtn, ...(adminTab === "distribution" ? styles.tabActive : {}) }}>
+        <button onClick={() => setAdminTab("distribution")} className={`admin-tab${adminTab === "distribution" ? " admin-tab-active" : ""}`}>
           {t("admin.distTitle")}
         </button>
-        <button onClick={() => setAdminTab("tasks")} style={{ ...styles.tabBtn, ...(adminTab === "tasks" ? styles.tabActive : {}) }}>
+        <button onClick={() => setAdminTab("tasks")} className={`admin-tab${adminTab === "tasks" ? " admin-tab-active" : ""}`}>
           {t("admin.tasksTitle")}
         </button>
-        <button onClick={() => setAdminTab("token")} style={{ ...styles.tabBtn, ...(adminTab === "token" ? styles.tabActive : {}) }}>
+        <button onClick={() => setAdminTab("token")} className={`admin-tab${adminTab === "token" ? " admin-tab-active" : ""}`}>
           {t("token.tab")}
         </button>
-        <button onClick={() => setAdminTab("branding")} style={{ ...styles.tabBtn, ...(adminTab === "branding" ? styles.tabActive : {}) }}>
+        <button onClick={() => setAdminTab("branding")} className={`admin-tab${adminTab === "branding" ? " admin-tab-active" : ""}`}>
           {t("nav.branding")}
         </button>
-        <button onClick={() => setAdminTab("maintenance")} style={{ ...styles.tabBtn, ...(adminTab === "maintenance" ? styles.tabActive : {}) }}>
+        <button onClick={() => setAdminTab("maintenance")} className={`admin-tab${adminTab === "maintenance" ? " admin-tab-active" : ""}`}>
           {t("nav.maintenance")}
         </button>
-        <button onClick={() => setAdminTab("airdrop")} style={{ ...styles.tabBtn, ...(adminTab === "airdrop" ? styles.tabActive : {}) }}>
+        <button onClick={() => setAdminTab("airdrop")} className={`admin-tab${adminTab === "airdrop" ? " admin-tab-active" : ""}`}>
           {t("nav.airdropCounter")}
         </button>
-        <button onClick={() => setAdminTab("levels")} style={{ ...styles.tabBtn, ...(adminTab === "levels" ? styles.tabActive : {}) }}>
+        <button onClick={() => setAdminTab("levels")} className={`admin-tab${adminTab === "levels" ? " admin-tab-active" : ""}`}>
           {t("nav.levels")}
         </button>
       </div>
@@ -306,20 +306,32 @@ export default function AdminPanelPage({ token }: { token: string }) {
         <div className="glass" style={styles.card}>
           <h3 style={styles.cardTitle}>{t("admin.levels.title")}</h3>
           <p style={{ ...styles.cardSub }}>{t("admin.levels.desc")}</p>
-          <div style={styles.lvlHead}>
-            <span style={styles.lvlColNum}>#</span>
-            <span style={{ ...styles.lvlCol, flex: 2 }}>{t("admin.levels.name")}</span>
-            <span style={styles.lvlCol}>{t("admin.levels.minXp")}</span>
-            <span style={styles.lvlCol}>{t("admin.levels.color")}</span>
-            <span style={styles.lvlCol}>{t("admin.levels.rate")}</span>
+          <div className="lvl-head">
+            <span>#</span>
+            <span>{t("admin.levels.name")}</span>
+            <span style={{ textAlign: "center" }}>{t("admin.levels.minXp")}</span>
+            <span style={{ textAlign: "center" }}>{t("admin.levels.color")}</span>
+            <span style={{ textAlign: "center" }}>{t("admin.levels.rate")}</span>
           </div>
           {levelPlan.map((l, i) => (
-            <div key={l.level} style={styles.lvlRow}>
-              <span style={{ ...styles.lvlNum, color: l.color }}>{l.level}</span>
-              <input value={l.name} onChange={(e) => updateLevel(i, "name", e.target.value)} style={{ ...styles.lvlInput, flex: 2, color: C.text }} />
-              <input type="number" value={l.minXp} onChange={(e) => updateLevel(i, "minXp", Number(e.target.value))} style={styles.lvlInputNum} />
-              <input type="color" value={l.color} onChange={(e) => updateLevel(i, "color", e.target.value)} style={styles.lvlColor} />
-              <input type="number" step="0.01" value={l.miningRate} onChange={(e) => updateLevel(i, "miningRate", Number(e.target.value))} style={styles.lvlInputNum} />
+            <div key={l.level} className="lvl-row">
+              <span className="lvl-num" style={{ color: l.color }}>{l.level}</span>
+              <label className="lvl-field">
+                <span className="lvl-fieldLabel">{t("admin.levels.name")}</span>
+                <input className="lvl-input" value={l.name} onChange={(e) => updateLevel(i, "name", e.target.value)} style={{ color: C.text }} />
+              </label>
+              <label className="lvl-field">
+                <span className="lvl-fieldLabel">{t("admin.levels.minXp")}</span>
+                <input className="lvl-input-num" type="number" value={l.minXp} onChange={(e) => updateLevel(i, "minXp", Number(e.target.value))} />
+              </label>
+              <label className="lvl-field">
+                <span className="lvl-fieldLabel">{t("admin.levels.color")}</span>
+                <input className="lvl-color" type="color" value={l.color} onChange={(e) => updateLevel(i, "color", e.target.value)} />
+              </label>
+              <label className="lvl-field">
+                <span className="lvl-fieldLabel">{t("admin.levels.rate")}</span>
+                <input className="lvl-input-num" type="number" step="0.01" value={l.miningRate} onChange={(e) => updateLevel(i, "miningRate", Number(e.target.value))} />
+              </label>
             </div>
           ))}
           <button
@@ -351,18 +363,15 @@ export default function AdminPanelPage({ token }: { token: string }) {
 }
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: { padding: 20, display: "flex", flexDirection: "column", gap: 20, maxWidth: 900, margin: "0 auto", direction: "rtl", fontFamily: font },
-  tabBar: { display: "flex", gap: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: 6, justifyContent: "center" },
-  tabBtn: { flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "transparent", color: C.muted, fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: font, transition: "all .2s ease" },
-  tabActive: { background: "rgba(0,255,204,0.12)", color: C.teal, boxShadow: "0 0 14px rgba(0,255,204,0.12)" },
+  container: { padding: 16, display: "flex", flexDirection: "column", gap: 16, maxWidth: 900, margin: "0 auto", direction: "rtl", fontFamily: font },
   headerBox: { textAlign: "center", marginBottom: 6 },
   title: { fontSize: 22, color: C.text, margin: 0, fontWeight: 900 },
   subtitle: { color: C.muted, fontSize: 13, marginTop: 6 },
-  statsGrid: { display: "flex", gap: 15, justifyContent: "space-between", flexWrap: "wrap" },
-  statCard: { borderRadius: 18, padding: 22, flex: 1, minWidth: 180, textAlign: "center" },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 },
+  statCard: { borderRadius: 18, padding: "18px 14px", minWidth: 0, textAlign: "center" },
   statIcon: { fontSize: 22, display: "block", marginBottom: 8 },
-  statLabel: { color: C.muted, fontSize: 13, display: "block" },
-  statValue: { margin: "10px 0 0 0", fontSize: 22, color: C.text, fontWeight: 900 },
+  statLabel: { color: C.muted, fontSize: 12.5, display: "block" },
+  statValue: { margin: "10px 0 0 0", fontSize: 20, color: C.text, fontWeight: 900 },
   tableCard: { padding: 24 },
   cardTitle: { fontSize: 16, fontWeight: 800, color: C.text, margin: "0 0 15px 0", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: 10 },
   noData: { color: C.green, textAlign: "center", fontSize: 14, margin: "20px 0", fontWeight: 800 },
@@ -381,13 +390,4 @@ const styles: { [key: string]: React.CSSProperties } = {
   tdActions: { padding: "14px 8px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
   actionBtn: { borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 800, cursor: "pointer", border: "none", fontFamily: font },
   rejectBtn: { background: "rgba(255,77,77,0.15)", border: "1px solid rgba(255,77,77,0.4)", color: "#ff4d4d" },
-  // 🏆 محرر المستويات
-  lvlHead: { display: "flex", gap: 8, alignItems: "center", padding: "4px 2px 8px", color: C.muted, fontSize: 11, fontWeight: 800 },
-  lvlColNum: { width: 28, textAlign: "center" },
-  lvlCol: { flex: 1, textAlign: "center" },
-  lvlRow: { display: "flex", gap: 8, alignItems: "center", padding: "7px 2px", borderTop: "1px solid rgba(255,255,255,0.06)" },
-  lvlNum: { width: 28, textAlign: "center", fontWeight: 900, fontSize: 14 },
-  lvlInput: { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 9, padding: "8px 10px", fontSize: 12.5, fontFamily: font, outline: "none" },
-  lvlInputNum: { width: 64, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 9, padding: "8px 6px", fontSize: 12.5, fontFamily: font, outline: "none", color: C.text, textAlign: "center" },
-  lvlColor: { width: 38, height: 34, border: "none", background: "transparent", cursor: "pointer", padding: 0 },
 };

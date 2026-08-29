@@ -351,3 +351,50 @@ html, body { overflow-x: hidden; }
   .glass { border-radius: 16px; }
   .btn { min-height: 46px; }
 }
+
+/* ─── لوحة المدير: 8 تبويبات → تمرير أفقي أنيق باللمس بدل الاكتظاظ ─── */
+.admin-tabs {
+  display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding: 6px; background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
+  scrollbar-width: none;
+}
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tab {
+  flex: 0 0 auto; white-space: nowrap; padding: 10px 16px; border-radius: 10px;
+  border: none; background: transparent; color: #8b93ab; font-weight: 800;
+  font-size: 13px; cursor: pointer; font-family: inherit; transition: all .2s ease;
+}
+.admin-tab-active {
+  background: rgba(0,255,204,0.12); color: #00ffcc;
+  box-shadow: 0 0 14px rgba(0,255,204,0.12);
+}
+
+/* ─── محرر المستويات: شبكة أعمدة على الشاشات الواسعة، بطاقات مكدّسة على الهاتف ─── */
+.lvl-head, .lvl-row {
+  display: grid; grid-template-columns: 30px 1.5fr 92px 48px 76px;
+  gap: 8px; align-items: center;
+}
+.lvl-head { padding: 4px 2px 8px; color: #8b93ab; font-size: 11px; font-weight: 800; }
+.lvl-row { padding: 8px 2px; border-top: 1px solid rgba(255,255,255,0.06); }
+.lvl-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.lvl-fieldLabel { display: none; }
+.lvl-field input { width: 100%; box-sizing: border-box; }
+.lvl-input, .lvl-input-num {
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 9px; padding: 8px 10px; font-size: 12.5px; font-family: inherit;
+  outline: none; color: #e8ecf5;
+}
+.lvl-input-num { text-align: center; width: 100%; }
+.lvl-color { width: 44px; height: 34px; border: 1px solid rgba(255,255,255,0.15); border-radius: 9px; background: transparent; cursor: pointer; padding: 2px; }
+
+@media (max-width: 640px) {
+  .lvl-head { display: none; }
+  .lvl-row {
+    grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px; margin-bottom: 10px; border-top: none;
+    background: rgba(255,255,255,0.03);
+  }
+  .lvl-row .lvl-num { grid-column: 1 / -1; font-size: 15px; font-weight: 900; }
+  .lvl-fieldLabel { display: block; font-size: 10.5px; color: #8b93ab; font-weight: 700; }
+}
