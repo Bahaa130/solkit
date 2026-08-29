@@ -261,7 +261,7 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       {/* زر التوزيع والمعاينة */}
       <div className="glass" style={styles.card}>
         <h3 style={styles.cardTitle}>تنفيذ التوزيع اليدوي</h3>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
           <label style={{ color: C.muted, fontSize: 13, fontWeight: 700 }}>{t("distribution.percentLabel")}</label>
           <input
             type="number"
@@ -272,7 +272,7 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
             style={{ width: 90, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "8px 12px", fontSize: 14, color: C.text, outline: "none", textAlign: "center" }}
           />
           <span style={{ color: C.muted, fontSize: 12 }}>%</span>
-          <span style={{ color: C.faint, fontSize: 11, marginInlineStart: "auto" }}>
+          <span style={{ color: C.faint, fontSize: 11, flex: 1, minWidth: 150, textAlign: "right" }}>
             {t("distribution.percentHint")}
           </span>
         </div>
@@ -386,8 +386,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   title: { fontSize: 22, color: C.text, margin: 0, fontWeight: 900 },
   subtitle: { color: C.muted, fontSize: 13, marginTop: 6 },
   notice: { padding: 16, borderRadius: 14, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 13 },
-  statsGrid: { display: "flex", gap: 15, justifyContent: "space-between", flexWrap: "wrap" },
-  statCard: { borderRadius: 18, padding: 22, flex: 1, minWidth: 150, textAlign: "center" },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 },
+  statCard: { borderRadius: 18, padding: 20, minWidth: 0, textAlign: "center" },
   statLabel: { color: C.muted, fontSize: 12, display: "block" },
   statValue: { margin: "8px 0 0 0", fontSize: 22, color: C.text, fontWeight: 900 },
   card: { padding: 24 },

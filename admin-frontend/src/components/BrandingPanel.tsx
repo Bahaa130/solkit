@@ -152,7 +152,7 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
         <label style={styles.label}>{t("branding.tokenIcon")}</label>
         <div style={styles.iconRow}>
           <CoinIcon size={48} />
-          <input type="file" accept="image/*" onChange={onFile} style={{ flex: 1, color: C.muted, fontSize: 13 }} />
+          <input type="file" accept="image/*" onChange={onFile} style={{ flex: 1, minWidth: 160, color: C.muted, fontSize: 13 }} />
           {form.tokenIcon && (
             <button
               onClick={() => setForm({ ...form, tokenIcon: "" })}
@@ -184,6 +184,6 @@ const styles: { [key: string]: React.CSSProperties } = {
   label: { display: "block", color: C.muted, fontSize: 13, fontWeight: 700, margin: "14px 0 8px" },
   input: { width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "12px 14px", fontSize: 13, fontFamily: font, outline: "none", color: C.text },
   preview: { display: "flex", alignItems: "center", gap: 16 },
-  iconRow: { display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "12px 14px" },
+  iconRow: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "12px 14px" },
   statusBox: { padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(0,255,204,0.25)", fontSize: 13, lineHeight: 1.7, textAlign: "right" },
 };

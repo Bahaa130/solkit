@@ -1,5 +1,6 @@
 import { apiFetch } from "./lib/api";
 import React, { useState, useEffect, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
 import ConnectWalletPage from "./pages/ConnectWalletPage";
 import HomePage from "./pages/HomePage";
 import ReferralPage from "./pages/ReferralPage";
@@ -124,8 +125,11 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false);
   // 🔧 حالة الصيانة (تُجلب من الخادم عند التحميل)
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
-  // 💫 شاشة التحميل الترحيبية — تُعرض مرة واحدة فقط بعد كل تثبيت (localStorage ثابت عبر الإقلاعات)،
-  // وتُتخطّى تماماً عند سحب التحديث. هكذا فتح التطبيق من جديد لا يظهر كأنه «يتحدث تلقائياً».
+  // 💫 شاشة التحميل الترحيبية:
+  // - في تطبيق أندرويد (Capacitor): تُعرض في كل فتح للتطبيق لمدة 3 ثوانٍ (بداية تحميل المشروع)،
+  //   حتى يبدو فتح التطبيق وكأنه تحميل حقيقي.
+  // - في المتصفح العادي: مرة واحدة فقط بعد كل تثبيت (localStorage ثابت عبر الإقلاعات).
+  // - وتُتخطّى تماماً عند سحب التحديث (sessionStorage skip).
   const [splash, setSplash] = useState(() => {
     try {
       // سحب التحديث → لا نعيد شاشة التحميل بعد إعادة التحميل مباشرة
@@ -133,6 +137,8 @@ export default function App() {
         sessionStorage.removeItem("solkit_skip_splash");
         return false;
       }
+      // أندرويد: شاشة التحميل في كل فتح
+      if (Capacitor.isNativePlatform()) return true;
       // أول فتح بعد التثبيت فقط: نعرض الشاشة ونحتفظ بالعلامة إلى الأبد
       if (localStorage.getItem("solkit_splash_shown")) return false;
       localStorage.setItem("solkit_splash_shown", "1");
@@ -145,21 +151,23 @@ export default function App() {
     return () => clearTimeout(id);
   }, [splash]);
 
-  // ⬇️ سحب من أعلى لأسفل → تحديث الصفحة (pull-to-refresh) — إصدار دقيق:
-  // 1) العتبة السلبية ENGAGE: اللمسات الصغيرة والحركات الدقيقة أثناء النقر لا تفعّل السحب
-  //    ولا تسرق التمرير (تحرّر الحركة للمتصفح).
-  // 2) مقياس الاتجاه: إن كان الحركة أفقية أكثر منها رأسية نُحجم فوراً (تجنّب سرقة سواقات).
-  // 3) نعمل فقط عندما تكون الصفحة فعلاً في أعلى الشاشة (المتصفح الرئيسي أو أي قائمة داخلية
+  // ⬇️ سحب من أعلى لأسفل → تحديث الصفحة (pull-to-refresh) — إصدار أندرويد الدقيق:
+  // 1) العتبة السلبية ENGAGE: اللمسات الصغيرة والحركات الدقيقة أثناء النقر لا تُفعّل السحب
+  //    ولا تسرق التمرير (تورِث الحركة للمتصفح).
+  // 2) مقياس الاتجاه: إن كانت الحركة أفقية أكثر منها رأسية نُحجم فوراً (تجنّب سرقة سواقات).
+  // 3) نعمل فقط عندما تكون الصفحة فعلاً في أعلى الشاشة (النافذة الرئيسية أو أي قائمة داخلية
   //    تحت الإصبع هي التي أمسكت بالتمرير) — لا نعترض القوائم في منتصفها.
-  // 4) قفل الإقلاع BOOT_LOCK: أول ~1 ثانية من فتح التطبيق لا يلتقط أي لمسة — يمنع أي
+  // 4) قفل الإقلاع BOOT_LOCK: أول ~0.8 ثانية من فتح التطبيق لا يلتقط أي لمسة — يمنع أي
   //    إعادة تحميل غير مقصودة عند الفتح.
+  // 5) تحديث المؤشر عبر requestAnimationFrame فقط — لا إجهاد على واجهة WebView الأندرويد،
+  //    وoverscroll-behavior: contain في CSS يعطّل انزلاق التحديث الأصلي للنظام حتى لا يصطدم بسحبنا.
   const mainRef = useRef<HTMLElement | null>(null);
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
     const PULL_T = 64;
     const ENGAGE = 12;
-    const BOOT_LOCK_MS = 1000;
+    const BOOT_LOCK_MS = 800;
     const bootedAt = Date.now();
 
     let active = false;
@@ -168,14 +176,25 @@ export default function App() {
     let startY = 0;
     let pullVal = 0;
     let fired = false;
+    let raf = 0;
+
+    // تطبيق القيمة على الـ state داخل إطار رسم واحد فقط (أقصى أداء على الأندرويد)
+    const applyPull = () => { raf = 0; setPull(pullVal); };
+    const schedulePull = () => {
+      if (!raf) raf = requestAnimationFrame(applyPull);
+    };
 
     const setTouchAction = (v: string) => {
-      try { document.documentElement.style.touchAction = v; } catch { /* تجاهل */ }
+      try {
+        document.documentElement.style.touchAction = v;
+        (document.body as HTMLElement).style.touchAction = v;
+      } catch { /* تجاهل */ }
     };
     const reset = (silent = false) => {
       active = false;
       engaged = false;
       pullVal = 0;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
       if (!silent) setPull(0);
       setTouchAction("");
     };
@@ -193,9 +212,9 @@ export default function App() {
 
     // هل الصفحة فعلاً في أعلى الشاشة؟ (النافذة + الحاوية الأقرب تحت الإصبع)
     const isAtTop = (target: EventTarget | null) => {
-      if (window.scrollY > 0) return false;
+      if (window.scrollY > 1) return false;
       const sc = scrollContainerOf(target);
-      return (sc ? sc.scrollTop : 0) <= 0;
+      return sc ? sc.scrollTop <= 1 : true;
     };
 
     const onStart = (e: TouchEvent) => {
@@ -224,12 +243,15 @@ export default function App() {
         engaged = true;
         setTouchAction("none"); // فقط بعد التأكد من أنه سحب حقيقي
       }
-      e.preventDefault(); // يلغي التمرير الأصلي — مُضمون في أي WebView
+      try { e.preventDefault(); } catch { /* تجاهل */ } // يلغي التمرير الأصلي — مضمون في أي WebView
       pullVal = Math.min(dy - ENGAGE, PULL_T + 26) * 0.62;
-      setPull(pullVal);
+      schedulePull();
     };
 
-    const onEnd = () => {
+    const onEnd = (e: TouchEvent) => {
+      if (active && engaged && e.cancelable) {
+        try { e.preventDefault(); } catch { /* تجاهل */ }
+      }
       if (!active) return;
       active = false;
       const doRefresh = engaged && !fired && pullVal >= PULL_T;
@@ -238,9 +260,10 @@ export default function App() {
       if (doRefresh) {
         fired = true; // 🚫 لا إعادة تحميل ثانية حتى لو جاءت لمسة أخرى
         setRefreshing(true);
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
         setPull(PULL_T);
         try { sessionStorage.setItem("solkit_skip_splash", "1"); } catch { /* تجاهل */ }
-        setTimeout(() => window.location.reload(), 120);
+        setTimeout(() => window.location.reload(), 160);
       } else {
         setPull(0);
       }
@@ -248,13 +271,14 @@ export default function App() {
 
     document.addEventListener("touchstart", onStart, { passive: true });
     document.addEventListener("touchmove", onMove, { passive: false });
-    document.addEventListener("touchend", onEnd);
-    document.addEventListener("touchcancel", onEnd);
+    document.addEventListener("touchend", onEnd, { passive: false });
+    document.addEventListener("touchcancel", onEnd, { passive: false });
     return () => {
       document.removeEventListener("touchstart", onStart);
       document.removeEventListener("touchmove", onMove);
       document.removeEventListener("touchend", onEnd);
       document.removeEventListener("touchcancel", onEnd);
+      if (raf) cancelAnimationFrame(raf);
       setTouchAction("");
     };
   }, []);

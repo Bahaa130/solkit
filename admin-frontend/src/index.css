@@ -398,3 +398,13 @@ html, body { overflow-x: hidden; }
   .lvl-row .lvl-num { grid-column: 1 / -1; font-size: 15px; font-weight: 900; }
   .lvl-fieldLabel { display: block; font-size: 10.5px; color: #8b93ab; font-weight: 700; }
 }
+
+/* ============================================
+   تحسين جداول لوحة الإدارة على الهاتف
+   ============================================ */
+.table-wrapper { -webkit-overflow-scrolling: touch; }
+.table-wrapper table { min-width: 520px; }
+
+@media (max-width: 420px) {
+  .table-wrapper table { min-width: 480px; }
+}
