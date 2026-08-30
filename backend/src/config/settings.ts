@@ -21,6 +21,19 @@ export interface SiteSettings {
   tokenSymbol: string;        // 🔤 رمز العملة (مثل SOLKIT)
   tokenIcon: string;          // 🖼️ أيقونة العملة (data URL بصيغة base64) أو نص فارغ = الإيموجي الافتراضي 💎
   levelPlan: LevelDef[];      // 🎯 خطة المستويات التسعة (النشاط) — يضبطها المدير
+  // ── ثوابت الأرقام التي تتحكم بها الإدارة ──
+  dailyRewards: number[];             // 🎁 مكافآت البونص اليومي لكل يوم من أيام السلسلة (1..31 يوماً)
+  dailyLevelMult: number;             // 📈 مضاعف مستوى المستخدم على مكافأة البونص (0.05 = +5% لكل مستوى)
+  activationFullLamports: number;     // 💰 رسوم التفعيل بدون إحالة (باللامبرت — 1e9 لامبرت = 1 SOL)
+  activationHalfLamports: number;     // 💰 حصة كل محفظة عند التقسيم مع إحالة (باللامبرت)
+  siteShare: number;                  // 🏦 نسبة رسوم الموقع من مبلغ التفعيل عند التقسيم
+  referrerShare: number;              // 🤝 حصة المحيل من مبلغ التفعيل عند التقسيم
+  xpLogin: number;                    // 📊 نقاط نشاط تسجيل الدخول
+  xpTask: number;                     // 📊 نقاط نشاط إكمال مهمة (بعد موافقة المدير)
+  xpGame: number;                     // 📊 نقاط نشاط لعب جولة
+  xpRef: number;                      // 📊 نقاط نشاط تفعيل صديق عبر الإحالة
+  xpMine: number;                     // 📊 نقاط نشاط إكمال جلسة تعدين (24 ساعة)
+  xpBonus: number;                    // 📊 نقاط نشاط المطالبة بالبونص اليومي
 }
 
 // 🎯 تعريف مستوى واحد في خطة المستويات (يُدار من لوحة المدير)
@@ -55,6 +68,18 @@ const DEFAULTS: SiteSettings = {
     { level: 8, name: "الفخري", minXp: 5200, color: "#ef4444", miningRate: 1.55 },
     { level: 9, name: "القمة", minXp: 8000, color: "#fde047", miningRate: 1.85 },
   ],
+  dailyRewards: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
+  dailyLevelMult: 0.05,
+  activationFullLamports: 30000000,   // 0.03 SOL
+  activationHalfLamports: 15000000,   // 0.015 SOL
+  siteShare: 0.015,
+  referrerShare: 0.015,
+  xpLogin: 10,
+  xpTask: 25,
+  xpGame: 5,
+  xpRef: 50,
+  xpMine: 30,
+  xpBonus: 15,
 };
 
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)

@@ -81,9 +81,8 @@ async function fetchBlockhashWithRetry(
   throw new Error(`RPC unreachable :: ${detail}`);
 }
 
-// 💰 مبالغ التفعيل المحدّثة: 0.015 SOL لكل محفظة (الإجمالي 0.03 SOL)
-const HALF_LAMPORTS = 15000000; // 0.015 SOL
-const FULL_LAMPORTS = 30000000; // 0.03 SOL
+// 💰 مبالغ التفعيل تُقرأ من إعدادات المدير (تظهر وتُبنى ديناميكياً) — الافتراضي 0.015+0.015 = 0.03 SOL
+const DEFAULT_FEE = { fullLamports: 30000000, halfLamports: 15000000, siteShare: 0.015, referrerShare: 0.015 };
 
 interface Session {
   userId: number;
@@ -125,6 +124,8 @@ export default function App() {
   const [langOpen, setLangOpen] = useState(false);
   // 🔧 حالة الصيانة (تُجلب من الخادم عند التحميل)
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
+  // 💰 رسوم التفعيل ومبالغ التقسيم يتحكم بها المدير — تُجلب من إعدادات الخادم
+  const [feeCfg, setFeeCfg] = useState(DEFAULT_FEE);
   // 💫 شاشة التحميل الترحيبية:
   // - في تطبيق أندرويد (Capacitor): تُعرض في كل فتح للتطبيق لمدة 3 ثوانٍ (بداية تحميل المشروع)،
   //   حتى يبدو فتح التطبيق وكأنه تحميل حقيقي.
@@ -342,6 +343,12 @@ export default function App() {
           const data = await res.json();
           if (!cancelled) {
             setMaintenance({ enabled: Boolean(data.maintenanceMode), message: data.maintenanceMessage || "" });
+            setFeeCfg({
+              fullLamports: Number(data.activationFullLamports) || DEFAULT_FEE.fullLamports,
+              halfLamports: Number(data.activationHalfLamports) || DEFAULT_FEE.halfLamports,
+              siteShare: Number(data.siteShare ?? DEFAULT_FEE.siteShare),
+              referrerShare: Number(data.referrerShare ?? DEFAULT_FEE.referrerShare),
+            });
           }
         } else if (!cancelled) {
           setMaintenance({ enabled: false, message: "" });
@@ -465,16 +472,16 @@ export default function App() {
 
         // أ. 0.015 SOL لمحفظة الموقع
         transaction.add(
-          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: HALF_LAMPORTS })
+          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: feeCfg.halfLamports })
         );
-        // ب. 0.015 SOL لصاحب الإحالة الحقيقي
+        // ب. نصف رسوم التفعيل لصاحب الإحالة الحقيقي
         transaction.add(
-          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: referrerPublicKey, lamports: HALF_LAMPORTS })
+          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: referrerPublicKey, lamports: feeCfg.halfLamports })
         );
       } else {
         setPayStatus({ type: "loading", text: t("app.payNoRef") });
         transaction.add(
-          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: FULL_LAMPORTS })
+          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: feeCfg.fullLamports })
         );
       }
 
@@ -655,17 +662,17 @@ export default function App() {
             <h2 style={styles.payTitle}>{t("app.payTitle")}</h2>
             <p style={styles.payDesc}>
               {t("app.payDesc")}{" "}
-              <strong className="gradient-text" style={{ fontSize: 18 }}>0.03 SOL</strong>.
+              <strong className="gradient-text" style={{ fontSize: 18 }}>{(feeCfg.fullLamports / 1e9).toFixed(3)} SOL</strong>.
             </p>
 
             <div style={{ ...styles.splitBox, textAlign }}>
               <div style={styles.splitRow}>
                 <span className="pill" style={{ background: "rgba(0,255,204,0.1)", color: C.teal, border: "1px solid rgba(0,255,204,0.25)" }}>{t("app.siteWallet")}</span>
-                <span style={{ fontWeight: 800, color: C.text }}>0.015 SOL</span>
+                <span style={{ fontWeight: 800, color: C.text }}>{(feeCfg.halfLamports / 1e9).toFixed(3)} SOL</span>
               </div>
               <div style={styles.splitRow}>
                 <span className="pill" style={{ background: "rgba(124,92,255,0.12)", color: "#b3a1ff", border: "1px solid rgba(124,92,255,0.3)" }}>{t("app.referrer")}</span>
-                <span style={{ fontWeight: 800, color: C.text }}>0.015 SOL</span>
+                <span style={{ fontWeight: 800, color: C.text }}>{(feeCfg.halfLamports / 1e9).toFixed(3)} SOL</span>
               </div>
               <p style={{ ...T2.hint, marginTop: 8 }}>{t("app.splitHint")}</p>
             </div>

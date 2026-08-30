@@ -6,13 +6,13 @@ import { useLang } from "../i18n/index.tsx";
 interface LevelDef { level: number; name: string; minXp: number; color: string; miningRate: number; }
 interface LeaderRow { id: number; walletAddress: string | null; currentLevel: number; currentXp: number; activationStatus: string; }
 
-// 💡 طرق كسب نقاط النشاط للوصول للمستوى التالي
-const HOW_ITEMS: { label: string; pts: number }[] = [
-  { label: "levels.actLogin", pts: 10 },
-  { label: "levels.actTask", pts: 25 },
-  { label: "levels.actGame", pts: 5 },
-  { label: "levels.actRef", pts: 50 },
-  { label: "levels.actMine", pts: 30 },
+// 💡 طرق كسب نقاط النشاط للوصول للمستوى التالي — قيمها يتحكم بها المدير من إعدادات الموقع
+const HOW_DEFAULTS: { label: string; key: string; pts: number }[] = [
+  { label: "levels.actLogin", key: "xpLogin", pts: 10 },
+  { label: "levels.actTask", key: "xpTask", pts: 25 },
+  { label: "levels.actGame", key: "xpGame", pts: 5 },
+  { label: "levels.actRef", key: "xpRef", pts: 50 },
+  { label: "levels.actMine", key: "xpMine", pts: 30 },
 ];
 
 export default function LevelsPage({ userId, token }: { userId: number; token: string }) {
@@ -21,17 +21,24 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
   const [leaderboard, setLeaderboard] = useState<LeaderRow[]>([]);
   const [me, setMe] = useState<{ currentLevel: number; currentXp: number }>({ currentLevel: 1, currentXp: 0 });
   const [loading, setLoading] = useState(true);
+  // 🎯 نقاط كسب النشاط — قيمها يتحكم بها المدير من إعدادات الموقع
+  const [how, setHow] = useState(HOW_DEFAULTS);
 
   useEffect(() => {
     (async () => {
       try {
         const headers = { Authorization: `Bearer ${token}` };
-        const [lv, us] = await Promise.all([
+        const [lv, us, st] = await Promise.all([
           apiFetch("/api/users/levels", { headers }),
           apiFetch(`/api/users/${userId}`, { headers }),
+          apiFetch("/api/users/settings"),
         ]);
         if (lv.ok) { const d = await lv.json(); setPlan(d.plan || []); setLeaderboard(d.leaderboard || []); }
         if (us.ok) { const d = await us.json(); setMe({ currentLevel: Number(d.currentLevel || 1), currentXp: Number(d.currentXp || 0) }); }
+        if (st.ok) {
+          const d = await st.json();
+          setHow(HOW_DEFAULTS.map((h) => ({ ...h, pts: Number(d[h.key] ?? h.pts) })));
+        }
       } catch { /* تجاهل */ }
       finally { setLoading(false); }
     })();
@@ -84,7 +91,7 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
         <h3 style={styles.howTitle}>💡 {t("levels.howTitle")}</h3>
         <p style={{ ...styles.howDesc, color: C.muted }}>{t("levels.howDesc")}</p>
         <div style={styles.howList}>
-          {HOW_ITEMS.map((it) => {
+          {how.map((it) => {
             const times = gap > 0 ? Math.ceil(gap / it.pts) : 0;
             const cover = gap > 0 ? Math.min(100, (it.pts / gap) * 100) : 100;
             return (

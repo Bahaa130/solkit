@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
 import { awardActivity } from "../users/levelSystem.js"; // 🎯 نقاط النشاط عند لعب لعبة
+import { getSettings } from "../../config/settings.js"; // ⚙️ نقاط النشاط يتحكم بها المدير
 
 const router = Router();
 // 🔐 إغلاق آمن: لا بديل عام لمفتاح التوكن — أضف JWT_SECRET على Render قبل التشغيل
@@ -241,7 +242,7 @@ router.post("/result", authenticateJWT, async (req: AuthenticatedRequest, res: R
     });
 
     // 🎯 منح نقاط النشاط لعبّ اللعبة
-    try { await awardActivity(userId, 5); } catch (e) { console.error("game activity error:", e); }
+    try { await awardActivity(userId, getSettings().xpGame); } catch (e) { console.error("game activity error:", e); }
 
     return res.json({
       reward: final,

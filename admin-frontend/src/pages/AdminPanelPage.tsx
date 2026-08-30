@@ -5,6 +5,7 @@ import DistributionPanel from "../components/DistributionPanel";
 import CommunityTasksPanel from "../components/CommunityTasksPanel";
 import TokenSetupPanel from "../components/TokenSetupPanel";
 import BrandingPanel from "../components/BrandingPanel";
+import RulesPanel from "../components/RulesPanel";
 import { useToast } from "../components/Toast";
 import { useLang } from "../i18n/index.tsx";
 import { useBranding } from "../branding";
@@ -23,7 +24,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
   const { branding } = useBranding();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels">("general");
+  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules">("general");
   const [levelPlan, setLevelPlan] = useState<LevelRow[]>([]);
   // ⚙️ إعدادات الموقع (الصيانة + عدّاد TGE)
   const [settings, setSettings] = useState<{ maintenanceMode: boolean; maintenanceMessage: string; tgeTarget: number }>({
@@ -227,6 +228,9 @@ export default function AdminPanelPage({ token }: { token: string }) {
         <button onClick={() => setAdminTab("levels")} className={`admin-tab${adminTab === "levels" ? " admin-tab-active" : ""}`}>
           {t("nav.levels")}
         </button>
+        <button onClick={() => setAdminTab("rules")} className={`admin-tab${adminTab === "rules" ? " admin-tab-active" : ""}`}>
+          {t("admin.constantsTitle")}
+        </button>
       </div>
 
       {adminTab === "distribution" ? (
@@ -343,6 +347,8 @@ export default function AdminPanelPage({ token }: { token: string }) {
             {savingSettings ? t("admin.savingSettings") : t("admin.levels.save")}
           </button>
         </div>
+      ) : adminTab === "rules" ? (
+        <RulesPanel token={token} />
       ) : (
         <>
         <div style={styles.statsGrid}>

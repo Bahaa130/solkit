@@ -25,8 +25,6 @@ const requireEnv = (name: string): string => {
 const JWT_SECRET = requireEnv("JWT_SECRET");
 export const ADMIN_WALLET = requireEnv("ADMIN_WALLET");
 
-const DAILY_REWARDS = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0];
-
 // ⛏️ دالة مساعدة: إنهاء جلسة تعدين وقيد أرباحها اللحظية لرصيد المستخدم
 // تُستخدم عند اكتمال الـ 24 ساعة (في mining-status) أو عند بدء جلسة جديدة فوق جلسة منتهية (mining-start)
 const finishMiningSession = async (session: any, minedAmount: number, userId: number) => {
@@ -41,7 +39,7 @@ const finishMiningSession = async (session: any, minedAmount: number, userId: nu
     })
   ]);
   // 🎯 منح نقاط النشاط لإكمال جلسة التعدين (24 ساعة)
-  try { await awardActivity(userId, 30); } catch (e) { console.error("mining activity error:", e); }
+  try { await awardActivity(userId, getSettings().xpMine); } catch (e) { console.error("mining activity error:", e); }
 };
 
 // 🪪 مخزن مؤقت لرموز التحدّي (nonce) بصلاحية 5 دقائق — يمنع إعادة استخدام التوقيع
@@ -160,7 +158,7 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
       const last = user.lastLoginActivityAt ? new Date(user.lastLoginActivityAt) : null;
       const lastDay = last ? new Date(last).setHours(0, 0, 0, 0) : 0;
       if (lastDay < today.getTime()) {
-        await awardActivity(user.id, 10);
+        await awardActivity(user.id, getSettings().xpLogin);
         await prisma.user.update({ where: { id: user.id }, data: { lastLoginActivityAt: new Date() } } as any);
       }
     } catch (actErr) {
@@ -206,7 +204,8 @@ const findEligiblePayment = async (
   hasReferrer: boolean,
 ): Promise<string | null> => {
   const connection = new Connection(solanaRpcUrl, "confirmed");
-  const minRequired = hasReferrer ? 15000000 : 30000000;
+  const s = getSettings();
+  const minRequired = hasReferrer ? s.activationHalfLamports : s.activationFullLamports;
   try {
     const signatures = await connection.getSignaturesForAddress(
       new PublicKey(ADMIN_WALLET),
@@ -317,19 +316,20 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
         return idx === -1 ? 0 : postBalances[idx] - preBalances[idx];
       };
 
-      // ✅ التحقق من وصول حصة محفظة الموقع (0.015 SOL مع وجود إحالة، أو 0.03 SOL كاملة بدونها)
+      // ✅ التحقق من وصول حصة محفظة الموقع (نصف رسوم التفعيل مع وجود إحالة، أو المبلغ الكامل بدونها)
       const adminReceived = receivedBy(ADMIN_WALLET);
-      const minimumRequiredAmount = user.referrerId ? 15000000 : 30000000;
+      const feeCfg = getSettings();
+      const minimumRequiredAmount = user.referrerId ? feeCfg.activationHalfLamports : feeCfg.activationFullLamports;
       if (adminReceived < minimumRequiredAmount) {
         return res.status(400).json({ message: "المبلغ المرسل غير كافٍ لتنشيط رسوم التفعيل" });
       }
 
-      // 🛡️ التحقق الصارم من وصول الحصة الأخرى (0.015 SOL) لمحفظة صاحب الإحالة الفعلي على البلوكشين
+      // 🛡️ التحقق الصارم من وصول الحصة الأخرى لنصف رسوم التفعيل إلى محفظة صاحب الإحالة الفعلي على البلوكشين
       if (user.referrerId && user.referrer?.walletAddress) {
         const referrerReceived = receivedBy(user.referrer.walletAddress);
-        if (referrerReceived < 15000000) {
+        if (referrerReceived < feeCfg.activationHalfLamports) {
           return res.status(400).json({
-            message: "احتيال: لم تصل حصة صاحب الإحالة (0.015 SOL) إلى محفظته على البلوكشين!"
+            message: "احتيال: لم تصل حصة صاحب الإحالة إلى محفظته على البلوكشين!"
           });
         }
       }
@@ -339,8 +339,9 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
       return res.status(400).json({ message: "فشل السيرفر في التحقق من المعاملة عبر عقدة الـ RPC، حاول مجدداً" });
     }
 
-    const siteShare = 0.015;
-    const referrerShare = user.referrerId ? 0.015 : 0.0;
+    const feeCfg2 = getSettings();
+    const siteShare = feeCfg2.siteShare;
+    const referrerShare = user.referrerId ? feeCfg2.referrerShare : 0.0;
 
     // تفعيل الحساب الفعلي وتقسيم الأرباح في الـ MySQL بعد نجاح توثيق البلوكشين
     await prisma.$transaction(async (tx) => {
@@ -362,19 +363,21 @@ router.post("/activate-account", authenticateJWT, async (req: AuthenticatedReque
           data: { balance: { increment: referrerShare } } as any
         });
       } else {
-        await (tx as any).payment.create({ data: { userId, amount: 0.03, currency: "SOL", status: "paid", txHash: txHash } });
+        await (tx as any).payment.create({ data: { userId, amount: feeCfg2.activationFullLamports / 1e9, currency: "SOL", status: "paid", txHash: txHash } });
       }
     });
 
-    // 🪙 مكافأة صاحب الإحالة: 10 عملات تُضاف لرصيده فور تفعيل المحالّ له بنجاح
+    // 🪙 مكافأة صاحب الإحالة: 10 عملات تُضاف لرصيده فور تفعيل المحالّ له بنجاح + نقاط نشاط
     const referrerId = user.referrerId;
     if (referrerId) {
+      const refXp = getSettings().xpRef; // 📊 نقاط نشاط إحالة صديق (تظهر في صفحة المستويات)
       try {
         await prisma.$transaction(async (tx) => {
           await tx.user.update({ where: { id: referrerId }, data: { balance: { increment: 10 } } as any });
           await (tx as any).reward.create({ data: { userId: referrerId, type: "referral_bonus", amount: 10, sourceUserId: userId } });
         });
-      } catch (e) { console.error("referrer 10-coin bonus error:", e); }
+        await awardActivity(referrerId, refXp);
+      } catch (e) { console.error("referrer bonus error:", e); }
     }
 
     return res.json({ message: "تم تفعيل حسابك كمستخدم نشط بنجاح باهر عبر البلوكشين! 🎉", activationStatus: "active" });
@@ -432,7 +435,7 @@ router.get("/referral-network", authenticateJWT, async (req: AuthenticatedReques
     const processed = user.referrals.map((ref: any) => {
       // 💰 التحقق مما إذا كان العضو المدعو قد دفع رسوم التفعيل وتغيرت حالته بنجاح
       const isPaid = ref.activationStatus === "active";
-      const bonus = isPaid ? 0.015 : 0.00;
+      const bonus = isPaid ? getSettings().referrerShare : 0.00;
       totalEarned += bonus;
 
       // 🔐 دالة إخفاء الإيميل المصححة هندسياً لمنع انهيار الـ substring
@@ -576,15 +579,17 @@ router.post("/claim-daily", authenticateJWT, async (req: AuthenticatedRequest, r
       }
     }
 
-    const baseReward = DAILY_REWARDS[currentStreak - 1];
+    const feeSettings = getSettings();
+    const rewardTable = feeSettings.dailyRewards.length ? feeSettings.dailyRewards : [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0];
+    const baseReward = rewardTable[Math.min(currentStreak, rewardTable.length) - 1] ?? rewardTable[rewardTable.length - 1] ?? 1.0;
     const lvl = user.currentLevel || 1;
-    const finalReward = baseReward * (1 + (lvl - 1) * 0.05);
+    const finalReward = Math.round(baseReward * (1 + (lvl - 1) * feeSettings.dailyLevelMult) * 1e6) / 1e6;
     await prisma.$transaction([
       (prisma as any).dailyBonus.create({ data: { userId, streakDay: currentStreak, rewardAmount: finalReward, claimedAt: now } }),
       prisma.user.update({ where: { id: userId }, data: { balance: { increment: finalReward } } as any })
     ]);
     // 🎯 منح نقاط النشاط للمطالبة بالبونص اليومي
-    await awardActivity(userId, 15);
+    await awardActivity(userId, feeSettings.xpBonus);
     const updated = await prisma.user.findUnique({ where: { id: userId }, select: { currentLevel: true, currentXp: true } });
     return res.json({ message: `تمت المطالبة ببونص اليوم ${currentStreak} بنجاح! 🎉`, reward: finalReward, currentLevel: updated?.currentLevel || lvl, xpProgress: `${updated?.currentXp || 0}` });
   } catch (error) {
@@ -1062,6 +1067,18 @@ router.get("/settings", async (_req: Request, res: Response) => {
       tokenSymbol: cfg.symbol,
       tokenIcon: cfg.icon,
       levelPlan: getLevelPlan(),
+      dailyRewards: s.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
+      dailyLevelMult: s.dailyLevelMult ?? 0.05,
+      activationFullLamports: s.activationFullLamports || 30000000,
+      activationHalfLamports: s.activationHalfLamports || 15000000,
+      siteShare: s.siteShare ?? 0.015,
+      referrerShare: s.referrerShare ?? 0.015,
+      xpLogin: s.xpLogin ?? 10,
+      xpTask: s.xpTask ?? 25,
+      xpGame: s.xpGame ?? 5,
+      xpRef: s.xpRef ?? 50,
+      xpMine: s.xpMine ?? 30,
+      xpBonus: s.xpBonus ?? 15,
     });
   } catch (error: any) {
     console.error("GET /settings error:", error);
@@ -1107,7 +1124,19 @@ const settingsSchema = z.object({
     minXp: z.number().int().min(0),
     color: z.string().min(4).max(20),
     miningRate: z.number().min(0),
-  })).optional()
+  })).optional(),
+  dailyRewards: z.array(z.number().min(0).max(1_000_000)).min(1).max(31).optional(),
+  dailyLevelMult: z.number().min(0).max(1).optional(),
+  activationFullLamports: z.number().int().min(1_000_000).max(1_000_000_000_000).optional(),
+  activationHalfLamports: z.number().int().min(1_000_000).max(1_000_000_000_000).optional(),
+  siteShare: z.number().min(0).max(1).optional(),
+  referrerShare: z.number().min(0).max(1).optional(),
+  xpLogin: z.number().int().min(0).max(100000).optional(),
+  xpTask: z.number().int().min(0).max(100000).optional(),
+  xpGame: z.number().int().min(0).max(100000).optional(),
+  xpRef: z.number().int().min(0).max(100000).optional(),
+  xpMine: z.number().int().min(0).max(100000).optional(),
+  xpBonus: z.number().int().min(0).max(100000).optional(),
 });
 
 router.post("/admin/settings", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
@@ -1132,6 +1161,18 @@ router.post("/admin/settings", authenticateJWT, async (req: AuthenticatedRequest
       tokenSymbol: cfg.symbol,
       tokenIcon: cfg.icon,
       levelPlan: getLevelPlan(),
+      dailyRewards: updated.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
+      dailyLevelMult: updated.dailyLevelMult ?? 0.05,
+      activationFullLamports: updated.activationFullLamports || 30000000,
+      activationHalfLamports: updated.activationHalfLamports || 15000000,
+      siteShare: updated.siteShare ?? 0.015,
+      referrerShare: updated.referrerShare ?? 0.015,
+      xpLogin: updated.xpLogin ?? 10,
+      xpTask: updated.xpTask ?? 25,
+      xpGame: updated.xpGame ?? 5,
+      xpRef: updated.xpRef ?? 50,
+      xpMine: updated.xpMine ?? 30,
+      xpBonus: updated.xpBonus ?? 15,
     });
   } catch (error: any) {
     console.error("Update settings error:", error);
