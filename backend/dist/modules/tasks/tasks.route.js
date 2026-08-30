@@ -6,7 +6,6 @@ import { prisma } from "../../config/prisma.js";
 import { authenticateJWT } from "../../middlewares/auth.middleware.js";
 import { isAdmin } from "../users/users.route.js";
 import { awardActivity } from "../users/levelSystem.js"; // 🎯 نقاط النشاط عند الموافقة على مهمة
-import { getSettings } from "../../config/settings.js"; // ⚙️ نقاط النشاط يتحكم بها المدير
 const router = Router();
 // ── مخططات التحقق من الصيغة ──
 const verifySchema = z.object({
@@ -232,7 +231,7 @@ router.post("/admin/approve", authenticateJWT, async (req, res) => {
         });
         // 🎯 منح نقاط النشاط لإكمال المهمة الاجتماعية
         try {
-            await awardActivity(task.userId, getSettings().xpTask);
+            await awardActivity(task.userId, "xpTask");
         }
         catch (e) {
             console.error("task activity error:", e);

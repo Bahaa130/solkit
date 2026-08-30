@@ -47,6 +47,14 @@ model User {
   currentLevel Int     @default(1) // مستوى الحساب الحالي (1، 2، 3)
   currentXp    Int     @default(0) // نقاط الخبرة للانتقال للمستوى التالي
 
+  // 📊 نقاط النشاط المكتسبة فعلياً لكل فئة (لتقدم المستويات الحقيقي)
+  xpLoginEarned Int @default(0) // ما كسبه من تسجيل الدخول اليومي
+  xpTaskEarned  Int @default(0) // ما كسبه من المهام المجتمعية
+  xpGameEarned  Int @default(0) // ما كسبه من الألعاب
+  xpRefEarned   Int @default(0) // ما كسبه من تفعيل الأصدقاء
+  xpMineEarned  Int @default(0) // ما كسبه من جلسات التعدين
+  xpBonusEarned Int @default(0) // ما كسبه من المطالبة بالبونص اليومي
+
   referrer  User?  @relation("UserReferrer", fields: [referrerId], references: [id])
   referrals User[] @relation("UserReferrer")
 

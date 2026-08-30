@@ -16,7 +16,7 @@ interface AdminStats {
   totalRevenue: number;
 }
 
-type LevelRow = { level: number; name: string; minXp: number; color: string; miningRate: number };
+type LevelRow = { level: number; name: string; minXp: number; color: string; miningRate: number; xpLogin?: number; xpTask?: number; xpGame?: number; xpRef?: number; xpMine?: number; xpBonus?: number };
 
 // قمنا بتحديث المكون ليستقبل الـ token حياً من الأب الموثق 🛡️
 export default function AdminPanelPage({ token }: { token: string }) {
@@ -26,11 +26,8 @@ export default function AdminPanelPage({ token }: { token: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules">("general");
   const [levelPlan, setLevelPlan] = useState<LevelRow[]>([]);
-  // 📊 نقاط كسب النشاط — تُدار من تبويب المستويات (تُمنح فعلياً للمستخدمين وتظهر في صفحتهم)
-  const [xpVals, setXpVals] = useState<{ xpLogin: number; xpTask: number; xpGame: number; xpRef: number; xpMine: number; xpBonus: number }>({
-    xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15,
-  });
-  const [savingXp, setSavingXp] = useState(false);
+  // 🎯 المستوى المحدد لتحرير نقاط نشاطه (لكل مستوى نقاطه الخاصة)
+  const [selLevel, setSelLevel] = useState<number>(1);
   // ⚙️ إعدادات الموقع (الصيانة + عدّاد TGE)
   const [settings, setSettings] = useState<{ maintenanceMode: boolean; maintenanceMessage: string; tgeTarget: number }>({
     maintenanceMode: false,
@@ -96,15 +93,8 @@ export default function AdminPanelPage({ token }: { token: string }) {
         });
         if (Array.isArray(data.levelPlan) && data.levelPlan.length) {
           setLevelPlan(data.levelPlan.map((l: LevelRow) => ({ ...l })));
+          setSelLevel((prev) => (data.levelPlan.some((x: LevelRow) => x.level === prev) ? prev : data.levelPlan[0].level));
         }
-        setXpVals({
-          xpLogin: Number(data.xpLogin ?? 10),
-          xpTask: Number(data.xpTask ?? 25),
-          xpGame: Number(data.xpGame ?? 5),
-          xpRef: Number(data.xpRef ?? 50),
-          xpMine: Number(data.xpMine ?? 30),
-          xpBonus: Number(data.xpBonus ?? 15),
-        });
       }
     } catch { /* تجاهل */ }
   };
@@ -165,9 +155,23 @@ export default function AdminPanelPage({ token }: { token: string }) {
     }
   };
 
-  // 🏆 حفظ خطة المستويات
+  // 🏆 حفظ خطة المستويات (تشمل الأسماء والعتبات ونقاط النشاط لكل مستوى)
   const updateLevel = (i: number, key: keyof LevelRow, val: string | number) => {
     setLevelPlan((prev) => prev.map((l, idx) => (idx === i ? { ...l, [key]: val } : l)));
+  };
+
+  // 🎯 تعديل نقاط النشاط للمستوى المحدّد (لكل مستوى قيم خاصة به تُمنح فعلياً)
+  const setSelLevelXp = (key: keyof LevelRow, val: string) => {
+    const n = Math.max(0, Math.round(Number(val) || 0));
+    setLevelPlan((prev) => prev.map((l) => (l.level === selLevel ? { ...l, [key]: n } : l)));
+  };
+
+  const xpOf = (key: keyof LevelRow): number => {
+    const row = levelPlan.find((l) => l.level === selLevel);
+    const v = row ? Number(row[key]) : NaN;
+    if (Number.isFinite(v) && v >= 0) return v;
+    const DEFAULTS: Record<string, number> = { xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 };
+    return DEFAULTS[key] ?? 0;
   };
 
   const saveLevels = async () => {
@@ -190,35 +194,6 @@ export default function AdminPanelPage({ token }: { token: string }) {
       toast.error(t("admin.settingsError"));
     } finally {
       setSavingSettings(false);
-    }
-  };
-
-  // 📊 حفظ نقاط نشاط المستويات — تُمنح فعلياً للمستخدمين وتظهر في صفحة المستويات
-  const setXp = (key: keyof typeof xpVals, val: string) => {
-    const n = Math.max(0, Math.round(Number(val) || 0));
-    setXpVals((prev) => ({ ...prev, [key]: n }));
-  };
-
-  const saveXp = async () => {
-    try {
-      setSavingXp(true);
-      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-      const res = await apiFetch("/api/users/admin/settings", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ ...xpVals }),
-      });
-      if (res.ok) {
-        toast.success(t("admin.settingsSaved"));
-        fetchSettings();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.message || t("admin.settingsError"));
-      }
-    } catch {
-      toast.error(t("admin.settingsError"));
-    } finally {
-      setSavingXp(false);
     }
   };
 
@@ -389,36 +364,43 @@ export default function AdminPanelPage({ token }: { token: string }) {
             {savingSettings ? t("admin.savingSettings") : t("admin.levels.save")}
           </button>
 
-          {/* 📊 نقاط كسب النشاط — تُمنح فعلياً للمستخدمين وتظهر في صفحة المستويات */}
+          {/* 📊 نقاط كسب النشاط لكل مستوى — تُمنح فعلياً حسب مستوى المستخدم */}
           <hr style={styles.divider} />
           <h3 style={styles.cardTitle}>📊 {t("admin.xpTitle")}</h3>
-          <p style={{ ...styles.cardSub }}>{t("admin.xpDesc")}</p>
+          <p style={{ ...styles.cardSub }}>{t("admin.xpDesc2")}</p>
+          <label style={styles.xpLevelPicker}>
+            <span style={styles.xpLevelPickerLabel}>{t("admin.xpChooseLevel")}</span>
+            <select
+              className="input"
+              style={{ padding: "10px 12px", fontSize: 13 }}
+              value={selLevel}
+              onChange={(e) => setSelLevel(Number(e.target.value))}
+            >
+              {levelPlan.map((l) => (
+                <option key={l.level} value={l.level}>
+                  #{l.level} — {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div style={styles.xpGrid}>
             {([
-              ["xpLogin", "👤", "تسجيل الدخول اليومي"],
-              ["xpTask", "🎯", "إكمال مهمة مجتمعية"],
-              ["xpGame", "🎮", "لعب جولة من ساحة الألعاب"],
-              ["xpRef", "🤝", "تفعيل صديق عبر الإحالة"],
-              ["xpMine", "⛏️", "إكمال جلسة تعدين (24س)"],
-              ["xpBonus", "🎁", "المطالبة بالبونص اليومي"],
+              ["xpLogin", "👤", t("levels.actLogin")],
+              ["xpTask", "🎯", t("levels.actTask")],
+              ["xpGame", "🎮", t("levels.actGame")],
+              ["xpRef", "🤝", t("levels.actRef")],
+              ["xpMine", "⛏️", t("levels.actMine")],
+              ["xpBonus", "🎁", t("levels.actBonus")],
             ] as const).map(([key, icon, lab]) => (
               <label key={key} className="lvl-field" style={styles.xpField}>
                 <span className="lvl-fieldLabel">{icon} {lab}</span>
                 <input className="lvl-input-num" type="number" min="0" max="100000"
-                  value={xpVals[key]}
-                  onChange={(e) => setXp(key, e.target.value)} />
+                  value={xpOf(key)}
+                  onChange={(e) => setSelLevelXp(key, e.target.value)} />
               </label>
             ))}
           </div>
-          <p style={{ ...styles.cardSub, color: C.faint, fontSize: 11.5 }}>{t("admin.xpHint")}</p>
-          <button
-            onClick={saveXp}
-            disabled={savingXp}
-            className="btn btn-primary"
-            style={{ padding: "14px", fontSize: 14, fontWeight: 800, width: "100%", marginTop: 12 }}
-          >
-            {savingXp ? t("admin.savingSettings") : t("admin.xpSave")}
-          </button>
+          <p style={{ ...styles.cardSub, color: C.faint, fontSize: 11.5 }}>{t("admin.xpHint2", { level: selLevel })}</p>
         </div>
       ) : adminTab === "rules" ? (
         <RulesPanel token={token} />
@@ -472,4 +454,6 @@ const styles: { [key: string]: React.CSSProperties } = {
   divider: { border: "none", borderTop: "1px solid rgba(255,255,255,0.08)", margin: "20px 0 2px" },
   xpGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, alignItems: "end" },
   xpField: { display: "flex", flexDirection: "column", gap: 6 },
+  xpLevelPicker: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 12, maxWidth: 280 },
+  xpLevelPickerLabel: { color: C.muted, fontSize: 12, fontWeight: 700 },
 };

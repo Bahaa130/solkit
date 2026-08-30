@@ -3,41 +3,54 @@ import React, { useState, useEffect } from "react";
 import { C, font, styles as T } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 
-interface LevelDef { level: number; name: string; minXp: number; color: string; miningRate: number; }
+interface LevelDef { level: number; name: string; minXp: number; color: string; miningRate: number; xpLogin?: number; xpTask?: number; xpGame?: number; xpRef?: number; xpMine?: number; xpBonus?: number }
 interface LeaderRow { id: number; walletAddress: string | null; currentLevel: number; currentXp: number; activationStatus: string; }
 
-// 💡 طرق كسب نقاط النشاط للوصول للمستوى التالي — قيمها يتحكم بها المدير من إعدادات الموقع
+// 💡 طرق كسب نقاط النشاط للوصول للمستوى التالي — كل مستوى له قيمه الخاصة (يضبطها المدير)
 const HOW_DEFAULTS: { label: string; key: string; pts: number }[] = [
   { label: "levels.actLogin", key: "xpLogin", pts: 10 },
   { label: "levels.actTask", key: "xpTask", pts: 25 },
   { label: "levels.actGame", key: "xpGame", pts: 5 },
   { label: "levels.actRef", key: "xpRef", pts: 50 },
   { label: "levels.actMine", key: "xpMine", pts: 30 },
+  { label: "levels.actBonus", key: "xpBonus", pts: 15 },
 ];
+
+const XP_EARNED_FIELDS: Record<string, string> = {
+  xpLogin: "xpLoginEarned", xpTask: "xpTaskEarned", xpGame: "xpGameEarned",
+  xpRef: "xpRefEarned", xpMine: "xpMineEarned", xpBonus: "xpBonusEarned",
+};
 
 export default function LevelsPage({ userId, token }: { userId: number; token: string }) {
   const { t, dir } = useLang();
   const [plan, setPlan] = useState<LevelDef[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderRow[]>([]);
-  const [me, setMe] = useState<{ currentLevel: number; currentXp: number }>({ currentLevel: 1, currentXp: 0 });
+  const [me, setMe] = useState<{ currentLevel: number; currentXp: number; xpLoginEarned: number; xpTaskEarned: number; xpGameEarned: number; xpRefEarned: number; xpMineEarned: number; xpBonusEarned: number }>(
+    { currentLevel: 1, currentXp: 0, xpLoginEarned: 0, xpTaskEarned: 0, xpGameEarned: 0, xpRefEarned: 0, xpMineEarned: 0, xpBonusEarned: 0 },
+  );
   const [loading, setLoading] = useState(true);
-  // 🎯 نقاط كسب النشاط — قيمها يتحكم بها المدير من إعدادات الموقع
-  const [how, setHow] = useState(HOW_DEFAULTS);
 
   useEffect(() => {
     (async () => {
       try {
         const headers = { Authorization: `Bearer ${token}` };
-        const [lv, us, st] = await Promise.all([
+        const [lv, us] = await Promise.all([
           apiFetch("/api/users/levels", { headers }),
           apiFetch(`/api/users/${userId}`, { headers }),
-          apiFetch("/api/users/settings"),
         ]);
         if (lv.ok) { const d = await lv.json(); setPlan(d.plan || []); setLeaderboard(d.leaderboard || []); }
-        if (us.ok) { const d = await us.json(); setMe({ currentLevel: Number(d.currentLevel || 1), currentXp: Number(d.currentXp || 0) }); }
-        if (st.ok) {
-          const d = await st.json();
-          setHow(HOW_DEFAULTS.map((h) => ({ ...h, pts: Number(d[h.key] ?? h.pts) })));
+        if (us.ok) {
+          const d = await us.json();
+          setMe({
+            currentLevel: Number(d.currentLevel || 1),
+            currentXp: Number(d.currentXp || 0),
+            xpLoginEarned: Number(d.xpLoginEarned || 0),
+            xpTaskEarned: Number(d.xpTaskEarned || 0),
+            xpGameEarned: Number(d.xpGameEarned || 0),
+            xpRefEarned: Number(d.xpRefEarned || 0),
+            xpMineEarned: Number(d.xpMineEarned || 0),
+            xpBonusEarned: Number(d.xpBonusEarned || 0),
+          });
         }
       } catch { /* تجاهل */ }
       finally { setLoading(false); }
@@ -54,6 +67,13 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
   const progress = next ? Math.max(0, Math.min(100, ((me.currentXp - curMin) / Math.max(1, nextMin - curMin)) * 100)) : 100;
   const color = myLevel?.color || C.teal;
   const gap = next ? Math.max(0, next.minXp - me.currentXp) : 0;
+
+  // 🎯 القيم الفعلية لنقاط نشاط مستوى المستخدم الحالي (لكل مستوى قيمه الخاصة من إعدادات المدير)
+  const how = HOW_DEFAULTS.map((h) => {
+    const fromRow = myLevel ? Number((myLevel as any)[h.key]) : 0;
+    const pts = Number.isFinite(fromRow) && fromRow > 0 ? Math.round(fromRow) : h.pts;
+    return { ...h, pts };
+  });
 
   const short = (w: string | null) => (w && w.length > 10 ? `${w.slice(0, 4)}…${w.slice(-4)}` : (w || "—"));
 
@@ -92,8 +112,11 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
         <p style={{ ...styles.howDesc, color: C.muted }}>{t("levels.howDesc")}</p>
         <div style={styles.howList}>
           {how.map((it) => {
-            const times = gap > 0 ? Math.ceil(gap / it.pts) : 0;
-            const cover = gap > 0 ? Math.min(100, (it.pts / gap) * 100) : 100;
+            // 📈 التقدم الحقيقي: كم كسب المستخدم فعلاً من هذا النشاط نحو المستوى التالي
+            const earned = Math.max(0, Number((me as any)[XP_EARNED_FIELDS[it.key]] || 0));
+            const capped = Math.min(earned, gap);
+            const cover = gap > 0 ? (capped / gap) * 100 : 100;
+            const times = gap > 0 ? Math.max(0, Math.ceil(Math.max(0, gap - earned) / it.pts)) : 0;
             return (
               <div key={it.label} style={styles.howRow}>
                 <span style={styles.howDot}>•</span>
@@ -106,7 +129,9 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
                     <div style={{ ...styles.howBarFill, width: `${cover}%`, background: color }} />
                   </div>
                   <div style={styles.howHint}>
-                    {gap > 0 ? t("levels.howNeed", { n: times }) : t("levels.maxLevel")}
+                    {gap > 0
+                      ? `${t("levels.howEarned", { e: earned })} · ${t("levels.howNeed", { n: times })}`
+                      : t("levels.maxLevel")}
                   </div>
                 </div>
               </div>

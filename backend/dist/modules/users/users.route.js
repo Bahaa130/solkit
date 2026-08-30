@@ -37,9 +37,9 @@ const finishMiningSession = async (session, minedAmount, userId) => {
             data: { balance: { increment: minedAmount } }
         })
     ]);
-    // 🎯 منح نقاط النشاط لإكمال جلسة التعدين (24 ساعة)
+    // 🎯 منح نقاط النشاط لإكمال جلسة التعدين (24 ساعة) — حسب مستوى المستخدم
     try {
-        await awardActivity(userId, getSettings().xpMine);
+        await awardActivity(userId, "xpMine");
     }
     catch (e) {
         console.error("mining activity error:", e);
@@ -153,7 +153,7 @@ router.post("/login-wallet", async (req, res) => {
             const last = user.lastLoginActivityAt ? new Date(user.lastLoginActivityAt) : null;
             const lastDay = last ? new Date(last).setHours(0, 0, 0, 0) : 0;
             if (lastDay < today.getTime()) {
-                await awardActivity(user.id, getSettings().xpLogin);
+                await awardActivity(user.id, "xpLogin");
                 await prisma.user.update({ where: { id: user.id }, data: { lastLoginActivityAt: new Date() } });
             }
         }
@@ -349,13 +349,12 @@ router.post("/activate-account", authenticateJWT, async (req, res) => {
         // 🪙 مكافأة صاحب الإحالة: 10 عملات تُضاف لرصيده فور تفعيل المحالّ له بنجاح + نقاط نشاط
         const referrerId = user.referrerId;
         if (referrerId) {
-            const refXp = getSettings().xpRef; // 📊 نقاط نشاط إحالة صديق (تظهر في صفحة المستويات)
             try {
                 await prisma.$transaction(async (tx) => {
                     await tx.user.update({ where: { id: referrerId }, data: { balance: { increment: 10 } } });
                     await tx.reward.create({ data: { userId: referrerId, type: "referral_bonus", amount: 10, sourceUserId: userId } });
                 });
-                await awardActivity(referrerId, refXp);
+                await awardActivity(referrerId, "xpRef");
             }
             catch (e) {
                 console.error("referrer bonus error:", e);
@@ -556,8 +555,8 @@ router.post("/claim-daily", authenticateJWT, async (req, res) => {
             prisma.dailyBonus.create({ data: { userId, streakDay: currentStreak, rewardAmount: finalReward, claimedAt: now } }),
             prisma.user.update({ where: { id: userId }, data: { balance: { increment: finalReward } } })
         ]);
-        // 🎯 منح نقاط النشاط للمطالبة بالبونص اليومي
-        await awardActivity(userId, feeSettings.xpBonus);
+        // 🎯 منح نقاط النشاط للمطالبة بالبونص اليومي (حسب مستوى المستخدم)
+        await awardActivity(userId, "xpBonus");
         const updated = await prisma.user.findUnique({ where: { id: userId }, select: { currentLevel: true, currentXp: true } });
         return res.json({ message: `تمت المطالبة ببونص اليوم ${currentStreak} بنجاح! 🎉`, reward: finalReward, currentLevel: updated?.currentLevel || lvl, xpProgress: `${updated?.currentXp || 0}` });
     }
@@ -1058,6 +1057,12 @@ const settingsSchema = z.object({
         minXp: z.number().int().min(0),
         color: z.string().min(4).max(20),
         miningRate: z.number().min(0),
+        xpLogin: z.number().int().min(0).max(100000).optional(),
+        xpTask: z.number().int().min(0).max(100000).optional(),
+        xpGame: z.number().int().min(0).max(100000).optional(),
+        xpRef: z.number().int().min(0).max(100000).optional(),
+        xpMine: z.number().int().min(0).max(100000).optional(),
+        xpBonus: z.number().int().min(0).max(100000).optional(),
     })).optional(),
     dailyRewards: z.array(z.number().min(0).max(1000000)).min(1).max(31).optional(),
     dailyLevelMult: z.number().min(0).max(1).optional(),

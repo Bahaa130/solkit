@@ -1,7 +1,11 @@
 // backend/src/modules/users/levelSystem.ts
 // 🎯 نظام المستويات المعتمد على النشاط — مشترك بين مسارات المستخدمين/المهام/الألعاب
 import { prisma } from "../../config/prisma.js";
-import { getSettings, type LevelDef } from "../../config/settings.js";
+import { getSettings, type LevelDef, DEFAULT_ACTIVITY_XP } from "../../config/settings.js";
+
+// 📊 أنواع فئات نقاط النشاط (تطابق مفاتيح LevelDef وأعمدة المكتسبة)
+export type ActivityKey = "xpLogin" | "xpTask" | "xpGame" | "xpRef" | "xpMine" | "xpBonus";
+export const ACTIVITY_KEYS: ActivityKey[] = ["xpLogin", "xpTask", "xpGame", "xpRef", "xpMine", "xpBonus"];
 
 // 🎯 الخطة الافتراضية (9 مستويات) — يضبطها المدير لاحقاً من لوحة التحكم
 export const DEFAULT_LEVEL_PLAN: LevelDef[] = [
@@ -39,9 +43,28 @@ export const computeLevelFromXp = (xp: number): number => {
 };
 
 // 🏅 منح نقاط نشاط لمستخدم وترقية مستواه تلقائياً حسب الخطة
-export const awardActivity = async (userId: number, points: number): Promise<void> => {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { currentXp: true } });
+// 🎯 القيمة تُقرأ حسب مستوى المستخدم الحالي (لكل مستوى نقاطه الخاصة) ويُسجَّل الكسب في فئته
+export const awardActivity = async (userId: number, category: ActivityKey): Promise<number> => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const points = xpForLevel(user?.currentLevel || 1, category);
   const xp = (user?.currentXp || 0) + points;
   const lvl = computeLevelFromXp(xp);
-  await prisma.user.update({ where: { id: userId }, data: { currentXp: xp, currentLevel: lvl } } as any);
+  const earnedCol = `${category}Earned` as const;
+  await prisma.user.update({
+    where: { id: userId },
+    data: { currentXp: xp, currentLevel: lvl, [earnedCol]: { increment: points } } as any
+  });
+  return points;
+};
+
+// 🎯 نقاط نشاط فئة معيّنة لمستوى معيّن: قيمة المستوى ← القيمة العامة ← الافتراضي
+export const xpForLevel = (level: number, category: ActivityKey): number => {
+  const plan = getLevelPlan();
+  const def = plan.find((d) => d.level === level);
+  const fromLevel = def ? Number(def[category]) : NaN;
+  if (Number.isFinite(fromLevel) && fromLevel > 0) return Math.round(fromLevel);
+  const s = getSettings();
+  const fromGlobal = Number((s as any)[category]);
+  if (Number.isFinite(fromGlobal) && fromGlobal > 0) return Math.round(fromGlobal);
+  return DEFAULT_ACTIVITY_XP[category];
 };
