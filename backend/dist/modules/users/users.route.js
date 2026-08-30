@@ -76,8 +76,10 @@ router.post("/login-challenge", async (req, res) => {
             `Wallet: ${walletAddress}\n` +
             `Nonce: ${nonce}\n` +
             `لن يتم خصم أي رصيد من حسابك.`;
-        // 💾 خزّن الـ nonce مربوطاً بالمحفظة (صلاحية 5 دقائق)
-        challengeStore.set(walletAddress, { nonce, expires: Date.now() + 5 * 60000 });
+        // 💾 خزّن الـ nonce مربوطاً بالمحفظة (صلاحية 15 دقيقة — تمنح المستخدم وقتاً كافياً
+        // للتوقيع بعد نافذة Phantom. ذاكرة فقط: أي إعادة تشغيل للخادم تُبطل التحدي القائم،
+        // والتطبيق يطلب تحدياً جديداً تلقائياً عند حدوث ذلك).
+        challengeStore.set(walletAddress, { nonce, expires: Date.now() + 15 * 60000 });
         return res.json({ message, nonce });
     }
     catch (error) {

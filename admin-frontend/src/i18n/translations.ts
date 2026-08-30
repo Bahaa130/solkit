@@ -248,6 +248,8 @@ const ar: Dict = {
   "connect.toastSuccess": "تم التوثيق الرقمي الآمن وتسجيل الدخول بنجاح! 🔐🎉",
   "connect.toastNoToken": "خطأ: لم يتم إصدار التوكن الأمني من السيرفر.",
   "connect.toastAuthFailed": "فشل التحقق الأمني الرقمي من المحفظة.",
+  "connect.toastChallengeRenewed": "انتهت صلاحية رمز التحقق، تم تجديده تلقائياً.",
+  "connect.toastSignAgain": "وقّع الرسالة الجديدة للمتابعة.",
   "connect.toastConnFailed": "فشل الاتصال الأمني بالخادم الفولاذي.",
   "connect.toastCancelled": "تم إلغاء عملية ربط المحفظة وتصريح الدخول.",
   "connect.noInjected": "لم يتم العثور على محفظة Phantom في المتصفح. تأكد من تنصيب الامتداد.",
@@ -763,6 +765,8 @@ const en: Dict = {
   "connect.toastSuccess": "Secure verification and sign-in successful! 🔐🎉",
   "connect.toastNoToken": "Error: the server did not issue a security token.",
   "connect.toastAuthFailed": "Digital security verification of the wallet failed.",
+  "connect.toastChallengeRenewed": "Challenge code expired; it was renewed automatically.",
+  "connect.toastSignAgain": "Please sign the new message to continue.",
   "connect.toastConnFailed": "Secure connection to the server failed.",
   "connect.toastCancelled": "Wallet connection and sign-in were cancelled.",
 
@@ -1270,6 +1274,8 @@ const fr: Dict = {
   "connect.toastSuccess": "Vérification sécurisée et connexion réussies ! 🔐🎉",
   "connect.toastNoToken": "Erreur : le serveur n'a pas émis de jeton de sécurité.",
   "connect.toastAuthFailed": "La vérification numérique du portefeuille a échoué.",
+  "connect.toastChallengeRenewed": "Code de vérification expiré ; renouvelé automatiquement.",
+  "connect.toastSignAgain": "Veuillez signer le nouveau message pour continuer.",
   "connect.toastConnFailed": "La connexion sécurisée au serveur a échoué.",
   "connect.toastCancelled": "La connexion du portefeuille a été annulée.",
 
@@ -1776,6 +1782,8 @@ const es: Dict = {
   "connect.toastSuccess": "¡Verificación segura e inicio de sesión exitosos! 🔐🎉",
   "connect.toastNoToken": "Error: el servidor no emitió un token de seguridad.",
   "connect.toastAuthFailed": "Falló la verificación digital segura de la billetera.",
+  "connect.toastChallengeRenewed": "El código de verificación expiró; se renovó automáticamente.",
+  "connect.toastSignAgain": "Firma el nuevo mensaje para continuar.",
   "connect.toastConnFailed": "Falló la conexión segura con el servidor.",
   "connect.toastCancelled": "Se canceló la conexión de la billetera.",
 
@@ -2282,6 +2290,8 @@ const tr: Dict = {
   "connect.toastSuccess": "Güvenli doğrulama ve giriş başarılı! 🔐🎉",
   "connect.toastNoToken": "Hata: sunucu güvenlik token'ı vermedi.",
   "connect.toastAuthFailed": "Cüzdanın dijital güvenlik doğrulaması başarısız oldu.",
+  "connect.toastChallengeRenewed": "Doğrulama kodu süresi doldu; otomatik yenilendi.",
+  "connect.toastSignAgain": "Devam etmek için yeni mesajı imzala.",
   "connect.toastConnFailed": "Sunucuya güvenli bağlantı başarısız oldu.",
   "connect.toastCancelled": "Cüzdan bağlantısı ve giriş iptal edildi.",
 

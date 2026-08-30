@@ -1,5 +1,5 @@
 import { apiFetch } from "../lib/api";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useBranding } from "../branding";
@@ -23,6 +23,8 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
   const [linkedAddress, setLinkedAddress] = useState<string | null>(null);
   const [challengeMsg, setChallengeMsg] = useState<string | null>(null);
   const toast = useToast();
+  // 🔄 تجديد تلقائي محدود لمرة واحدة لجلسة الربط عند انتهاء صلاحية التحدي
+  const autoRenewed = useRef(false);
 
   // 1. التقاط كود الإحالة تلقائياً من الرابط عند فتح الصفحة
   useEffect(() => {
@@ -45,6 +47,7 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
   const handleConnectWallet = async () => {
     try {
       setPhase("connecting");
+      autoRenewed.current = false;
       const walletAddress = await connectWallet();
       if (!walletAddress) {
         if (isUserCancel()) toast.warning(t("connect.toastCancelled"));
@@ -131,12 +134,35 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
           setPhase("ready");
         }
       } else {
-        try {
-          const errData = JSON.parse(rawText);
-          toast.error(errData.message || t("connect.toastAuthFailed"));
-        } catch {
-          toast.error(t("connect.toastConnFailed"));
+        let errData: any = {};
+        try { errData = JSON.parse(rawText); } catch { /* تجاهل */ }
+
+        // 🔄 انتهت صلاحية رمز التحدي (تأخر التوقيع فوق الصلاحية أو أعيد تشغيل السيرفر):
+        // نجدد رسالة التحدي تلقائياً مرة واحدة ونطلب من المستخدم التوقيع مجدداً.
+        if ((response.status === 401 || response.status === 403) && (errData?.message || "").includes("صلاحية") && !autoRenewed.current) {
+          autoRenewed.current = true;
+          toast.info(t("connect.toastChallengeRenewed"));
+          setPhase("connecting");
+          try {
+            const renewRes = await apiFetch("/api/users/login-challenge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ walletAddress: linkedAddress })
+            });
+            if (renewRes.ok) {
+              const { message: freshMsg } = await renewRes.json();
+              setChallengeMsg(freshMsg);
+              toast.info(t("connect.toastSignAgain"));
+              setPhase("ready");
+              return;
+            }
+          } catch { /* نسقط للخطأ العام أدناه */ }
+          toast.error(errData?.message || t("connect.toastAuthFailed"));
+          setPhase("ready");
+          return;
         }
+
+        toast.error(errData?.message || t("connect.toastAuthFailed"));
         setPhase("ready");
       }
     } catch (err: any) {
