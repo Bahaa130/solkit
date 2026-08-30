@@ -9,7 +9,6 @@ interface LeaderRow { id: number; walletAddress: string | null; currentLevel: nu
 // 💡 طرق كسب نقاط النشاط للوصول للمستوى التالي — كل مستوى له قيمه الخاصة (يضبطها المدير)
 const HOW_DEFAULTS: { label: string; key: string; pts: number }[] = [
   { label: "levels.actLogin", key: "xpLogin", pts: 10 },
-  { label: "levels.actTask", key: "xpTask", pts: 25 },
   { label: "levels.actGame", key: "xpGame", pts: 5 },
   { label: "levels.actRef", key: "xpRef", pts: 50 },
   { label: "levels.actMine", key: "xpMine", pts: 30 },
@@ -17,7 +16,7 @@ const HOW_DEFAULTS: { label: string; key: string; pts: number }[] = [
 ];
 
 const XP_EARNED_FIELDS: Record<string, string> = {
-  xpLogin: "xpLoginEarned", xpTask: "xpTaskEarned", xpGame: "xpGameEarned",
+  xpLogin: "xpLoginEarned", xpGame: "xpGameEarned",
   xpRef: "xpRefEarned", xpMine: "xpMineEarned", xpBonus: "xpBonusEarned",
 };
 

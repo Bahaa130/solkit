@@ -170,8 +170,15 @@ export default function AdminPanelPage({ token }: { token: string }) {
     const row = levelPlan.find((l) => l.level === selLevel);
     const v = row ? Number(row[key]) : NaN;
     if (Number.isFinite(v) && v >= 0) return v;
-    const DEFAULTS: Record<string, number> = { xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 };
+    const DEFAULTS: Record<string, number> = { xpLogin: 10, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 };
     return DEFAULTS[key] ?? 0;
+  };
+
+  // 📊 قراءة نقطة نشاط لمستوى معيّن (لـعرض الشريط بجانب اسم المستوى)
+  const xpValFor = (l: LevelRow, key: string): number => {
+    const v = Number((l as any)[key]);
+    const DEFAULTS: Record<string, number> = { xpLogin: 10, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 };
+    return Number.isFinite(v) && v >= 0 ? v : DEFAULTS[key] ?? 0;
   };
 
   const saveLevels = async () => {
@@ -353,6 +360,13 @@ export default function AdminPanelPage({ token }: { token: string }) {
                 <span className="lvl-fieldLabel">{t("admin.levels.rate")}</span>
                 <input className="lvl-input-num" type="number" step="0.01" value={l.miningRate} onChange={(e) => updateLevel(i, "miningRate", Number(e.target.value))} />
               </label>
+              {/* 📊 نفس نقاط النشاط الخاصة بهذا المستوى (المعروضة بالمحرر أسفل الجدول) */}
+              <div style={{ gridColumn: "1 / -1", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 9, padding: "7px 10px", fontSize: 11, color: C.muted, fontWeight: 700, display: "flex", flexWrap: "wrap", gap: "4px 10px", alignItems: "center" }}>
+                <span>{t("admin.xpTitle")}:</span>
+                {([["xpLogin", "👤", t("levels.actLogin")], ["xpGame", "🎮", t("levels.actGame")], ["xpRef", "🤝", t("levels.actRef")], ["xpMine", "⛏️", t("levels.actMine")], ["xpBonus", "🎁", t("levels.actBonus")]] as const).map(([k, ic]) => (
+                  <span key={k} style={{ color: C.text }}>{ic} {xpValFor(l, k)}</span>
+                ))}
+              </div>
             </div>
           ))}
           <button
@@ -386,7 +400,6 @@ export default function AdminPanelPage({ token }: { token: string }) {
           <div style={styles.xpGrid}>
             {([
               ["xpLogin", "👤", t("levels.actLogin"), "admin.xpWhatLogin"],
-              ["xpTask", "🎯", t("levels.actTask"), "admin.xpWhatTask"],
               ["xpGame", "🎮", t("levels.actGame"), "admin.xpWhatGame"],
               ["xpRef", "🤝", t("levels.actRef"), "admin.xpWhatRef"],
               ["xpMine", "⛏️", t("levels.actMine"), "admin.xpWhatMine"],

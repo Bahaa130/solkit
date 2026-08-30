@@ -5,7 +5,6 @@ import { z } from "zod";
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT } from "../../middlewares/auth.middleware.js";
 import { isAdmin } from "../users/users.route.js";
-import { awardActivity } from "../users/levelSystem.js"; // 🎯 نقاط النشاط عند الموافقة على مهمة
 const router = Router();
 // ── مخططات التحقق من الصيغة ──
 const verifySchema = z.object({
@@ -229,13 +228,7 @@ router.post("/admin/approve", authenticateJWT, async (req, res) => {
                 data: { balance: { increment: reward } },
             });
         });
-        // 🎯 منح نقاط النشاط لإكمال المهمة الاجتماعية
-        try {
-            await awardActivity(task.userId, "xpTask");
-        }
-        catch (e) {
-            console.error("task activity error:", e);
-        }
+        // 🎯 المهمة الاجتماعية ثابتة: تكسب عملات فقط (قيمة المكافأة) — لا نقاط نشاط
         return res.json({
             message: `تم تأكيد اشتراك المستخدم ومنحه ${reward.toFixed(2)} SOLKIT ✓`,
             balance: Number(updated.balance),
