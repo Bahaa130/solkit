@@ -176,7 +176,7 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
 }
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: { padding: 20, display: "flex", flexDirection: "column", gap: 20, maxWidth: 900, margin: "0 auto", fontFamily: font },
+  container: { padding: 20, display: "flex", flexDirection: "column", gap: 20, maxWidth: 900, margin: "0 auto", fontFamily: font, width: "100%", minWidth: 0, boxSizing: "border-box" },
   headerBox: { textAlign: "center", marginBottom: 6 },
   title: { fontSize: 22, color: C.text, margin: 0, fontWeight: 900 },
   card: { padding: 24 },

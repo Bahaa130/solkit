@@ -727,8 +727,8 @@ export default function App() {
         </div>
       ) : (
         <>
-          <main ref={(el) => { mainRef.current = el; }} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "calc(104px + var(--safe-area-inset-bottom, 0px))" }}>
-            <div key={activeTab} className="animate-fade-up">
+          <main ref={(el) => { mainRef.current = el; }} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", minWidth: 0, minHeight: 0, paddingBottom: "calc(104px + var(--safe-area-inset-bottom, 0px))" }}>
+            <div key={activeTab} className="animate-fade-up" style={{ minWidth: 0, width: "100%" }}>
               {activeTab === "home" && <HomePage userId={session.userId} token={session.jwtToken || ""} onNavigateTab={navigateTab} />}
               {activeTab === "airdrop" && <AirdropPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "referral" && <ReferralPage userId={session.userId} token={session.jwtToken || ""} />}

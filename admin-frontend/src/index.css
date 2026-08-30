@@ -418,3 +418,20 @@ html, body { overflow-x: hidden; }
 
 /* منع وميض افتراضي عند لمس الأزرار في أندرويد */
 button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+/* ============================================
+   لوحات الإدارة الثلاث (توزيع الجوائز / الهوية / مهام المجتمع) على الهاتف
+   ============================================ */
+/* البطاقات لا تتجاوز عرض الشاشة، وحشوة أليق على الهاتف */
+.glass { max-width: 100%; }
+@media (max-width: 520px) {
+  .glass { padding: 14px !important; }
+}
+
+/* جداول إدارة: تمرير أفقي سليم + خلايا لا تلتف */
+.table-wrapper { width: 100%; -webkit-overflow-scrolling: touch; }
+.table-wrapper th,
+.table-wrapper td { white-space: nowrap; }
+
+/* صفوف الفحص/القرار في مهام المجتمع: أزرار تلتف بنظام دون فيضان */
+.table-wrapper + .pendingList { width: 100%; }
