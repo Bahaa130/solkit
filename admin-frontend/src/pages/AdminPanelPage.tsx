@@ -385,18 +385,19 @@ export default function AdminPanelPage({ token }: { token: string }) {
           </label>
           <div style={styles.xpGrid}>
             {([
-              ["xpLogin", "👤", t("levels.actLogin")],
-              ["xpTask", "🎯", t("levels.actTask")],
-              ["xpGame", "🎮", t("levels.actGame")],
-              ["xpRef", "🤝", t("levels.actRef")],
-              ["xpMine", "⛏️", t("levels.actMine")],
-              ["xpBonus", "🎁", t("levels.actBonus")],
-            ] as const).map(([key, icon, lab]) => (
+              ["xpLogin", "👤", t("levels.actLogin"), "admin.xpWhatLogin"],
+              ["xpTask", "🎯", t("levels.actTask"), "admin.xpWhatTask"],
+              ["xpGame", "🎮", t("levels.actGame"), "admin.xpWhatGame"],
+              ["xpRef", "🤝", t("levels.actRef"), "admin.xpWhatRef"],
+              ["xpMine", "⛏️", t("levels.actMine"), "admin.xpWhatMine"],
+              ["xpBonus", "🎁", t("levels.actBonus"), "admin.xpWhatBonus"],
+            ] as const).map(([key, icon, lab, what]) => (
               <label key={key} className="lvl-field" style={styles.xpField}>
                 <span className="lvl-fieldLabel">{icon} {lab}</span>
                 <input className="lvl-input-num" type="number" min="0" max="100000"
                   value={xpOf(key)}
                   onChange={(e) => setSelLevelXp(key, e.target.value)} />
+                <span style={styles.xpWhat}>{t(what)}</span>
               </label>
             ))}
           </div>
@@ -456,4 +457,5 @@ const styles: { [key: string]: React.CSSProperties } = {
   xpField: { display: "flex", flexDirection: "column", gap: 6 },
   xpLevelPicker: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 12, maxWidth: 280 },
   xpLevelPickerLabel: { color: C.muted, fontSize: 12, fontWeight: 700 },
+  xpWhat: { fontSize: 10.5, color: C.faint, lineHeight: 1.5, minHeight: 30 },
 };
