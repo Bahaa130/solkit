@@ -1,6 +1,6 @@
 ﻿import { apiFetch } from "../lib/api";
 // src/components/RulesPanel.tsx
-// 🧮 ثوابت الأرقام المتحكَّم بها من الإدارة: مكافآت البونص اليومي، رسوم التفعيل، نقاط النشاط
+// 🧮 ثوابت الأرقام المتحكَّم بها من الإدارة: مكافآت البونص اليومي، رسوم التفعيل
 import React, { useEffect, useState } from "react";
 import { C, font } from "../theme";
 
@@ -16,14 +16,8 @@ export default function RulesPanel({ token }: Props) {
   const [dailyMult, setDailyMult] = useState("5");
   const [fullSol, setFullSol] = useState("0.03");
   const [halfSol, setHalfSol] = useState("0.015");
-  const [siteSharePct, setSiteSharePct] = useState("1.5");
+const [siteSharePct, setSiteSharePct] = useState("1.5");
   const [refSharePct, setRefSharePct] = useState("1.5");
-  const [xpLogin, setXpLogin] = useState("10");
-  const [xpTask, setXpTask] = useState("25");
-  const [xpGame, setXpGame] = useState("5");
-  const [xpRef, setXpRef] = useState("50");
-  const [xpMine, setXpMine] = useState("30");
-  const [xpBonus, setXpBonus] = useState("15");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ type: string; text: string } | null>(null);
 
@@ -38,14 +32,8 @@ export default function RulesPanel({ token }: Props) {
         setDailyMult(String(Number((d.dailyLevelMult ?? 0.05) * 100).toFixed(2)));
         setFullSol(String(Number((Number(d.activationFullLamports) || 30000000) / 1e9).toFixed(6)));
         setHalfSol(String(Number((Number(d.activationHalfLamports) || 15000000) / 1e9).toFixed(6)));
-        setSiteSharePct(String(Number((d.siteShare ?? 0.015) * 100).toFixed(2)));
+setSiteSharePct(String(Number((d.siteShare ?? 0.015) * 100).toFixed(2)));
         setRefSharePct(String(Number((d.referrerShare ?? 0.015) * 100).toFixed(2)));
-        setXpLogin(String(d.xpLogin ?? 10));
-        setXpTask(String(d.xpTask ?? 25));
-        setXpGame(String(d.xpGame ?? 5));
-        setXpRef(String(d.xpRef ?? 50));
-        setXpMine(String(d.xpMine ?? 30));
-        setXpBonus(String(d.xpBonus ?? 15));
       }
     } catch {
       setStatus({ type: "error", text: "تعذر تحميل الإعدادات الحالية" });
@@ -67,14 +55,8 @@ export default function RulesPanel({ token }: Props) {
       dailyLevelMult: (Number(dailyMult) || 0) / 100,
       activationFullLamports: Math.round(full * 1e9),
       activationHalfLamports: Math.round(half * 1e9),
-      siteShare: (Number(siteSharePct) || 0) / 100,
+siteShare: (Number(siteSharePct) || 0) / 100,
       referrerShare: (Number(refSharePct) || 0) / 100,
-      xpLogin: Math.max(0, Math.round(Number(xpLogin) || 0)),
-      xpTask: Math.max(0, Math.round(Number(xpTask) || 0)),
-      xpGame: Math.max(0, Math.round(Number(xpGame) || 0)),
-      xpRef: Math.max(0, Math.round(Number(xpRef) || 0)),
-      xpMine: Math.max(0, Math.round(Number(xpMine) || 0)),
-      xpBonus: Math.max(0, Math.round(Number(xpBonus) || 0)),
     };
     try {
       setSaving(true);
@@ -104,8 +86,8 @@ export default function RulesPanel({ token }: Props) {
     <div style={styles.container}>
       <div style={styles.headerBox}>
         <h1 style={styles.title}>🧮 ثوابت الأرقام (تتحكم بها الإدارة)</h1>
-        <p style={styles.subtitle}>
-          غيّر مكافآت البونص اليومي ورسوم التفعيل ونقاط النشاط — تُطبَّق فوراً على جميع المستخدمين
+<p style={styles.subtitle}>
+          غيّر مكافآت البونص اليومي ورسوم التفعيل — تُطبَّق فوراً على جميع المستخدمين
           دون إعادة بناء التطبيق (القيم تُقرأ من الخادم لحظة الفتح).
         </p>
       </div>
@@ -152,21 +134,7 @@ export default function RulesPanel({ token }: Props) {
             <input className="input" type="number" min="0" max="100" step="0.1" style={inputStyle} value={refSharePct} onChange={(e) => setRefSharePct(e.target.value)} />
           </div>
         </div>
-        <p style={styles.hint}>الافتراضي: 0.03 كاملة / 0.015+0.015 مقسّمة / 1.5% + 1.5% عمولات. هذه المبالغ تُعرض للمستخدم على صفحة الدفع.</p>
-      </div>
-
-      {/* 📊 نقاط النشاط (تظهر في صفحة المستويات) */}
-      <div className="glass" style={styles.card}>
-        <h3 style={styles.cardTitle}>📊 نقاط كسب النشاط (تظهر في صفحة المستويات وتُمنح فعلياً)</h3>
-        <div style={styles.grid}>
-          {[["تسجيل الدخول اليومي", xpLogin, setXpLogin], ["إكمال مهمة مجتمعية", xpTask, setXpTask], ["لعب جولة", xpGame, setXpGame], ["تفعيل صديق عبر الإحالة", xpRef, setXpRef], ["إكمال جلسة تعدين (24س)", xpMine, setXpMine], ["المطالبة بالبونص اليومي", xpBonus, setXpBonus]].map(([lab, val, setter], i) => (
-            <div key={i} style={field()}>
-              <label style={labelStyle}>{lab as string}</label>
-              <input className="input" type="number" min="0" max="100000" style={inputStyle} value={val as string} onChange={(e) => (setter as (v: string) => void)(e.target.value)} />
-            </div>
-          ))}
-        </div>
-        <p style={styles.hint}>الافتراضي: دخول 10 • مهمة 25 • لعبة 5 • صديق 50 • تعدين 30 • بونص 15 — هذه القيم تُؤثّر فعلياً على نقاط مستوى المستخدمين.</p>
+<p style={styles.hint}>الافتراضي: 0.03 كاملة / 0.015+0.015 مقسّمة / 1.5% + 1.5% عمولات. هذه المبالغ تُعرض للمستخدم على صفحة الدفع.</p>
       </div>
 
       {/* 💾 حفظ */}

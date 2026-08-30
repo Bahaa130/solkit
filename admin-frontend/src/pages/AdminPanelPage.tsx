@@ -26,6 +26,11 @@ export default function AdminPanelPage({ token }: { token: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules">("general");
   const [levelPlan, setLevelPlan] = useState<LevelRow[]>([]);
+  // 📊 نقاط كسب النشاط — تُدار من تبويب المستويات (تُمنح فعلياً للمستخدمين وتظهر في صفحتهم)
+  const [xpVals, setXpVals] = useState<{ xpLogin: number; xpTask: number; xpGame: number; xpRef: number; xpMine: number; xpBonus: number }>({
+    xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15,
+  });
+  const [savingXp, setSavingXp] = useState(false);
   // ⚙️ إعدادات الموقع (الصيانة + عدّاد TGE)
   const [settings, setSettings] = useState<{ maintenanceMode: boolean; maintenanceMessage: string; tgeTarget: number }>({
     maintenanceMode: false,
@@ -92,6 +97,14 @@ export default function AdminPanelPage({ token }: { token: string }) {
         if (Array.isArray(data.levelPlan) && data.levelPlan.length) {
           setLevelPlan(data.levelPlan.map((l: LevelRow) => ({ ...l })));
         }
+        setXpVals({
+          xpLogin: Number(data.xpLogin ?? 10),
+          xpTask: Number(data.xpTask ?? 25),
+          xpGame: Number(data.xpGame ?? 5),
+          xpRef: Number(data.xpRef ?? 50),
+          xpMine: Number(data.xpMine ?? 30),
+          xpBonus: Number(data.xpBonus ?? 15),
+        });
       }
     } catch { /* تجاهل */ }
   };
@@ -177,6 +190,35 @@ export default function AdminPanelPage({ token }: { token: string }) {
       toast.error(t("admin.settingsError"));
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  // 📊 حفظ نقاط نشاط المستويات — تُمنح فعلياً للمستخدمين وتظهر في صفحة المستويات
+  const setXp = (key: keyof typeof xpVals, val: string) => {
+    const n = Math.max(0, Math.round(Number(val) || 0));
+    setXpVals((prev) => ({ ...prev, [key]: n }));
+  };
+
+  const saveXp = async () => {
+    try {
+      setSavingXp(true);
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+      const res = await apiFetch("/api/users/admin/settings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ ...xpVals }),
+      });
+      if (res.ok) {
+        toast.success(t("admin.settingsSaved"));
+        fetchSettings();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || t("admin.settingsError"));
+      }
+    } catch {
+      toast.error(t("admin.settingsError"));
+    } finally {
+      setSavingXp(false);
     }
   };
 
@@ -346,6 +388,37 @@ export default function AdminPanelPage({ token }: { token: string }) {
           >
             {savingSettings ? t("admin.savingSettings") : t("admin.levels.save")}
           </button>
+
+          {/* 📊 نقاط كسب النشاط — تُمنح فعلياً للمستخدمين وتظهر في صفحة المستويات */}
+          <hr style={styles.divider} />
+          <h3 style={styles.cardTitle}>📊 {t("admin.xpTitle")}</h3>
+          <p style={{ ...styles.cardSub }}>{t("admin.xpDesc")}</p>
+          <div style={styles.xpGrid}>
+            {([
+              ["xpLogin", "👤", "تسجيل الدخول اليومي"],
+              ["xpTask", "🎯", "إكمال مهمة مجتمعية"],
+              ["xpGame", "🎮", "لعب جولة من ساحة الألعاب"],
+              ["xpRef", "🤝", "تفعيل صديق عبر الإحالة"],
+              ["xpMine", "⛏️", "إكمال جلسة تعدين (24س)"],
+              ["xpBonus", "🎁", "المطالبة بالبونص اليومي"],
+            ] as const).map(([key, icon, lab]) => (
+              <label key={key} className="lvl-field" style={styles.xpField}>
+                <span className="lvl-fieldLabel">{icon} {lab}</span>
+                <input className="lvl-input-num" type="number" min="0" max="100000"
+                  value={xpVals[key]}
+                  onChange={(e) => setXp(key, e.target.value)} />
+              </label>
+            ))}
+          </div>
+          <p style={{ ...styles.cardSub, color: C.faint, fontSize: 11.5 }}>{t("admin.xpHint")}</p>
+          <button
+            onClick={saveXp}
+            disabled={savingXp}
+            className="btn btn-primary"
+            style={{ padding: "14px", fontSize: 14, fontWeight: 800, width: "100%", marginTop: 12 }}
+          >
+            {savingXp ? t("admin.savingSettings") : t("admin.xpSave")}
+          </button>
         </div>
       ) : adminTab === "rules" ? (
         <RulesPanel token={token} />
@@ -396,4 +469,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   tdActions: { padding: "14px 8px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
   actionBtn: { borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 800, cursor: "pointer", border: "none", fontFamily: font },
   rejectBtn: { background: "rgba(255,77,77,0.15)", border: "1px solid rgba(255,77,77,0.4)", color: "#ff4d4d" },
+  divider: { border: "none", borderTop: "1px solid rgba(255,255,255,0.08)", margin: "20px 0 2px" },
+  xpGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, alignItems: "end" },
+  xpField: { display: "flex", flexDirection: "column", gap: 6 },
 };
