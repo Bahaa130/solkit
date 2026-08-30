@@ -415,6 +415,32 @@ export default function AdminPanelPage({ token }: { token: string }) {
             ))}
           </div>
           <p style={{ ...styles.cardSub, color: C.faint, fontSize: 11.5 }}>{t("admin.xpHint2", { level: selLevel })}</p>
+
+          {/* 🧹 تصفير تقدم المستويات (إصلاح تتبع النقاط للبيانات القديمة) */}
+          <hr style={styles.divider} />
+          <div style={{ background: "rgba(255,77,77,0.08)", border: "1px solid rgba(255,77,77,0.3)", borderRadius: 12, padding: 14 }}>
+            <p style={{ color: "#ff9cae", fontSize: 12, fontWeight: 800, margin: "0 0 6px" }}>
+              {t("admin.resetLevelsTitle")}
+            </p>
+            <p style={{ color: C.muted, fontSize: 11.5, lineHeight: 1.6, margin: "0 0 10px" }}>
+              {t("admin.resetLevelsDesc")}
+            </p>
+            <button
+              onClick={async () => {
+                if (!window.confirm(t("admin.resetLevelsConfirm"))) return;
+                try {
+                  const res = await apiFetch("/api/users/admin/reset-levels", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+                  const data = await res.json();
+                  if (res.ok) { toast.success(data.message || t("admin.settingsSaved")); fetchSettings(); fetchAdminData(); }
+                  else toast.error(data.message || t("admin.settingsError"));
+                } catch { toast.error(t("admin.settingsError")); }
+              }}
+              className="btn"
+              style={{ background: "rgba(255,77,77,0.18)", border: "1px solid rgba(255,77,77,0.5)", color: "#ff5c5c", padding: "12px 14px", fontSize: 13, fontWeight: 900, width: "100%" }}
+            >
+              {t("admin.resetLevelsBtn")}
+            </button>
+          </div>
         </div>
       ) : adminTab === "rules" ? (
         <RulesPanel token={token} />

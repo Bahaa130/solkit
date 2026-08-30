@@ -1119,6 +1119,31 @@ router.post("/admin/settings", authenticateJWT, async (req, res) => {
         return res.status(500).json({ message: "فشل حفظ الإعدادات" });
     }
 });
+// 🧹 تصفير تقدم المستويات: يعيد جميع المستخدمين للمستوى 1 (نقاط النشاط صفر)
+// 💰 الأرصدة والتفعيل والمدفوعات لا تتأثر إطلاقاً
+router.post("/admin/reset-levels", authenticateJWT, async (req, res) => {
+    try {
+        if (!isAdmin(req, res))
+            return;
+        const result = await prisma.user.updateMany({
+            data: {
+                currentXp: 0,
+                currentLevel: 1,
+                xpLoginEarned: 0,
+                xpTaskEarned: 0,
+                xpGameEarned: 0,
+                xpRefEarned: 0,
+                xpMineEarned: 0,
+                xpBonusEarned: 0,
+            },
+        });
+        return res.json({ message: `تم تصفير تقدم المستويات — إعادة ${result.count} حساباً للمستوى 1 ✅`, count: result.count });
+    }
+    catch (error) {
+        console.error("Reset levels error:", error);
+        return res.status(500).json({ message: "فشل تصفير تقدم المستويات" });
+    }
+});
 router.get("/:id", async (req, res) => {
     try {
         const user = await prisma.user.findUnique({
