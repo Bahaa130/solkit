@@ -727,7 +727,7 @@ export default function App() {
         </div>
       ) : (
         <>
-          <main ref={(el) => { mainRef.current = el; }} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
+          <main ref={(el) => { mainRef.current = el; }} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "calc(104px + var(--safe-area-inset-bottom, 0px))" }}>
             <div key={activeTab} className="animate-fade-up">
               {activeTab === "home" && <HomePage userId={session.userId} token={session.jwtToken || ""} onNavigateTab={navigateTab} />}
               {activeTab === "airdrop" && <AirdropPage userId={session.userId} token={session.jwtToken || ""} />}
@@ -834,7 +834,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   refreshBtn: {
     position: "fixed",
     insetInlineEnd: 18,
-    bottom: "calc(88px + env(safe-area-inset-bottom, 0px))",
+    bottom: "calc(88px + var(--safe-area-inset-bottom, 0px))",
     zIndex: 220,
     width: 54,
     height: 54,
@@ -909,7 +909,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     transition: "background .15s ease",
   },
   langSoon: { color: C.faint, fontSize: 10.5, textAlign: "center", padding: "8px 4px 2px", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 4 },
-  payWrap: { flex: 1, display: "flex", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "30px 18px calc(30px + env(safe-area-inset-bottom, 0px))" },
+  payWrap: { flex: 1, display: "flex", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "30px 18px calc(30px + var(--safe-area-inset-bottom, 0px))" },
   payCard: { maxWidth: 480, width: "100%", padding: 30, textAlign: "center", margin: "auto" },
   payTitle: { fontSize: 22, fontWeight: 900, color: C.amber, marginTop: 16, marginBottom: 8 },
   payDesc: { color: C.muted, fontSize: 14, lineHeight: 1.8, marginBottom: 20 },
@@ -951,8 +951,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     bottom: 0,
     left: 0,
     right: 0,
-    height: "calc(72px + env(safe-area-inset-bottom, 0px))",
-    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+    height: "calc(72px + var(--safe-area-inset-bottom, 0px))",
+    paddingBottom: "var(--safe-area-inset-bottom, 0px)",
     display: "flex",
     background: "rgba(10,15,30,0.85)",
     backdropFilter: "blur(16px)",
@@ -992,7 +992,7 @@ function SplashOverlay() {
         "radial-gradient(620px 460px at -10% 110%, rgba(124,92,255,0.16), transparent 60%)," +
         "radial-gradient(480px 380px at 50% 130%, rgba(0,184,255,0.09), transparent 60%)," +
         "#070b16",
-      overflow: "hidden", touchAction: "none", paddingBottom: "env(safe-area-inset-bottom, 0px)"
+      overflow: "hidden", touchAction: "none", paddingBottom: "var(--safe-area-inset-bottom, 0px)"
     }}>
       <div className="splash-ring" style={{
         display: "flex", alignItems: "center", justifyContent: "center",
