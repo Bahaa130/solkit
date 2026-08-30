@@ -408,3 +408,13 @@ html, body { overflow-x: hidden; }
 @media (max-width: 420px) {
   .table-wrapper table { min-width: 480px; }
 }
+
+/* ============================================
+   إصلاحات WebView أندرويد
+   ============================================ */
+/* ارتفاع آمن للشاشة: دعم dvh مع fallback لـ vh على الإصدارات الأقدم */
+.app-shell { height: 100vh; }
+@supports (height: 100dvh) { .app-shell { height: 100dvh; } }
+
+/* منع وميض افتراضي عند لمس الأزرار في أندرويد */
+button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }

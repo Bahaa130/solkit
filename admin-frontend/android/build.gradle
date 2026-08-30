@@ -15,19 +15,8 @@ buildscript {
 
 apply from: "variables.gradle"
 
-// 🔧 فرض نسخة AGP المتوافقة والمستودعات الرسمية على كل المشاريع والإضافات الفرعية
-subprojects { project ->
-    buildscript {
-        repositories {
-            google()
-            mavenCentral()
-        }
-        dependencies {
-            classpath 'com.android.tools.build:gradle:8.7.3'
-        }
-    }
-}
-
+// 🔧 كل المشاريع الفرعية تستخدم نفس مستودعات Maven (تم توحيد نسخة AGP على 9.3.2 في buildscript أعلاه
+// ليتوافق مع compileSdk=37 وجافا 21)
 allprojects {
     repositories {
         google()

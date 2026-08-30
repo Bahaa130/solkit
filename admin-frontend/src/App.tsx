@@ -164,7 +164,11 @@ export default function App() {
   const mainRef = useRef<HTMLElement | null>(null);
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  // 🔄 تطبيق أندرويد: زر تحديث ظاهر بدل السحب (سحب التحديث معطّل هناك عبر القفل أدناه)
+  const isNativeApp = Capacitor.isNativePlatform();
+  const [nativeRefreshing, setNativeRefreshing] = useState(false);
   useEffect(() => {
+    if (Capacitor.isNativePlatform()) return; // 🛑 الأندرويد يستخدم زر التحديث بدلاً من السحب
     const PULL_T = 64;
     const ENGAGE = 12;
     const BOOT_LOCK_MS = 800;
@@ -611,7 +615,7 @@ export default function App() {
   const textAlign = dir === "rtl" ? "right" : "left";
 
   return (
-    <div style={{ ...styles.app, direction: dir }}>
+    <div className="app-shell" style={{ ...styles.app, direction: dir }}>
       <header className="app-header" style={styles.header}>
         <div style={styles.logo}>
           <CoinIcon size={20} />
@@ -802,6 +806,21 @@ export default function App() {
               )}
             </div>
           )}
+          {isNativeApp && !splash && (
+            <button
+              onClick={() => {
+                if (nativeRefreshing) return;
+                setNativeRefreshing(true);
+                try { sessionStorage.setItem("solkit_skip_splash", "1"); } catch { /* تجاهل */ }
+                setTimeout(() => window.location.reload(), 120);
+              }}
+              style={styles.refreshBtn}
+              aria-label={t("app.pullHint")}
+              title={t("app.pullHint")}
+            >
+              {nativeRefreshing ? <span className="spinner" style={{ borderTopColor: "#00ffcc", width: 20, height: 20, borderWidth: 2.5 }} /> : "↻"}
+            </button>
+          )}
         </>
       )}
       {splash && <SplashOverlay />}
@@ -810,7 +829,28 @@ export default function App() {
 }
 
 const styles: { [key: string]: React.CSSProperties } = {
-  app: { display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden", color: C.text, fontFamily: font, direction: "rtl" },
+  app: { display: "flex", flexDirection: "column", overflow: "hidden", color: C.text, fontFamily: font, direction: "rtl" },
+  // 🔄 زر تحديث داخل تطبيق أندرويد فقط (بديلُ سحب تحديث وهو ما يعطّل في WebView)
+  refreshBtn: {
+    position: "fixed",
+    insetInlineEnd: 18,
+    bottom: "calc(88px + env(safe-area-inset-bottom, 0px))",
+    zIndex: 220,
+    width: 54,
+    height: 54,
+    borderRadius: 999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(0,255,204,0.14)",
+    border: "1.5px solid rgba(0,255,204,0.55)",
+    boxShadow: "0 8px 22px rgba(0,0,0,0.45), 0 0 18px rgba(0,255,204,0.25)",
+    color: C.teal,
+    fontSize: 24,
+    fontWeight: 900,
+    cursor: "pointer",
+    fontFamily: font,
+  },
   header: {
     position: "sticky",
     top: 0,
