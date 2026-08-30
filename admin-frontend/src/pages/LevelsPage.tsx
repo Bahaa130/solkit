@@ -5,16 +5,6 @@ import { useLang } from "../i18n/index.tsx";
 
 interface LevelDef { level: number; name: string; minXp: number; color: string; miningRate: number; }
 interface LeaderRow { id: number; walletAddress: string | null; currentLevel: number; currentXp: number; activationStatus: string; }
-interface Achieve { id: number; type: string; target: string; reward: number; note: string | null; grantedBy: string; createdAt: string; }
-
-const ACH_ICON: { [key: string]: string } = {
-  mining_points: "⛏️",
-  bonus_week: "🎁",
-  community_tasks: "✅",
-  games_week: "🎮",
-  active_friends: "👥",
-  custom: "🏅",
-};
 
 // 💡 طرق كسب نقاط النشاط للوصول للمستوى التالي
 const HOW_ITEMS: { label: string; pts: number }[] = [
@@ -29,7 +19,6 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
   const { t, dir } = useLang();
   const [plan, setPlan] = useState<LevelDef[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderRow[]>([]);
-  const [achievements, setAchievements] = useState<Achieve[]>([]);
   const [me, setMe] = useState<{ currentLevel: number; currentXp: number }>({ currentLevel: 1, currentXp: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -37,14 +26,12 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
     (async () => {
       try {
         const headers = { Authorization: `Bearer ${token}` };
-        const [lv, us, ach] = await Promise.all([
+        const [lv, us] = await Promise.all([
           apiFetch("/api/users/levels", { headers }),
           apiFetch(`/api/users/${userId}`, { headers }),
-          apiFetch("/api/users/me/achievements", { headers }),
         ]);
         if (lv.ok) { const d = await lv.json(); setPlan(d.plan || []); setLeaderboard(d.leaderboard || []); }
         if (us.ok) { const d = await us.json(); setMe({ currentLevel: Number(d.currentLevel || 1), currentXp: Number(d.currentXp || 0) }); }
-        if (ach.ok) { const d = await ach.json(); setAchievements(Array.isArray(d) ? d : []); }
       } catch { /* تجاهل */ }
       finally { setLoading(false); }
     })();
@@ -155,24 +142,6 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
               {t("levels.level")} {r.currentLevel}
             </span>
             <span style={{ ...styles.xpVal, color: C.teal }}>{r.currentXp}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* 🏅 إنجازاتي (منحها المدير يدوياً) */}
-      <h3 style={styles.sectionTitle}>{t("levels.achievements")}</h3>
-      <div className="glass" style={styles.board}>
-        {achievements.length === 0 && (
-          <div style={{ ...styles.empty, color: C.muted }}>{t("levels.noAchievements")}</div>
-        )}
-        {achievements.map((a, i) => (
-          <div key={a.id} style={{ ...styles.row, background: i % 2 ? "rgba(255,255,255,0.02)" : "transparent" }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{ACH_ICON[a.type] || "🏅"}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: C.text, fontWeight: 700, fontSize: 13.5 }}>{a.target}</div>
-              {a.note && <div style={{ color: C.faint, fontSize: 11, marginTop: 2 }}>{a.note}</div>}
-            </div>
-            <span style={{ ...styles.xpVal, color: C.green, width: "auto", minWidth: 0 }}>+{Number(a.reward).toFixed(2)}</span>
           </div>
         ))}
       </div>
