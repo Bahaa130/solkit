@@ -280,50 +280,45 @@ export default function AdminPanelPage({ token }: { token: string }) {
     { label: t("admin.activeMiners"), value: `${stats.activeMiners}`, unit: t("admin.unitMiners"), color: C.teal, icon: "⛏️" },
   ];
 
+  // 📑 كل أقسام لوحة المدير — تُعرض كقائمة جانبية كاملة (لا يختفي أي قسم خارج الشاشة)
+  type AdminTabKey = "general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules" | "roadmap" | "wheel";
+  const ADMIN_TABS: { key: AdminTabKey; icon: string; label: string }[] = [
+    { key: "general", icon: "📊", label: t("admin.statsTitle") },
+    { key: "distribution", icon: "💸", label: t("admin.distTitle") },
+    { key: "tasks", icon: "📋", label: t("admin.tasksTitle") },
+    { key: "token", icon: "🪙", label: t("token.tab") },
+    { key: "branding", icon: "🎨", label: t("nav.branding") },
+    { key: "maintenance", icon: "🛠️", label: t("nav.maintenance") },
+    { key: "airdrop", icon: "🪂", label: t("nav.airdropCounter") },
+    { key: "levels", icon: "📈", label: t("nav.levels") },
+    { key: "rules", icon: "⚖️", label: t("admin.constantsTitle") },
+    { key: "roadmap", icon: "🗺️", label: t("admin.roadmapTitle") },
+    { key: "wheel", icon: "🎰", label: t("admin.wheelTitle") },
+  ];
+
   return (
     <div style={{ ...styles.container, direction: dir }}>
       <div style={styles.headerBox}>
         <h1 style={styles.title}>👑 {t("nav.admin")} — {branding.projectName}</h1>
       </div>
 
-      <div className="admin-tabs">
-        <button onClick={() => setAdminTab("general")} className={`admin-tab${adminTab === "general" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">📊</span>{t("admin.statsTitle")}
-        </button>
-        <button onClick={() => setAdminTab("distribution")} className={`admin-tab${adminTab === "distribution" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">💸</span>{t("admin.distTitle")}
-        </button>
-        <button onClick={() => setAdminTab("tasks")} className={`admin-tab${adminTab === "tasks" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">📋</span>{t("admin.tasksTitle")}
-        </button>
-        <button onClick={() => setAdminTab("token")} className={`admin-tab${adminTab === "token" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">🪙</span>{t("token.tab")}
-        </button>
-        <button onClick={() => setAdminTab("branding")} className={`admin-tab${adminTab === "branding" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">🎨</span>{t("nav.branding")}
-        </button>
-        <button onClick={() => setAdminTab("maintenance")} className={`admin-tab${adminTab === "maintenance" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">🛠️</span>{t("nav.maintenance")}
-        </button>
-        <button onClick={() => setAdminTab("airdrop")} className={`admin-tab${adminTab === "airdrop" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">🪂</span>{t("nav.airdropCounter")}
-        </button>
-        <button onClick={() => setAdminTab("levels")} className={`admin-tab${adminTab === "levels" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">📈</span>{t("nav.levels")}
-        </button>
-        <button onClick={() => setAdminTab("rules")} className={`admin-tab${adminTab === "rules" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">⚖️</span>{t("admin.constantsTitle")}
-        </button>
-        <button onClick={() => setAdminTab("roadmap")} className={`admin-tab${adminTab === "roadmap" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">🗺️</span>{t("admin.roadmapTitle")}
-        </button>
-        <button onClick={() => setAdminTab("wheel")} className={`admin-tab${adminTab === "wheel" ? " admin-tab-active" : ""}`}>
-          <span className="tab-ico">🎰</span>{t("admin.wheelTitle")}
-        </button>
-      </div>
+      <div className="admin-layout">
+        <aside className="admin-sidenav">
+          {ADMIN_TABS.map((tb) => (
+            <button
+              key={tb.key}
+              onClick={() => setAdminTab(tb.key)}
+              className={`admin-tab${adminTab === tb.key ? " admin-tab-active" : ""}`}
+            >
+              <span className="tab-ico">{tb.icon}</span>
+              <span className="tab-label">{tb.label}</span>
+            </button>
+          ))}
+        </aside>
 
-      {adminTab === "distribution" ? (
-        <DistributionPanel token={token} />
+        <div className="admin-content">
+          {adminTab === "distribution" ? (
+            <DistributionPanel token={token} />
       ) : adminTab === "tasks" ? (
         <CommunityTasksPanel token={token} />
       ) : adminTab === "token" ? (
@@ -626,6 +621,8 @@ export default function AdminPanelPage({ token }: { token: string }) {
       </div>
         </>
       )}
+        </div>
+      </div>
     </div>
   );
 }
