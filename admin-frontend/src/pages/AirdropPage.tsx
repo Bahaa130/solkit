@@ -84,6 +84,9 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 🪙 بيانات العملة الديناميكية من إعدادات المدير (تتحدث فور تعديل عقد العملة في اللوحة)
+  const [tokenMint, setTokenMint] = useState(TOKEN_MINT);
+  const [tokenDecimals, setTokenDecimals] = useState(TOKEN_DECIMALS);
 
   // ⏳ عدّاد حي
   useEffect(() => {
@@ -145,6 +148,13 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
             if (data.tgeTarget && Number(data.tgeTarget) > Date.now()) {
               setTarget(Number(data.tgeTarget));
             }
+            // 🪙 تحديث بيانات العقد الحية من إعدادات المدير
+            if (data.tokenMint && typeof data.tokenMint === "string" && data.tokenMint.length >= 32) {
+              setTokenMint(data.tokenMint);
+            }
+            if (Number(data.tokenDecimals) >= 0) {
+              setTokenDecimals(Number(data.tokenDecimals));
+            }
           }
         }
       } catch { /* اختياري */ }
@@ -162,7 +172,7 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
   }, [loadProfile]);
 
   const handleCopyMint = () => {
-    navigator.clipboard.writeText(TOKEN_MINT);
+    navigator.clipboard.writeText(tokenMint);
     setCopied(true);
     toast.success(t("airdrop.copied"));
     if (copyTimer.current) clearTimeout(copyTimer.current);
@@ -233,7 +243,7 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
           </div>
           <div style={styles.infoItem}>
             <span style={styles.infoLabel}>{t("airdrop.tokenDecimals")}</span>
-            <span style={styles.infoValue}>{TOKEN_DECIMALS}</span>
+            <span style={styles.infoValue}>{tokenDecimals}</span>
           </div>
           <div style={styles.infoItem}>
             <span style={styles.infoLabel}>{t("airdrop.tokenSupply")}</span>
@@ -243,8 +253,8 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
         <div style={styles.mintRow}>
           <span style={styles.infoLabel}>{t("airdrop.tokenMint")}</span>
           <div style={styles.copyBox}>
-            <code style={{ ...styles.mint, direction: "ltr" }} title={TOKEN_MINT}>
-              {TOKEN_MINT.slice(0, 14)}...{TOKEN_MINT.slice(-6)}
+            <code style={{ ...styles.mint, direction: "ltr" }} title={tokenMint}>
+              {tokenMint.slice(0, 14)}...{tokenMint.slice(-6)}
             </code>
             <button onClick={handleCopyMint} className={copied ? "btn btn-ghost" : "btn btn-primary"} style={{ padding: "7px 14px", fontSize: 12, whiteSpace: "nowrap" }}>
               {copied ? "✓" : t("airdrop.copy")}
