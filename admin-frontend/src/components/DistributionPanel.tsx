@@ -48,12 +48,21 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
 
   const fetchAll = async () => {
     try {
-      const [ov, hs] = await Promise.all([
-        apiFetch("/api/users/admin/distribution/overview", { headers }).then((r) => r.json()),
-        apiFetch("/api/users/admin/distribution/history", { headers }).then((r) => r.json()),
+      const [ovRes, hsRes] = await Promise.all([
+        apiFetch("/api/users/admin/distribution/overview", { headers }),
+        apiFetch("/api/users/admin/distribution/history", { headers }),
       ]);
-      setOverview(ov);
-      setHistory(Array.isArray(hs) ? hs : []);
+      if (ovRes.ok) {
+        const ov = await ovRes.json();
+        setOverview(ov);
+      } else {
+        const err = await ovRes.json().catch(() => ({}));
+        setStatus({ type: "error", text: err.message || "فشل جلب نظرة عامة على التوزيع" });
+      }
+      if (hsRes.ok) {
+        const hs = await hsRes.json();
+        setHistory(Array.isArray(hs) ? hs : []);
+      }
     } catch {
       setStatus({ type: "error", text: "تعذر جلب بيانات توزيع الجوائز" });
     }
@@ -73,7 +82,8 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       const data = await res.json();
       if (res.ok) {
         setPreview(data);
-         setStatus({ type: "success", text: `تم تجهيز التوزيع: ${data.recipientCount} مشترك سيستلم ${Number(data.pool).toFixed(3)} توكن (${data.requestedPercentage}%) من رصيد المجمع 🎁` });
+        const skipNote = data.skippedInvalid > 0 ? ` — ⚠️ تم استبعاد ${data.skippedInvalid} حساباً بعنوان محفظة غير صالح/تجريبي` : "";
+        setStatus({ type: "success", text: `تم تجهيز التوزيع: ${data.recipientCount} مشترك سيستلم ${Number(data.pool).toFixed(3)} توكن (${data.requestedPercentage}%) من رصيد المجمع 🎁${skipNote}` });
       } else {
         setStatus({ type: "error", text: data.message || "فشل تجهيز التوزيع" });
       }

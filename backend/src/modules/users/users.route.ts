@@ -697,8 +697,9 @@ const getTreasuryTokenBalance = async (connection: Connection, mint: PublicKey, 
       total += Number(a.account.data.parsed.info.tokenAmount.uiAmount || 0);
     }
     return total;
-  } catch {
-    return 0;
+  } catch (err) {
+    console.error("getTreasuryTokenBalance RPC error:", (err as Error)?.message || err);
+    return -1; // مؤشر على خطأ RPC بدلاً من 0 الصامت
   }
 };
 
@@ -799,7 +800,7 @@ router.get("/admin/distribution/overview", authenticateJWT, async (req: Authenti
       decimals: cfg.decimals,
       network: cfg.network,
       treasuryWallet: cfg.treasury,
-      treasuryBalance,
+      treasuryBalance: Math.max(0, treasuryBalance),
       accruedBalance: Number(accruedAgg._sum.balance || 0),
       poolUsers,
       poolSources: {
@@ -878,10 +879,29 @@ router.get("/admin/distribution/prepare", authenticateJWT, async (req: Authentic
       where: { activationStatus: "active", walletAddress: { not: null }, balance: { gt: 0 } },
       select: { id: true, walletAddress: true, currentLevel: true, balance: true }
     });
-    const fullPool = poolUsers.reduce((s, u) => s + Number(u.balance), 0);
+
+    // ⛔ تصفية العناوين غير الصالحة (أو تجريبية) — لا يمكن إرسال توكن لها، ونمنعها من تحطيم التوزيع
+    const validPoolUsers: any[] = [];
+    let skippedInvalid = 0;
+    for (const u of poolUsers) {
+      try {
+        new PublicKey(u.walletAddress!);
+        validPoolUsers.push(u);
+      } catch {
+        skippedInvalid++;
+      }
+    }
+
+    const fullPool = validPoolUsers.reduce((s, u) => s + Number(u.balance), 0);
     const pool = fullPool * pct; // رصيد المجمع المراد توزيعه حسب النسبة المختارة
 
     if (fullPool <= 0) return res.status(400).json({ message: "رصيد المجمع صفر — لا توجد أرصدة متراكمة بعد" });
+    if (treasuryBalance === -1) {
+      // تعذّر الاستعلام عن رصيد الخزانة (خطأ RPC) — لا نمنع المعاينة، نُطلع المدير فقط
+      return res.status(400).json({
+        message: "تعذّر الاستعلام عن رصيد الخزانة البلوكشيني حالياً (خطأ في شبكة Solana). أعد المحاولة بعد لحظات — أو تحقّق من اتصال RPC."
+      });
+    }
     if (treasuryBalance < pool) {
       return res.status(400).json({
         message: `رصيد خزانة التوكن (${treasuryBalance.toFixed(2)}) أقل من رصيد المجمع المطلوب توزيعه (${pool.toFixed(2)}) — امنح التوكن للخزانة أولاً`
@@ -889,20 +909,43 @@ router.get("/admin/distribution/prepare", authenticateJWT, async (req: Authentic
     }
 
     // توزيع نسبي: كل مشترك يستلم حصته = رصيده الحالي × النسبة المختارة
+    // ⚡ تحقق من كل عنوان بشكل منفصل — عنوان واحد تالف لا يحبط التوزيع بالكامل
     const recipients: any[] = [];
-    for (const u of poolUsers) {
-      const amount = Math.floor(Number(u.balance) * pct * 1e8) / 1e8; // تقريب لـ 8 خانات دون تجاوز
-      if (amount <= 0) continue;
-      const ata = await getAssociatedTokenAddress(mint, new PublicKey(u.walletAddress!));
-      const info = await connection.getAccountInfo(ata);
-      recipients.push({
-        userId: u.id,
-        walletAddress: u.walletAddress,
-        level: u.currentLevel || 1,
-        balance: Number(u.balance),
-        amount,
-        hasAta: Boolean(info)
-      });
+    const ATA_BATCH = 10; // عدد الاستدعاءات المتوازية (لتجنب rate limit على devnet)
+    for (let i = 0; i < validPoolUsers.length; i += ATA_BATCH) {
+      const batch = validPoolUsers.slice(i, i + ATA_BATCH);
+      const results = await Promise.allSettled(
+        batch.map(async (u) => {
+          const amount = Math.floor(Number(u.balance) * pct * 1e8) / 1e8;
+          if (amount <= 0) return null;
+          try {
+            const pubkey = new PublicKey(u.walletAddress!);
+            const ata = await getAssociatedTokenAddress(mint, pubkey);
+            const info = await connection.getAccountInfo(ata);
+            return {
+              userId: u.id,
+              walletAddress: u.walletAddress,
+              level: u.currentLevel || 1,
+              balance: Number(u.balance),
+              amount,
+              hasAta: Boolean(info),
+            };
+          } catch {
+            // عنوان محفظة تالف — نسجله كمستلم بدون ATA ونكمّل
+            return {
+              userId: u.id,
+              walletAddress: u.walletAddress,
+              level: u.currentLevel || 1,
+              balance: Number(u.balance),
+              amount,
+              hasAta: false,
+            };
+          }
+        })
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) recipients.push(r.value);
+      }
     }
 
     const treasuryAta = await getAssociatedTokenAddress(mint, treasury);
@@ -916,6 +959,7 @@ router.get("/admin/distribution/prepare", authenticateJWT, async (req: Authentic
       requestedPercentage: Math.round(pct * 100),
       treasuryWallet: cfg.treasury,
       treasuryAta: treasuryAta.toBase58(),
+      skippedInvalid,
       recipientCount: recipients.length,
       recipients
     });
