@@ -24,7 +24,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
   const { branding } = useBranding();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules">("general");
+  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules" | "roadmap">("general");
   const [levelPlan, setLevelPlan] = useState<LevelRow[]>([]);
   // 🎯 المستوى المحدد لتحرير نقاط نشاطه (لكل مستوى نقاطه الخاصة)
   const [selLevel, setSelLevel] = useState<number>(1);
@@ -36,6 +36,8 @@ export default function AdminPanelPage({ token }: { token: string }) {
   });
   const [tgeDays, setTgeDays] = useState<number>(30);
   const [savingSettings, setSavingSettings] = useState(false);
+  // 🗺️ خارطة الطريق (تُدار بالكامل من هنا)
+  const [roadmap, setRoadmap] = useState<{ icon: string; label: string; status: "done" | "current" | "upcoming" }[]>([]);
   const toast = useToast();
 
   // 1. دالة جلب البيانات والإحصائيات وتمرير التوكن الرسمي الصارم بـ Bearer JWT
@@ -95,6 +97,9 @@ export default function AdminPanelPage({ token }: { token: string }) {
           setLevelPlan(data.levelPlan.map((l: LevelRow) => ({ ...l })));
           setSelLevel((prev) => (data.levelPlan.some((x: LevelRow) => x.level === prev) ? prev : data.levelPlan[0].level));
         }
+        if (Array.isArray(data.roadmap)) {
+          setRoadmap(data.roadmap);
+        }
       }
     } catch { /* تجاهل */ }
   };
@@ -153,6 +158,22 @@ export default function AdminPanelPage({ token }: { token: string }) {
     } finally {
       setSavingSettings(false);
     }
+  };
+
+  // 🗺️ حفظ خارطة الطريق
+  const saveRoadmap = async () => {
+    try {
+      setSavingSettings(true);
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+      const res = await apiFetch("/api/users/admin/settings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ roadmap }),
+      });
+      if (res.ok) { toast.success(t("admin.settingsSaved")); fetchSettings(); }
+      else { const err = await res.json().catch(() => ({})); toast.error(err.message || t("admin.settingsError")); }
+    } catch { toast.error(t("admin.settingsError")); }
+    finally { setSavingSettings(false); }
   };
 
   // 🏆 حفظ خطة المستويات (تشمل الأسماء والعتبات ونقاط النشاط لكل مستوى)
@@ -254,6 +275,9 @@ export default function AdminPanelPage({ token }: { token: string }) {
         </button>
         <button onClick={() => setAdminTab("rules")} className={`admin-tab${adminTab === "rules" ? " admin-tab-active" : ""}`}>
           {t("admin.constantsTitle")}
+        </button>
+        <button onClick={() => setAdminTab("roadmap")} className={`admin-tab${adminTab === "roadmap" ? " admin-tab-active" : ""}`}>
+          🗺️ {t("admin.roadmapTitle")}
         </button>
       </div>
 
@@ -444,6 +468,36 @@ export default function AdminPanelPage({ token }: { token: string }) {
         </div>
       ) : adminTab === "rules" ? (
         <RulesPanel token={token} />
+      ) : adminTab === "roadmap" ? (
+        <div className="glass" style={styles.card}>
+          <h3 style={styles.cardTitle}>🗺️ {t("admin.roadmapTitle")}</h3>
+          <p style={styles.cardSub}>{t("admin.roadmapDesc")}</p>
+          {roadmap.map((phase, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "52px 1fr 120px 42px", gap: 10, alignItems: "center", marginBottom: 10, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "12px 14px" }}>
+              <input value={phase.icon} maxLength={4} onChange={(e) => { const n = [...roadmap]; n[i] = { ...n[i], icon: e.target.value }; setRoadmap(n); }}
+                style={{ width: 52, fontSize: 22, textAlign: "center", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "8px 4px", outline: "none", color: C.text }} />
+              <input value={phase.label} maxLength={120} onChange={(e) => { const n = [...roadmap]; n[i] = { ...n[i], label: e.target.value }; setRoadmap(n); }}
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", color: C.text }} />
+              <select value={phase.status} onChange={(e) => { const n = [...roadmap]; n[i] = { ...n[i], status: e.target.value as any }; setRoadmap(n); }}
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "10px 8px", fontSize: 12, color: phase.status === "done" ? "#4ade80" : phase.status === "current" ? "#a855f7" : C.muted, outline: "none" }}>
+                <option value="done">✅ مكتمل</option>
+                <option value="current">🔵 حالي</option>
+                <option value="upcoming">⏳ قادم</option>
+              </select>
+              <button onClick={() => setRoadmap(roadmap.filter((_, j) => j !== i))}
+                style={{ background: "rgba(255,77,77,0.12)", border: "1px solid rgba(255,77,77,0.3)", color: "#ff5c5c", borderRadius: 10, padding: "10px", fontSize: 16, cursor: "pointer", textAlign: "center" }}>
+                ✕
+              </button>
+            </div>
+          ))}
+          <button onClick={() => setRoadmap([...roadmap, { icon: "✨", label: "", status: "upcoming" }])}
+            className="btn btn-ghost" style={{ width: "100%", marginBottom: 14, padding: "12px", fontSize: 13, border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 12 }}>
+            + {t("admin.roadmapAdd")}
+          </button>
+          <button onClick={saveRoadmap} disabled={savingSettings} className="btn btn-purple btn-block" style={{ padding: "14px 16px", fontSize: 13, fontWeight: 800 }}>
+            {t("admin.settingsSave")}
+          </button>
+        </div>
       ) : (
         <>
         <div style={styles.statsGrid}>

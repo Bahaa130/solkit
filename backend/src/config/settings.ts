@@ -35,6 +35,14 @@ export interface SiteSettings {
   xpRef: number;                      // 📊 نقاط نشاط تفعيل صديق عبر الإحالة
   xpMine: number;                     // 📊 نقاط نشاط إكمال جلسة تعدين (24 ساعة)
   xpBonus: number;                    // 📊 نقاط نشاط المطالبة بالبونص اليومي
+  roadmap: RoadmapPhase[];            // 🗺️ مراحل خارطة الطريق (تُدار بالكامل من المدير)
+}
+
+// 🗺️ مرحلة واحدة في خارطة الطريق
+export interface RoadmapPhase {
+  icon: string;   // إيموجي
+  label: string;  // نص المرحلة
+  status: "done" | "current" | "upcoming"; // الحالة
 }
 
 // 🎯 تعريف مستوى واحد في خطة المستويات (يُدار من لوحة المدير)
@@ -99,6 +107,13 @@ const DEFAULTS: SiteSettings = {
   xpRef: 50,
   xpMine: 30,
   xpBonus: 15,
+  roadmap: [
+    { icon: "⚙️", label: "بناء النظام الأساسي", status: "done" },
+    { icon: "🔐", label: "تفعيل أمني + اختبار", status: "done" },
+    { icon: "🚀", label: "إطلاق النسخة التجريبية", status: "current" },
+    { icon: "🦍", label: "إطلاق النسخة الكاملة", status: "upcoming" },
+    { icon: "🌐", label: "التوسع والبورصات", status: "upcoming" },
+  ],
 };
 
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)

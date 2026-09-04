@@ -40,13 +40,13 @@ const TOKENOMICS = [
   { key: "airdrop.allocTeam", pct: 15, color: "#ff5c7a" },
 ];
 
-// 🗺️ خارطة الطريق
-const ROADMAP = [
-  { key: "airdrop.roadmapPhase1", icon: "⚙️", done: true },
-  { key: "airdrop.roadmapPhase2", icon: "🔐", done: true },
-  { key: "airdrop.roadmapPhase3", icon: "🚀", done: false, current: true },
-  { key: "airdrop.roadmapPhase4", icon: "🦍", done: false },
-  { key: "airdrop.roadmapPhase5", icon: "🌐", done: false },
+// 🗺️ خارطة الطريق الافتراضية (تُستبدل بالقيمة الحية من إعدادات المدير)
+const DEFAULT_ROADMAP = [
+  { icon: "⚙️", label: "بناء النظام الأساسي", status: "done" as const },
+  { icon: "🔐", label: "تفعيل أمني + اختبار", status: "done" as const },
+  { icon: "🚀", label: "إطلاق النسخة التجريبية", status: "current" as const },
+  { icon: "🦍", label: "إطلاق النسخة الكاملة", status: "upcoming" as const },
+  { icon: "🌐", label: "التوسع والبورصات", status: "upcoming" as const },
 ];
 
 // 📋 خطوات المشاركة
@@ -88,6 +88,8 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
   const [tokenMint, setTokenMint] = useState(TOKEN_MINT);
   const [tokenDecimals, setTokenDecimals] = useState(TOKEN_DECIMALS);
   const [tokenSupply, setTokenSupply] = useState(TOKEN_SUPPLY);
+  // 🗺️ خارطة الطريق الديناميكية من إعدادات المدير
+  const [roadmap, setRoadmap] = useState(DEFAULT_ROADMAP);
 
   // ⏳ عدّاد حي
   useEffect(() => {
@@ -158,6 +160,9 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
             }
             if (Number(data.tokenSupply) >= 0) {
               setTokenSupply(Number(data.tokenSupply));
+            }
+            if (Array.isArray(data.roadmap) && data.roadmap.length > 0) {
+              setRoadmap(data.roadmap);
             }
           }
         }
@@ -353,15 +358,19 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
       <div className="glass" style={styles.card}>
         <h3 style={styles.cardTitle}>{t("airdrop.roadmapTitle")}</h3>
         <div style={styles.roadmap}>
-          {ROADMAP.map((r, i) => (
-            <div key={r.key} style={styles.rmStep}>
-              <div style={{ ...styles.rmDot, background: r.current ? C.purple : r.done ? C.green : "rgba(255,255,255,0.12)", boxShadow: r.current ? "0 0 14px rgba(124,92,255,0.7)" : "none" }}>
-                {r.icon}
+          {roadmap.map((r, i) => {
+            const done = r.status === "done";
+            const current = r.status === "current";
+            return (
+              <div key={i} style={styles.rmStep}>
+                <div style={{ ...styles.rmDot, background: current ? C.purple : done ? C.green : "rgba(255,255,255,0.12)", boxShadow: current ? "0 0 14px rgba(124,92,255,0.7)" : "none" }}>
+                  {r.icon}
+                </div>
+                {i < roadmap.length - 1 && <div style={{ ...styles.rmLine, background: done ? C.green : "rgba(255,255,255,0.08)" }} />}
+                <p style={{ ...styles.rmText, color: done || current ? C.text : C.muted, fontWeight: current ? 800 : 600 }}>{r.label}</p>
               </div>
-              {i < ROADMAP.length - 1 && <div style={{ ...styles.rmLine, background: r.done ? C.green : "rgba(255,255,255,0.08)" }} />}
-              <p style={{ ...styles.rmText, color: r.done ? C.text : C.muted, fontWeight: r.current ? 800 : 600 }}>{t(r.key)}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

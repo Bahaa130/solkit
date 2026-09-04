@@ -1004,6 +1004,8 @@ router.get("/settings", async (_req, res) => {
             tokenName: cfg.name,
             tokenSymbol: cfg.symbol,
             tokenIcon: cfg.icon,
+            tokenSupply: s.tokenSupply ?? 1000000,
+            roadmap: s.roadmap || [],
             levelPlan: getLevelPlan(),
             dailyRewards: s.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
             dailyLevelMult: s.dailyLevelMult ?? 0.05,
@@ -1078,6 +1080,12 @@ const settingsSchema = z.object({
     xpRef: z.number().int().min(0).max(100000).optional(),
     xpMine: z.number().int().min(0).max(100000).optional(),
     xpBonus: z.number().int().min(0).max(100000).optional(),
+    tokenSupply: z.number().int().min(0).max(10000000000).optional(),
+    roadmap: z.array(z.object({
+        icon: z.string().min(1).max(8),
+        label: z.string().min(1).max(120),
+        status: z.enum(["done", "current", "upcoming"]),
+    })).max(12).optional(),
 });
 router.post("/admin/settings", authenticateJWT, async (req, res) => {
     try {
@@ -1101,6 +1109,8 @@ router.post("/admin/settings", authenticateJWT, async (req, res) => {
             tokenName: cfg.name,
             tokenSymbol: cfg.symbol,
             tokenIcon: cfg.icon,
+            tokenSupply: updated.tokenSupply ?? 1000000,
+            roadmap: updated.roadmap || [],
             levelPlan: getLevelPlan(),
             dailyRewards: updated.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
             dailyLevelMult: updated.dailyLevelMult ?? 0.05,

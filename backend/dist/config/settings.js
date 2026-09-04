@@ -51,6 +51,13 @@ const DEFAULTS = {
     xpRef: 50,
     xpMine: 30,
     xpBonus: 15,
+    roadmap: [
+        { icon: "⚙️", label: "بناء النظام الأساسي", status: "done" },
+        { icon: "🔐", label: "تفعيل أمني + اختبار", status: "done" },
+        { icon: "🚀", label: "إطلاق النسخة التجريبية", status: "current" },
+        { icon: "🦍", label: "إطلاق النسخة الكاملة", status: "upcoming" },
+        { icon: "🌐", label: "التوسع والبورصات", status: "upcoming" },
+    ],
 };
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)
 export function getSettings() {
