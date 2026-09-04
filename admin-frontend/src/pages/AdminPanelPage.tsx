@@ -288,37 +288,37 @@ export default function AdminPanelPage({ token }: { token: string }) {
 
       <div className="admin-tabs">
         <button onClick={() => setAdminTab("general")} className={`admin-tab${adminTab === "general" ? " admin-tab-active" : ""}`}>
-          {t("admin.statsTitle")}
+          <span className="tab-ico">📊</span>{t("admin.statsTitle")}
         </button>
         <button onClick={() => setAdminTab("distribution")} className={`admin-tab${adminTab === "distribution" ? " admin-tab-active" : ""}`}>
-          {t("admin.distTitle")}
+          <span className="tab-ico">💸</span>{t("admin.distTitle")}
         </button>
         <button onClick={() => setAdminTab("tasks")} className={`admin-tab${adminTab === "tasks" ? " admin-tab-active" : ""}`}>
-          {t("admin.tasksTitle")}
+          <span className="tab-ico">📋</span>{t("admin.tasksTitle")}
         </button>
         <button onClick={() => setAdminTab("token")} className={`admin-tab${adminTab === "token" ? " admin-tab-active" : ""}`}>
-          {t("token.tab")}
+          <span className="tab-ico">🪙</span>{t("token.tab")}
         </button>
         <button onClick={() => setAdminTab("branding")} className={`admin-tab${adminTab === "branding" ? " admin-tab-active" : ""}`}>
-          {t("nav.branding")}
+          <span className="tab-ico">🎨</span>{t("nav.branding")}
         </button>
         <button onClick={() => setAdminTab("maintenance")} className={`admin-tab${adminTab === "maintenance" ? " admin-tab-active" : ""}`}>
-          {t("nav.maintenance")}
+          <span className="tab-ico">🛠️</span>{t("nav.maintenance")}
         </button>
         <button onClick={() => setAdminTab("airdrop")} className={`admin-tab${adminTab === "airdrop" ? " admin-tab-active" : ""}`}>
-          {t("nav.airdropCounter")}
+          <span className="tab-ico">🪂</span>{t("nav.airdropCounter")}
         </button>
         <button onClick={() => setAdminTab("levels")} className={`admin-tab${adminTab === "levels" ? " admin-tab-active" : ""}`}>
-          {t("nav.levels")}
+          <span className="tab-ico">📈</span>{t("nav.levels")}
         </button>
         <button onClick={() => setAdminTab("rules")} className={`admin-tab${adminTab === "rules" ? " admin-tab-active" : ""}`}>
-          {t("admin.constantsTitle")}
+          <span className="tab-ico">⚖️</span>{t("admin.constantsTitle")}
         </button>
         <button onClick={() => setAdminTab("roadmap")} className={`admin-tab${adminTab === "roadmap" ? " admin-tab-active" : ""}`}>
-          🗺️ {t("admin.roadmapTitle")}
+          <span className="tab-ico">🗺️</span>{t("admin.roadmapTitle")}
         </button>
         <button onClick={() => setAdminTab("wheel")} className={`admin-tab${adminTab === "wheel" ? " admin-tab-active" : ""}`}>
-          🎰 {t("admin.wheelTitle")}
+          <span className="tab-ico">🎰</span>{t("admin.wheelTitle")}
         </button>
       </div>
 
