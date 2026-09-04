@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
 import { awardActivity } from "../users/levelSystem.js"; // 🎯 نقاط النشاط عند لعب لعبة (حسب مستوى المستخدم)
+import { getSettings } from "../../config/settings.js";
 
 const router = Router();
 // 🔐 إغلاق آمن: لا بديل عام لمفتاح التوكن — أضف JWT_SECRET على Render قبل التشغيل
@@ -15,8 +16,31 @@ const JWT_SECRET = process.env.JWT_SECRET || (() => { throw new Error("JWT_SECRE
 // ⚙️ الإعدادات القابلة للضبط (في مكان واحد)
 // ==========================================
 
-// 🎰 قيم شرائح العجلة الثابتة عند السيرفر — النتيجة النهائية لا تأتي من العميل إطلاقاً (دولاب محدّث)
-const WHEEL_SEGMENTS = [1.0, 2.5, 1.5, 3.0, 0.5, 2.0, 12.0, 1.5]; // فهرس 6 = الجائزة الكبرى 12
+// 🎰 قيم شرائح العجلة تُقرأ من إعدادات المدير (السيرفر هو السلطة — لا تزوير)
+const getWheel = () => {
+  const w = getSettings().wheel;
+  const segments = (w?.segments && Array.isArray(w.segments) && w.segments.length ? w.segments : [
+    { value: 1.0, weight: 20 }, { value: 2.5, weight: 10 }, { value: 1.5, weight: 18 }, { value: 3.0, weight: 8 },
+    { value: 0.5, weight: 22 }, { value: 2.0, weight: 14 }, { value: 12.0, weight: 3 }, { value: 1.5, weight: 5 },
+  ]);
+  return {
+    segments,
+    cooldownSec: typeof w?.cooldownSec === "number" ? w.cooldownSec : 3600,
+    dailyCap: typeof w?.dailyCap === "number" ? w.dailyCap : 50,
+  };
+};
+
+// 🎰 اختيار شريحة مرجّح (الأوزان تصنع الفرق: الجوائز الكبرى أندر)
+const pickWheelSegment = (): number => {
+  const { segments } = getWheel();
+  const totalWeight = segments.reduce((sum: number, sg: any) => sum + Math.max(0, sg.weight || 1), 0);
+  let roll = Math.random() * totalWeight;
+  for (let i = 0; i < segments.length; i++) {
+    roll -= Math.max(0, segments[i].weight || 1);
+    if (roll <= 0) return i;
+  }
+  return 0;
+};
 
 const XP_PER_PLAY = 10; // نقاط خبرة المستوى الموحد لكل جولة ممنوحة
 const TOTAL_DAILY_CAP = 230; // السقف الإجمالي اليومي لجميع الألعاب معاً
@@ -24,11 +48,10 @@ const TOTAL_DAILY_CAP = 230; // السقف الإجمالي اليومي لجم�
 type GameKey = "wheel" | "xo" | "catch";
 
 // cooldownSec: ثوانٍ بين جولتين (ساعة كاملة لزيارة مستمرة للموقع) • dailyCap: سقف يومي بالمبلغ الممنوح فعلياً • maxScore: حد أقصى معقول • factor: معامل تحويل النتيجة إلى رصيد
-const HOUR_LOCK = 3600; // ⏳ قفل الساعة — كل لعبة مرة واحدة كل ساعة
 const GAME_CONFIG: Record<GameKey, { cooldownSec: number; dailyCap: number; maxScore: number | null; factor: number }> = {
-  wheel: { cooldownSec: HOUR_LOCK, dailyCap: 50, maxScore: null, factor: 0 }, // العجلة تستخدم شريحة وليس score
-  xo: { cooldownSec: HOUR_LOCK, dailyCap: 60, maxScore: 1, factor: 5 }, // الفوز = 5 توكن
-  catch: { cooldownSec: HOUR_LOCK, dailyCap: 80, maxScore: 80, factor: 0.5 }, // كل عملة ملتقطة = 0.5 توكن
+  wheel: { cooldownSec: 3600, dailyCap: 50, maxScore: null, factor: 0 }, // العجلة تستخدم شريحة وليس score — تُقرأ من الإعدادات
+  xo: { cooldownSec: 3600, dailyCap: 60, maxScore: 1, factor: 5 }, // الفوز = 5 توكن
+  catch: { cooldownSec: 3600, dailyCap: 80, maxScore: 80, factor: 0.5 }, // كل عملة ملتقطة = 0.5 توكن
 };
 
 // 🕐 تنسيق مدة القفل بالعربية (ساعة/دقيقة/ثانية)
@@ -90,11 +113,13 @@ router.get("/status", authenticateJWT, async (req: AuthenticatedRequest, res: Re
       todayEarned[g] = Number(agg._sum?.reward || 0);
       if (last) {
         const elapsed = (Date.now() - new Date(last.createdAt).getTime()) / 1000;
-        cooldowns[g] = Math.max(0, Math.ceil(GAME_CONFIG[g].cooldownSec - elapsed));
+        const cfgSec = g === "wheel" ? getWheel().cooldownSec : GAME_CONFIG[g].cooldownSec;
+        cooldowns[g] = Math.max(0, Math.ceil(cfgSec - elapsed));
       }
     }
 
     const gameLevel = progress.gameLevel || 1;
+    const wheel = getWheel();
     return res.json({
       gameLevel,
       gameXp: progress.gameXp || 0,
@@ -106,7 +131,7 @@ router.get("/status", authenticateJWT, async (req: AuthenticatedRequest, res: Re
       eligible: user.activationStatus === "active",
       todayEarned: { ...todayEarned, total: todayEarned.wheel + todayEarned.xo + todayEarned.catch },
       dailyCaps: {
-        wheel: GAME_CONFIG.wheel.dailyCap,
+        wheel: wheel.dailyCap,
         xo: GAME_CONFIG.xo.dailyCap,
         catch: GAME_CONFIG.catch.dailyCap,
         total: TOTAL_DAILY_CAP,
@@ -127,7 +152,8 @@ router.post("/wheel/spin", authenticateJWT, async (req: AuthenticatedRequest, re
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.activationStatus !== "active") return res.status(403).json({ message: "الحساب غير مفعّل" });
 
-    const segment = Math.floor(Math.random() * WHEEL_SEGMENTS.length);
+    // 🎰 اختيار شريحة مرجّح حصرياً على السيرفر
+    const segment = pickWheelSegment();
     // توكن موقع قصير الأمد يربط النتيجة بالمستخدم — لا يمكن للعميل تزويرها
     const spinToken = jwt.sign({ userId, game: "wheel", segment }, JWT_SECRET, { expiresIn: "90s" });
     return res.json({ segment, spinToken });
@@ -165,7 +191,7 @@ router.post("/result", authenticateJWT, async (req: AuthenticatedRequest, res: R
       if (payload.userId !== userId || payload.game !== "wheel" || payload.segment !== segment) {
         return res.status(400).json({ message: "نتيجة غير صحيحة" });
       }
-      base = WHEEL_SEGMENTS[segment];
+      base = getWheel().segments[segment]?.value ?? 0;
       scoreVal = segment;
     } else {
       // 🐍❌ ألعاب المهارة: فحص حد أقصى معقول للنتيجة
@@ -178,14 +204,15 @@ router.post("/result", authenticateJWT, async (req: AuthenticatedRequest, res: R
     }
 
     // ⏱️ كولدون: من آخر جولة مسجلة لنفس اللعبة
+    const cfgSec = game === "wheel" ? getWheel().cooldownSec : cfg.cooldownSec;
     const last = await (prisma as any).gamePlayRecord.findFirst({
       where: { userId, game },
       orderBy: { createdAt: "desc" },
     });
     if (last) {
       const elapsed = (Date.now() - new Date(last.createdAt).getTime()) / 1000;
-      if (elapsed < cfg.cooldownSec) {
-        const retryAfterSec = Math.ceil(cfg.cooldownSec - elapsed);
+      if (elapsed < cfgSec) {
+        const retryAfterSec = Math.ceil(cfgSec - elapsed);
         return res.status(429).json({ message: `⏳ زر اللعب مقفول — عد بعد ${fmtLock(retryAfterSec)} للعب مرة أخرى`, retryAfterSec });
       }
     }
@@ -199,7 +226,8 @@ router.post("/result", authenticateJWT, async (req: AuthenticatedRequest, res: R
     ]);
     const dayByGame = Number(dayByGameAgg._sum?.reward || 0);
     const dayTotal = Number(dayTotalAgg._sum?.reward || 0);
-    const roomGame = Math.max(0, cfg.dailyCap - dayByGame);
+    const gameDailyCap = game === "wheel" ? getWheel().dailyCap : cfg.dailyCap;
+    const roomGame = Math.max(0, gameDailyCap - dayByGame);
     const roomTotal = Math.max(0, TOTAL_DAILY_CAP - dayTotal);
     if (roomGame <= 0 || roomTotal <= 0) {
       return res.status(429).json({ message: "وصلت للحد الأقصى اليومي لأرباح الألعاب ⏳ عد غداً" });

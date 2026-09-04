@@ -55,6 +55,25 @@ export const spinWheel = async (token: string): Promise<{ segment: number; spinT
   return data;
 };
 
+export interface WheelSegmentCfg { value: number; weight: number }
+
+// 🎰 جلب شرائح العجلة الديناميكية من إعدادات المدير (مسار عام)
+export const fetchWheelSegments = async (): Promise<WheelSegmentCfg[]> => {
+  try {
+    const res = await apiFetch("/api/users/settings");
+    const data = await readJson(res);
+    if (res.ok && data.wheel && Array.isArray(data.wheel.segments) && data.wheel.segments.length) {
+      return data.wheel.segments.map((s: any) => ({ value: Number(s.value) || 0, weight: Math.max(0, Number(s.weight) || 0) }));
+    }
+  } catch { /* ignore */ }
+  return [
+    { value: 1.0, weight: 20 }, { value: 2.5, weight: 10 },
+    { value: 1.5, weight: 18 }, { value: 3.0, weight: 8 },
+    { value: 0.5, weight: 22 }, { value: 2.0, weight: 14 },
+    { value: 12.0, weight: 3 }, { value: 1.5, weight: 5 },
+  ];
+};
+
 export const submitResult = async (
   token: string,
   payload: { game: GameKey; score?: number; segment?: number; spinToken?: string }

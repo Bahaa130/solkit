@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { C, font } from "../../theme";
 import { useLang } from "../../i18n/index.tsx";
 import { useBranding } from "../../branding";
-import { spinWheel, submitResult } from "./gamesApi";
+import { spinWheel, submitResult, fetchWheelSegments } from "./gamesApi";
 import { formatCooldown } from "./gamesUtils";
 import { CoinLayer } from "./CoinLayer";
 import type { CoinLayerHandle } from "./CoinLayer";
@@ -23,21 +23,26 @@ export interface GameProps {
 const WHEEL_SIZE = 250;
 const CENTER = WHEEL_SIZE / 2;
 const CHIP_R = 79; // نصف قطر مركز شارات القيمة
-const SEGMENTS = 8;
-const SEG_DEG = 360 / SEGMENTS;
 
-// ألوان/شارات كل شريحة (الفهرس 6 = الجائزة الكبرى 💎)
+// 🎨 ألوان دورة للشرائح تُعيّن تلقائياً حسب العدد
+const SEG_COLORS = ["#22e584", "#00b8ff", "#7c5cff", "#ffb020", "#00ffcc", "#ff5c7a", "#ff8a00", "#ffd700", "#ff4d4d", "#8b5cf6", "#22d3ee", "#f472b6"];
+
+// 🏷️ شريحة واحدة (القيمة واللون والنص والشارة — الجائزة الكبرى = أعلى قيمة)
 interface WheelSegment { label: string; color: string; text: string; chip: string; jackpot?: boolean }
-const WHEEL_SEGMENTS: WheelSegment[] = [
-  { label: "1",   color: "#22e584", text: "#04241a", chip: "rgba(255,255,255,0.85)" },
-  { label: "2.5", color: "#00b8ff", text: "#001c33", chip: "rgba(255,255,255,0.85)" },
-  { label: "1.5", color: "#7c5cff", text: "#ffffff", chip: "rgba(255,255,255,0.16)" },
-  { label: "3",   color: "#ffb020", text: "#3a2400", chip: "rgba(255,255,255,0.85)" },
-  { label: "0.5", color: "#00ffcc", text: "#003a2b", chip: "rgba(255,255,255,0.85)" },
-  { label: "2",   color: "#ff5c7a", text: "#ffffff", chip: "rgba(255,255,255,0.16)" },
-  { label: "💎",   color: "#ffd700", text: "#3a2b00", chip: "rgba(255,255,255,0.95)", jackpot: true },
-  { label: "1.5", color: "#ff8a00", text: "#3a1c00", chip: "rgba(255,255,255,0.85)" },
-];
+const buildSegments = (values: number[]): WheelSegment[] => {
+  const max = Math.max(...values);
+  return values.map((v, i) => {
+    const color = SEG_COLORS[i % SEG_COLORS.length];
+    const jackpot = v >= max;
+    return {
+      label: jackpot ? "💎" : String(v),
+      color: jackpot ? "#ffd700" : color,
+      text: jackpot ? "#3a2b00" : (["#7c5cff", "#ff5c7a", "#8b5cf6", "#f472b6"].includes(color) ? "#ffffff" : "#04241a"),
+      chip: "rgba(255,255,255,0.85)",
+      jackpot,
+    };
+  });
+};
 
 // 🔦 أضواء الحافة (16 ضوءاً ذهبياً/تيل حول الحلقة المزخرفة)
 const PEGS = Array.from({ length: 16 });
@@ -51,8 +56,10 @@ export default function LuckyWheel({ token, multiplier, cooldown, onReward, onSt
   const [reward, setReward] = useState<number | null>(null);
   const [remain, setRemain] = useState(cooldown);
   const [lastSegment, setLastSegment] = useState<number | null>(null);
-  const coinRef = useRef<CoinLayerHandle>(null);
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 🎰 شرائح العجلة الديناميكية (تُقرأ من إعدادات المدير) + أكبر قيمة (الجائزة الكبرى)
+  const [segments, setSegments] = useState<WheelSegment[]>(() => buildSegments([1.0, 2.5, 1.5, 3.0, 0.5, 2.0, 12.0, 1.5]));
+  const [maxValue, setMaxValue] = useState(12);
+  const coinRef = useRef<CoinLayerHandle>(null);  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
 
   // عدّاد تنازلي محلي للكولدون
@@ -67,6 +74,18 @@ export default function LuckyWheel({ token, multiplier, cooldown, onReward, onSt
   useEffect(() => {
     return () => { if (settleTimer.current) clearTimeout(settleTimer.current); };
   }, []);
+
+  // 🎰 جلب شرائح العجلة الديناميكية من إعدادات المدير
+  useEffect(() => {
+    let active = true;
+    fetchWheelSegments().then((cfgs) => {
+      const values = cfgs.map((c) => c.value);
+      if (active && values.length) { setSegments(buildSegments(values)); setMaxValue(Math.max(...values)); }
+    });
+    return () => { active = false; };
+  }, []);
+
+  const SEG_DEG = 360 / segments.length;
 
   const angleFor = (segment: number) => {
     const base = (360 - (segment * SEG_DEG + SEG_DEG / 2)) % 360; // مركز الشريحة عند المؤشر العلوي
@@ -113,7 +132,7 @@ export default function LuckyWheel({ token, multiplier, cooldown, onReward, onSt
   };
 
   const disabled = spinning || remain > 0;
-  const jackpot = reward !== null && reward >= 10;
+  const jackpot = reward !== null && reward >= maxValue * multiplier;
 
   return (
     <div style={{ ...styles.wrap, direction: dir }}>
@@ -146,7 +165,7 @@ export default function LuckyWheel({ token, multiplier, cooldown, onReward, onSt
             width: WHEEL_SIZE,
             height: WHEEL_SIZE,
             borderRadius: "50%",
-            background: `conic-gradient(${WHEEL_SEGMENTS.map((s, i) => `${s.color} ${i * SEG_DEG}deg ${(i + 1) * SEG_DEG}deg`).join(", ")})`,
+            background: `conic-gradient(${segments.map((s, i) => `${s.color} ${i * SEG_DEG}deg ${(i + 1) * SEG_DEG}deg`).join(", ")})`,
             transform: `rotate(${rotation}deg)`,
             transition: spinning ? "transform 3.6s cubic-bezier(.15,.85,.25,1)" : "none",
             boxShadow: "0 0 46px rgba(0,255,204,0.22), inset 0 0 0 6px rgba(7,11,22,0.75)",
@@ -158,7 +177,7 @@ export default function LuckyWheel({ token, multiplier, cooldown, onReward, onSt
           <div style={styles.gloss} />
 
           {/* شارات القيمة (تدور مع العجلة) */}
-          {WHEEL_SEGMENTS.map((seg, i) => {
+          {segments.map((seg, i) => {
             const rad = ((i * SEG_DEG + SEG_DEG / 2) * Math.PI) / 180;
             const x = CENTER + CHIP_R * Math.sin(rad);
             const y = CENTER - CHIP_R * Math.cos(rad);

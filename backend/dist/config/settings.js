@@ -58,6 +58,21 @@ const DEFAULTS = {
         { icon: "🦍", label: "إطلاق النسخة الكاملة", status: "upcoming" },
         { icon: "🌐", label: "التوسع والبورصات", status: "upcoming" },
     ],
+    // 🎰 عجلة الحظ الافتراضية: القيم من الأصغر للأكبر، الأوزان تجعل الجوائز الكبرى أندر
+    wheel: {
+        segments: [
+            { value: 0.5, weight: 22 },
+            { value: 1.0, weight: 20 },
+            { value: 1.5, weight: 18 },
+            { value: 2.0, weight: 14 },
+            { value: 2.5, weight: 10 },
+            { value: 3.0, weight: 8 },
+            { value: 5.0, weight: 5 },
+            { value: 12.0, weight: 3 },
+        ],
+        cooldownSec: 3600,
+        dailyCap: 50,
+    },
 };
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)
 export function getSettings() {

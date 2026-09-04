@@ -36,6 +36,16 @@ export interface SiteSettings {
   xpMine: number;                     // 📊 نقاط نشاط إكمال جلسة تعدين (24 ساعة)
   xpBonus: number;                    // 📊 نقاط نشاط المطالبة بالبونص اليومي
   roadmap: RoadmapPhase[];            // 🗺️ مراحل خارطة الطريق (تُدار بالكامل من المدير)
+  wheel: WheelSettings;               // 🎰 إعدادات عجلة الحظ (الشرائح والأوزان والسقوف)
+}
+
+// 🎡 شريحة واحدة في عجلة الحظ
+export interface WheelSegment { value: number; weight: number }
+// 🎰 إعدادات العجلة القابلة للضبط من المدير
+export interface WheelSettings {
+  segments: WheelSegment[];   // القيم + أوزانها (العدالة)
+  cooldownSec: number;        // ثوانٍ بين جولتين
+  dailyCap: number;           // سقف العجلة اليومي
 }
 
 // 🗺️ مرحلة واحدة في خارطة الطريق
@@ -114,6 +124,21 @@ const DEFAULTS: SiteSettings = {
     { icon: "🦍", label: "إطلاق النسخة الكاملة", status: "upcoming" },
     { icon: "🌐", label: "التوسع والبورصات", status: "upcoming" },
   ],
+  // 🎰 عجلة الحظ الافتراضية: القيم من الأصغر للأكبر، الأوزان تجعل الجوائز الكبرى أندر
+  wheel: {
+    segments: [
+      { value: 0.5, weight: 22 },
+      { value: 1.0, weight: 20 },
+      { value: 1.5, weight: 18 },
+      { value: 2.0, weight: 14 },
+      { value: 2.5, weight: 10 },
+      { value: 3.0, weight: 8 },
+      { value: 5.0, weight: 5 },
+      { value: 12.0, weight: 3 },
+    ],
+    cooldownSec: 3600,
+    dailyCap: 50,
+  },
 };
 
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)

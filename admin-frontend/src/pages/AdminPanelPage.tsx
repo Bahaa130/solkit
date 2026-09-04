@@ -24,7 +24,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
   const { branding } = useBranding();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules" | "roadmap">("general");
+  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules" | "roadmap" | "wheel">("general");
   const [levelPlan, setLevelPlan] = useState<LevelRow[]>([]);
   // 🎯 المستوى المحدد لتحرير نقاط نشاطه (لكل مستوى نقاطه الخاصة)
   const [selLevel, setSelLevel] = useState<number>(1);
@@ -38,6 +38,12 @@ export default function AdminPanelPage({ token }: { token: string }) {
   const [savingSettings, setSavingSettings] = useState(false);
   // 🗺️ خارطة الطريق (تُدار بالكامل من هنا)
   const [roadmap, setRoadmap] = useState<{ icon: string; label: string; status: "done" | "current" | "upcoming" }[]>([]);
+  // 🎰 إعدادات عجلة الحظ (الشرائح والأوزان والسقوف) — تُدار من هنا
+  const [wheel, setWheel] = useState<{ segments: { value: number; weight: number }[]; cooldownSec: number; dailyCap: number }>({
+    segments: [],
+    cooldownSec: 3600,
+    dailyCap: 50,
+  });
   const toast = useToast();
 
   // 1. دالة جلب البيانات والإحصائيات وتمرير التوكن الرسمي الصارم بـ Bearer JWT
@@ -99,6 +105,15 @@ export default function AdminPanelPage({ token }: { token: string }) {
         }
         if (Array.isArray(data.roadmap)) {
           setRoadmap(data.roadmap);
+        }
+        if (data.wheel && Array.isArray(data.wheel.segments)) {
+          setWheel({
+            segments: data.wheel.segments.map((s: any) => ({ value: Number(s.value) || 0, weight: Math.max(0, Number(s.weight) || 0) })),
+            cooldownSec: Number(data.wheel.cooldownSec) || 3600,
+            dailyCap: Number(data.wheel.dailyCap) || 50,
+          });
+        } else if (data.wheel) {
+          setWheel({ segments: [], cooldownSec: Number(data.wheel.cooldownSec) || 3600, dailyCap: Number(data.wheel.dailyCap) || 50 });
         }
       }
     } catch { /* تجاهل */ }
@@ -169,6 +184,29 @@ export default function AdminPanelPage({ token }: { token: string }) {
         method: "POST",
         headers,
         body: JSON.stringify({ roadmap }),
+      });
+      if (res.ok) { toast.success(t("admin.settingsSaved")); fetchSettings(); }
+      else { const err = await res.json().catch(() => ({})); toast.error(err.message || t("admin.settingsError")); }
+    } catch { toast.error(t("admin.settingsError")); }
+    finally { setSavingSettings(false); }
+  };
+
+  // 🎰 حفظ إعدادات عجلة الحظ
+  const saveWheel = async () => {
+    try {
+      setSavingSettings(true);
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+      const body = {
+        wheel: {
+          segments: wheel.segments.filter((s) => s.weight > 0),
+          cooldownSec: Math.max(300, Math.round(Number(wheel.cooldownSec) || 3600)),
+          dailyCap: Math.max(1, Math.round(Number(wheel.dailyCap) || 50)),
+        },
+      };
+      const res = await apiFetch("/api/users/admin/settings", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
       });
       if (res.ok) { toast.success(t("admin.settingsSaved")); fetchSettings(); }
       else { const err = await res.json().catch(() => ({})); toast.error(err.message || t("admin.settingsError")); }
@@ -278,6 +316,9 @@ export default function AdminPanelPage({ token }: { token: string }) {
         </button>
         <button onClick={() => setAdminTab("roadmap")} className={`admin-tab${adminTab === "roadmap" ? " admin-tab-active" : ""}`}>
           🗺️ {t("admin.roadmapTitle")}
+        </button>
+        <button onClick={() => setAdminTab("wheel")} className={`admin-tab${adminTab === "wheel" ? " admin-tab-active" : ""}`}>
+          🎰 {t("admin.wheelTitle")}
         </button>
       </div>
 
@@ -495,6 +536,78 @@ export default function AdminPanelPage({ token }: { token: string }) {
             + {t("admin.roadmapAdd")}
           </button>
           <button onClick={saveRoadmap} disabled={savingSettings} className="btn btn-purple btn-block" style={{ padding: "14px 16px", fontSize: 13, fontWeight: 800 }}>
+            {t("admin.settingsSave")}
+          </button>
+        </div>
+      ) : adminTab === "wheel" ? (
+        <div className="glass" style={styles.card}>
+          <h3 style={styles.cardTitle}>🎰 {t("admin.wheelTitle")}</h3>
+          <p style={styles.cardSub}>{t("admin.wheelDesc")}</p>
+
+          {/* حقول عامة: الكولدون + السقف اليومي */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+            <div>
+              <label style={{ color: C.muted, fontSize: 12, fontWeight: 700, display: "block", marginBottom: 6 }}>
+                {t("admin.wheelCooldown")} ({t("admin.unitMin")})
+              </label>
+              <input
+                type="number" min={5}
+                value={Math.round(Number(wheel.cooldownSec) / 60)}
+                onChange={(e) => setWheel({ ...wheel, cooldownSec: (Math.max(5, Number(e.target.value) || 5)) * 60 })}
+                style={styles.inputNum}
+              />
+            </div>
+            <div>
+              <label style={{ color: C.muted, fontSize: 12, fontWeight: 700, display: "block", marginBottom: 6 }}>
+                {t("admin.wheelDailyCap")}
+              </label>
+              <input
+                type="number" min={1}
+                value={Number(wheel.dailyCap)}
+                onChange={(e) => setWheel({ ...wheel, dailyCap: Math.max(1, Number(e.target.value) || 1) })}
+                style={styles.inputNum}
+              />
+            </div>
+          </div>
+
+          {/* جدول الشرائح: القيمة + الوزن */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "6px 2px 8px" }}>
+            <span style={{ color: C.text, fontWeight: 800, fontSize: 13 }}>{t("admin.wheelSegments")}</span>
+            <span style={{ color: C.muted, fontSize: 11 }}>{t("admin.wheelWeightHint")}</span>
+          </div>
+          {wheel.segments.map((seg, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 42px", gap: 10, alignItems: "center", marginBottom: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: "10px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 16, color: C.amber, fontWeight: 900 }}>🪙</span>
+                <input type="number" step="0.1" min={0}
+                  value={seg.value}
+                  onChange={(e) => { const n = [...wheel.segments]; n[i] = { ...n[i], value: Math.max(0, Number(e.target.value) || 0) }; setWheel({ ...wheel, segments: n }); }}
+                  style={{ ...styles.inputNum, flex: 1 }}
+                />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: C.muted, fontSize: 12 }}>{t("admin.wheelWeight")}</span>
+                <input type="number" min={0}
+                  value={seg.weight}
+                  onChange={(e) => { const n = [...wheel.segments]; n[i] = { ...n[i], weight: Math.max(0, Math.round(Number(e.target.value) || 0)) }; setWheel({ ...wheel, segments: n }); }}
+                  style={{ ...styles.inputNum, flex: 1 }}
+                />
+              </div>
+              <button onClick={() => setWheel({ ...wheel, segments: wheel.segments.filter((_, j) => j !== i) })}
+                style={{ background: "rgba(255,77,77,0.12)", border: "1px solid rgba(255,77,77,0.3)", color: "#ff5c5c", borderRadius: 10, padding: "10px", fontSize: 16, cursor: "pointer", textAlign: "center" }}>
+                ✕
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => setWheel({ ...wheel, segments: [...wheel.segments, { value: 1, weight: 10 }] })}
+            className="btn btn-ghost" style={{ width: "100%", marginBottom: 8, padding: "12px", fontSize: 13, border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 12 }}>
+            + {t("admin.wheelAddSegment")}
+          </button>
+          <p style={{ color: C.muted, fontSize: 11.5, lineHeight: 1.6, margin: "0 0 12px" }}>
+            {t("admin.wheelBalanceNote")}
+          </p>
+          <button onClick={saveWheel} disabled={savingSettings} className="btn btn-purple btn-block" style={{ padding: "14px 16px", fontSize: 13, fontWeight: 800 }}>
             {t("admin.settingsSave")}
           </button>
         </div>

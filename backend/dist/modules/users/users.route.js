@@ -1013,6 +1013,7 @@ router.get("/settings", async (_req, res) => {
             tokenIcon: cfg.icon,
             tokenSupply: s.tokenSupply ?? 1000000,
             roadmap: s.roadmap || [],
+            wheel: s.wheel || { segments: [], cooldownSec: 3600, dailyCap: 50 },
             levelPlan: getLevelPlan(),
             dailyRewards: s.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
             dailyLevelMult: s.dailyLevelMult ?? 0.05,
@@ -1093,6 +1094,14 @@ const settingsSchema = z.object({
         label: z.string().min(1).max(120),
         status: z.enum(["done", "current", "upcoming"]),
     })).max(12).optional(),
+    wheel: z.object({
+        segments: z.array(z.object({
+            value: z.number().min(0).max(1000000),
+            weight: z.number().int().min(0).max(1000000),
+        })).max(24),
+        cooldownSec: z.number().int().min(300).max(604800),
+        dailyCap: z.number().int().min(1).max(1000000),
+    }).optional(),
 });
 router.post("/admin/settings", authenticateJWT, async (req, res) => {
     try {
@@ -1118,6 +1127,7 @@ router.post("/admin/settings", authenticateJWT, async (req, res) => {
             tokenIcon: cfg.icon,
             tokenSupply: updated.tokenSupply ?? 1000000,
             roadmap: updated.roadmap || [],
+            wheel: updated.wheel || { segments: [], cooldownSec: 3600, dailyCap: 50 },
             levelPlan: getLevelPlan(),
             dailyRewards: updated.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
             dailyLevelMult: updated.dailyLevelMult ?? 0.05,
