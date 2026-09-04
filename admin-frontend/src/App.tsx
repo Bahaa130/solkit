@@ -749,7 +749,12 @@ export default function App() {
               {activeTab === "tasks" && <TasksPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "bonus" && <BonusPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "protect" && <HelpPage />}
-              {activeTab === "admin" && session.walletAddress === ADMIN_WALLET && <AdminPanelPage token={session.jwtToken || ""} />}
+              {/* 👑 تبويب المدير: لا يُتاح إلا لصاحب محفظة المدير حصراً — أي مستخدم آخر يفتح ?tab=admin يُوجَّه فوراً لصفحة 404 */}
+              {activeTab === "admin" && (
+                session.walletAddress === ADMIN_WALLET
+                  ? <AdminPanelPage token={session.jwtToken || ""} />
+                  : <NotFoundPage onNavigateTab={navigateTab} />
+              )}
               {activeTab === "levels" && <LevelsPage userId={session.userId} token={session.jwtToken || ""} />}
               {/* 🚫 تبويب غير معروف → صفحة 404 آمنة */}
               {!["home", "airdrop", "referral", "tasks", "bonus", "protect", "admin", "levels"].includes(activeTab) && (
