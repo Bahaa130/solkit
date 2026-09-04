@@ -574,7 +574,10 @@ export default function App() {
         setSession(prev => prev ? { ...prev, activationStatus: "active" } : null);
         setPayStatus({ type: "success", text: data.message || t("app.paySuccess") });
       } else {
-        setPayStatus({ type: "error", text: data.message || t("app.payServerRefused") });
+        // 🧾 إذا لم يجد السيرفر دفعة سابقة مؤهلة نعرض رسالة واضحة بدل رسالة الرفض الغامضة
+        const msg: string = data?.message || "";
+        const noPayment = /TxHash|لم يتم العثور على المعاملة|دفع.*غير كاف/i.test(msg);
+        setPayStatus({ type: "error", text: noPayment ? t("app.payNoPrevFound") : (msg || t("app.payServerRefused")) });
       }
     } catch (error: any) {
       console.error("Activation resume error:", error);
