@@ -1,7 +1,6 @@
 import { apiFetch } from "../lib/api";
 import React, { useState, useEffect } from "react";
 import { C, font } from "../theme";
-import { useBranding } from "../branding";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
 
@@ -12,7 +11,6 @@ interface ReferralPageProps {
 
 export default function ReferralPage({ userId, token }: ReferralPageProps) {
   const { dir, t, lang } = useLang();
-  const { branding } = useBranding();
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
@@ -56,24 +54,6 @@ export default function ReferralPage({ userId, token }: ReferralPageProps) {
   const handleCopyLink = () => {
     if (!data) return;
     navigator.clipboard.writeText(data.referralCode);
-    toast.success(t("referral.copySuccess"));
-  };
-
-  // 📲 لوحة المشاركة الأصلية في نظام أندرويد (والويب) — تفتح الواتساب/تيليجرام/أي تطبيق
-  const handleShareLink = async () => {
-    if (!data) return;
-    const inviteLink = `${window.location.origin}?ref=${data.referralCode}`;
-    const shareText = t("referral.shareBody", { app: branding.projectName });
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: branding.projectName, text: shareText, url: inviteLink });
-        return;
-      } catch (err: any) {
-        if (err?.name === "AbortError") return;
-      }
-    }
-    // احتياط: إذ لم تتوفر لوحة المشاركة (متصفح قديم) ننسخ النص مباشرة
-    await navigator.clipboard.writeText(`${shareText}\n${inviteLink}`);
     toast.success(t("referral.copySuccess"));
   };
 
@@ -129,9 +109,6 @@ export default function ReferralPage({ userId, token }: ReferralPageProps) {
           </div>
           <button onClick={handleCopyLink} className="btn btn-primary" style={{ whiteSpace: "nowrap" }}>{t("referral.copyBtn")}</button>
         </div>
-        <button onClick={handleShareLink} className="btn btn-purple btn-block" style={{ marginTop: 12, padding: "13px" }}>
-          {t("referral.shareBtn")}
-        </button>
       </div>
 
       {/* جدول عرض الأعضاء المسجلين من خلاله والمزامر من الـ MySQL */}
