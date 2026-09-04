@@ -16,7 +16,7 @@ export default function TokenSetupPanel({ token }: TokenSetupPanelProps) {
   const toast = useToast();
   const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
 
-  const [form, setForm] = useState({ tokenMint: "", tokenDecimals: 9, solanaNetwork: "devnet", treasuryWallet: "" });
+  const [form, setForm] = useState({ tokenMint: "", tokenDecimals: 9, tokenSupply: 1_000_000, solanaNetwork: "devnet", treasuryWallet: "" });
   const [overview, setOverview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -34,6 +34,7 @@ export default function TokenSetupPanel({ token }: TokenSetupPanelProps) {
       setForm({
         tokenMint: s.tokenMint || "",
         tokenDecimals: typeof s.tokenDecimals === "number" ? s.tokenDecimals : 9,
+        tokenSupply: typeof s.tokenSupply === "number" ? s.tokenSupply : 1_000_000,
         solanaNetwork: s.solanaNetwork || "devnet",
         treasuryWallet: s.treasuryWallet || "",
       });
@@ -64,6 +65,7 @@ export default function TokenSetupPanel({ token }: TokenSetupPanelProps) {
         body: JSON.stringify({
           tokenMint: mint,
           tokenDecimals: Number(form.tokenDecimals),
+          tokenSupply: Math.max(0, Number(form.tokenSupply) || 0),
           solanaNetwork: form.solanaNetwork,
           treasuryWallet: treasury,
         }),
@@ -181,6 +183,20 @@ export default function TokenSetupPanel({ token }: TokenSetupPanelProps) {
           placeholder={t("token.treasuryPlaceholder")}
           style={{ ...styles.input, direction: "ltr", fontFamily: "monospace" }}
         />
+
+        <div style={styles.row}>
+          <div style={{ flex: 1 }}>
+            <label style={styles.label}>{t("token.supplyLabel")}</label>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={form.tokenSupply}
+              onChange={(e) => setForm({ ...form, tokenSupply: Math.max(0, Number(e.target.value) || 0) })}
+              style={styles.input}
+            />
+          </div>
+        </div>
 
         <button onClick={save} disabled={saving} className="btn btn-amber btn-block" style={{ padding: 15, marginTop: 16 }}>
           {saving ? t("token.saving") : t("token.saveBtn")}

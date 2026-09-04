@@ -20,6 +20,7 @@ export interface SiteSettings {
   tokenName: string;          // 🪙 الاسم الكامل للعملة
   tokenSymbol: string;        // 🔤 رمز العملة (مثل SOLKIT)
   tokenIcon: string;          // 🖼️ أيقونة العملة (data URL بصيغة base64) أو نص فارغ = الإيموجي الافتراضي 💎
+  tokenSupply: number;        // 📊 إجمالي عرض العملة الكلي (يظهر في الورقة البيضاء)
   levelPlan: LevelDef[];      // 🎯 خطة المستويات التسعة (النشاط) — يضبطها المدير
   // ── ثوابت الأرقام التي تتحكم بها الإدارة ──
   dailyRewards: number[];             // 🎁 مكافآت البونص اليومي لكل يوم من أيام السلسلة (1..31 يوماً)
@@ -74,6 +75,7 @@ const DEFAULTS: SiteSettings = {
   tokenName: "SOLKIT",
   tokenSymbol: "SOLKIT",
   tokenIcon: "",
+  tokenSupply: 1_000_000,
   levelPlan: [
     { level: 1, name: "المبتدئ", minXp: 0, color: "#94a3b8", miningRate: 0.50, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
     { level: 2, name: "المبتدئ+", minXp: 120, color: "#4ade80", miningRate: 0.58, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },

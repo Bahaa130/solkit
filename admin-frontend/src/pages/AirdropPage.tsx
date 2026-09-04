@@ -87,6 +87,7 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
   // 🪙 بيانات العملة الديناميكية من إعدادات المدير (تتحدث فور تعديل عقد العملة في اللوحة)
   const [tokenMint, setTokenMint] = useState(TOKEN_MINT);
   const [tokenDecimals, setTokenDecimals] = useState(TOKEN_DECIMALS);
+  const [tokenSupply, setTokenSupply] = useState(TOKEN_SUPPLY);
 
   // ⏳ عدّاد حي
   useEffect(() => {
@@ -154,6 +155,9 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
             }
             if (Number(data.tokenDecimals) >= 0) {
               setTokenDecimals(Number(data.tokenDecimals));
+            }
+            if (Number(data.tokenSupply) >= 0) {
+              setTokenSupply(Number(data.tokenSupply));
             }
           }
         }
@@ -247,7 +251,7 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
           </div>
           <div style={styles.infoItem}>
             <span style={styles.infoLabel}>{t("airdrop.tokenSupply")}</span>
-            <span style={styles.infoValue}>{TOKEN_SUPPLY.toLocaleString(lang === "ar" ? "ar-EG" : lang)}</span>
+            <span style={styles.infoValue}>{tokenSupply.toLocaleString(lang === "ar" ? "ar-EG" : lang)}</span>
           </div>
         </div>
         <div style={styles.mintRow}>
