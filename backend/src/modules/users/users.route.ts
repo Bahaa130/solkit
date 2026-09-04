@@ -208,41 +208,52 @@ const findEligiblePayment = async (
   const connection = new Connection(solanaRpcUrl, "confirmed");
   const s = getSettings();
   const minRequired = hasReferrer ? s.activationHalfLamports : s.activationFullLamports;
+  // ⏱️ مهلة قصوى لكل طلب RPC حتى لا تتجمد الدعوة بانتظار الشبكة
+  const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T | null> =>
+    Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
   try {
-    const signatures = await connection.getSignaturesForAddress(
-      new PublicKey(ADMIN_WALLET),
-      { limit: 30 },
+    const sigsResp = await withTimeout(
+      connection.getSignaturesForAddress(new PublicKey(ADMIN_WALLET), { limit: 30 }),
+      8000,
     );
-    for (const sig of signatures) {
-      if (sig.err) continue;
-      // 🔁 عزل التوقيع: خطأ استرجاع معاملة قديمة (expired / block height exceeded)
-      // لا يُسقط الحلقة — نكمل فحص بقية التحويلات
-      try {
-        const tx = await connection.getTransaction(sig.signature, {
-          commitment: "confirmed",
-          maxSupportedTransactionVersion: 0,
-        });
-        if (!tx || !tx.meta || tx.meta.err) continue;
-        const keys = tx.transaction.message.getAccountKeys();
-        let adminIdx = -1;
-        let fromIdx = -1;
-        for (let i = 0; i < keys.length; i++) {
-          const addr = keys.get(i)?.toString();
-          if (addr === ADMIN_WALLET) adminIdx = i;
-          if (addr === userWallet) fromIdx = i;
-        }
-        if (adminIdx === -1 || fromIdx === -1) continue;
-        const adminDelta = tx.meta.postBalances[adminIdx] - tx.meta.preBalances[adminIdx];
-        if (adminDelta >= minRequired) return sig.signature;
-      } catch (sigErr) {
-        console.warn(`findEligiblePayment: skip signature ${sig.signature.slice(0, 8)}… (${(sigErr as Error)?.message || "rpc error"})`);
-        continue;
-      }
-    }
+    if (!sigsResp) return null;
+    const signatures = sigsResp as any[];
+
+    // 🔁 معالجة متوازية بدل التسلسل — أسرع بكثير مع عدد محدود من الأحدث أولاً
+    const LIMIT = Math.min(signatures.length, 10);
+    const batch = signatures.slice(0, LIMIT);
+    const results = await Promise.all(
+      batch.map(async (sig) => {
+        if (sig.err) return null;
+        try {
+          const tx = await withTimeout(
+            connection.getTransaction(sig.signature, {
+              commitment: "confirmed",
+              maxSupportedTransactionVersion: 0,
+            }),
+            5000,
+          );
+          if (!tx || !tx.meta || tx.meta.err) return null;
+          const keys = tx.transaction.message.getAccountKeys();
+          let adminIdx = -1;
+          let fromIdx = -1;
+          for (let i = 0; i < keys.length; i++) {
+            const addr = keys.get(i)?.toString();
+            if (addr === ADMIN_WALLET) adminIdx = i;
+            if (addr === userWallet) fromIdx = i;
+          }
+          if (adminIdx === -1 || fromIdx === -1) return null;
+          const adminDelta = tx.meta.postBalances[adminIdx] - tx.meta.preBalances[adminIdx];
+          if (adminDelta >= minRequired) return sig.signature;
+          return null;
+        } catch { return null; }
+      })
+    );
+    return results.find((sig) => sig) || null;
   } catch (err) {
     console.error("findEligiblePayment error:", err);
+    return null;
   }
-  return null;
 };
 
 router.post("/activate-account", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {

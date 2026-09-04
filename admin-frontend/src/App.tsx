@@ -558,15 +558,19 @@ export default function App() {
     if (!session?.jwtToken) return;
     try {
       setPayLoading(true);
-      setPayStatus({ type: "loading", text: t("app.payConfirming") });
-      const res = await apiFetch("/api/users/activate-account", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.jwtToken}`
-        },
-        body: JSON.stringify({})
-      });
+      setPayStatus({ type: "loading", text: t("app.resumeChecking") });
+      // ⏱️ مهلة أمان: لا نترك المستخدم ينتظر بلا رد إذا تعطل اتصال الخادم/الشبكة
+      const res = await Promise.race([
+        apiFetch("/api/users/activate-account", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.jwtToken}`
+          },
+          body: JSON.stringify({})
+        }),
+        new Promise<Response>((_, reject) => setTimeout(() => reject(new Error(t("resumeTimeout"))), 25000)),
+      ]);
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         localStorage.setItem("solkit_status", "active");
