@@ -167,7 +167,8 @@ const ar: Dict = {
   "wheel.spinning": "⏳ جارٍ...",
   "wheel.wait": "⏳ {time}",
   "wheel.hint": "مضاعف أرباحك الحالي: ×{m}",
-  "wheel.jackpot": "🎉 الجائزة الكبرى! ربحت 10+ {token}!",
+  "wheel.jackpot": "🎉 جائزة كبرى! ربحت +{amount} {token}!",
+  "wheel.won": "🪙 ربحت +{amount} {token}!",
   "wheel.error": "فشل تدوير العجلة",
   "wheel.settleError": "خطأ في تسوية العجلة",
 
@@ -709,7 +710,8 @@ const en: Dict = {
   "wheel.spinning": "⏳ Spinning...",
   "wheel.wait": "⏳ {time}",
   "wheel.hint": "Your current multiplier: ×{m}",
-  "wheel.jackpot": "🎉 Jackpot! You won 10+ {token}!",
+  "wheel.jackpot": "🎉 Jackpot! You won +{amount} {token}!",
+  "wheel.won": "🪙 You won +{amount} {token}!",
   "wheel.error": "Failed to spin the wheel",
   "wheel.settleError": "Error settling the wheel",
 
@@ -1235,7 +1237,8 @@ const fr: Dict = {
   "wheel.spinning": "⏳ Rotation...",
   "wheel.wait": "⏳ {time}",
   "wheel.hint": "Votre multiplicateur actuel : ×{m}",
-  "wheel.jackpot": "🎉 Jackpot ! Vous avez gagné 10+ {token} !",
+  "wheel.jackpot": "🎉 Jackpot ! Vous avez gagné +{amount} {token} !",
+  "wheel.won": "🪙 Vous avez gagné +{amount} {token} !",
   "wheel.error": "Échec de la rotation",
   "wheel.settleError": "Erreur lors du règlement de la roue",
 
@@ -1760,7 +1763,8 @@ const es: Dict = {
   "wheel.spinning": "⏳ Girando...",
   "wheel.wait": "⏳ {time}",
   "wheel.hint": "Tu multiplicador actual: ×{m}",
-  "wheel.jackpot": "🎉 ¡Premio mayor! ¡Ganaste 10+ {token}!",
+  "wheel.jackpot": "🎉 ¡Premio mayor! ¡Ganaste +{amount} {token}!",
+  "wheel.won": "🪙 ¡Ganaste +{amount} {token}!",
   "wheel.error": "No se pudo girar la rueda",
   "wheel.settleError": "Error al liquidar la rueda",
 
@@ -2285,7 +2289,8 @@ const tr: Dict = {
   "wheel.spinning": "⏳ Çevriliyor...",
   "wheel.wait": "⏳ {time}",
   "wheel.hint": "Mevcut çarpanınız: ×{m}",
-  "wheel.jackpot": "🎉 Jackpot! 10+ {token} kazandın!",
+  "wheel.jackpot": "🎉 Jackpot! +{amount} {token} kazandın!",
+  "wheel.won": "🪙 +{amount} {token} kazandın!",
   "wheel.error": "Çark çevrilemedi",
   "wheel.settleError": "Çark sonuçlandırılırken hata",
 

@@ -115,7 +115,9 @@ export default function LuckyWheel({ token, multiplier, cooldown, onReward, onSt
             coinRef.current?.pop(res.reward, 50, 30);
             onReward(res.reward, 50, 32);
           }
-          if (res.reward >= 10) toast.success(t("wheel.jackpot"));
+          const jackpotThreshold = maxValue * multiplier;
+          if (res.reward > 0 && res.reward >= jackpotThreshold) toast.success(t("wheel.jackpot", { amount: res.reward.toFixed(2), token: branding.tokenSymbol }));
+          else if (res.reward > 0) toast.success(t("wheel.won", { amount: res.reward.toFixed(2), token: branding.tokenSymbol }));
           if (res.leveledUp) toast.success(t("game.levelUp", { level: res.gameLevel, m: res.multiplier.toFixed(2) }));
           onStatusRefresh?.();
         } catch (e: any) {
