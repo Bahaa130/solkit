@@ -73,6 +73,13 @@ const DEFAULTS = {
         cooldownSec: 3600,
         dailyCap: 50,
     },
+    // 💼 اقتصاديات التوكن الافتراضية: نسب توزيع العرض الكلي (تتحكم بها الإدارة من لوحة المدير)
+    tokenomics: [
+        { label: "التعدين", pct: 40, color: "#00ffcc" },
+        { label: "الألعاب", pct: 25, color: "#7c5cff" },
+        { label: "المجتمع", pct: 20, color: "#ffb020" },
+        { label: "الفريق", pct: 15, color: "#ff5c7a" },
+    ],
 };
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)
 export function getSettings() {

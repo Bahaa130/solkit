@@ -44,6 +44,8 @@ export default function AdminPanelPage({ token }: { token: string }) {
     cooldownSec: 3600,
     dailyCap: 50,
   });
+  // 💼 اقتصاديات التوكن (نسب توزيع العرض الكلي) — تُدار من تبويب الإيردروب
+  const [tokenomics, setTokenomics] = useState<{ label: string; pct: number; color: string }[]>([]);
   const toast = useToast();
 
   // 1. دالة جلب البيانات والإحصائيات وتمرير التوكن الرسمي الصارم بـ Bearer JWT
@@ -115,6 +117,14 @@ export default function AdminPanelPage({ token }: { token: string }) {
         } else if (data.wheel) {
           setWheel({ segments: [], cooldownSec: Number(data.wheel.cooldownSec) || 3600, dailyCap: Number(data.wheel.dailyCap) || 50 });
         }
+        // 💼 تحميل اقتصاديات التوكن الحالية من إعدادات الخادم
+        if (Array.isArray(data.tokenomics) && data.tokenomics.length > 0) {
+          setTokenomics(data.tokenomics.map((s: any) => ({
+            label: String(s.label || "").slice(0, 60),
+            pct: Math.max(0, Math.min(100, Number(s.pct) || 0)),
+            color: String(s.color || "#00ffcc").slice(0, 12),
+          })));
+        }
       }
     } catch { /* تجاهل */ }
   };
@@ -150,7 +160,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
     }
   };
 
-  // ⏳ حفظ عدّاد الإيردروب (TGE) — قسم مستقل
+  // ⏳ حفظ عدّاد الإيردروب (TGE) + 💼 اقتصاديات التوكن — قسم مستقل
   const saveAirdrop = async () => {
     try {
       setSavingSettings(true);
@@ -159,7 +169,16 @@ export default function AdminPanelPage({ token }: { token: string }) {
       const res = await apiFetch("/api/users/admin/settings", {
         method: "POST",
         headers,
-        body: JSON.stringify({ tgeTarget: targetTs }),
+        body: JSON.stringify({
+          tgeTarget: targetTs,
+          tokenomics: tokenomics
+            .filter((s) => s.label.trim() !== "")
+            .map((s) => ({
+              label: s.label.trim().slice(0, 60),
+              pct: Math.max(0, Math.min(100, Number(s.pct) || 0)),
+              color: (s.color || "#00ffcc").slice(0, 12),
+            })),
+        }),
       });
       if (res.ok) {
         toast.success(t("admin.settingsSaved"));
@@ -357,6 +376,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
           </button>
         </div>
       ) : adminTab === "airdrop" ? (
+        <>
         <div className="glass" style={styles.card}>
           <h3 style={styles.cardTitle}>{t("admin.tgeTitle")}</h3>
           <p style={{ ...styles.cardSub }}>
@@ -390,6 +410,78 @@ export default function AdminPanelPage({ token }: { token: string }) {
             {savingSettings ? t("admin.savingSettings") : t("admin.saveSettings")}
           </button>
         </div>
+
+        <div className="glass" style={styles.card}>
+          <h3 style={styles.cardTitle}>💼 {t("admin.tokenomicsTitle")}</h3>
+          <p style={styles.cardSub}>{t("admin.tokenomicsDesc")}</p>
+          {tokenomics.length === 0 && (
+            <button
+              onClick={() => setTokenomics([{ label: "", pct: 100, color: "#00ffcc" }])}
+              className="btn btn-ghost"
+              style={{ width: "100%", padding: "12px", fontSize: 13, border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 12, marginBottom: 10 }}
+            >
+              + {t("admin.tokenomicsAdd")}
+            </button>
+          )}
+          {tokenomics.map((seg, i) => (
+            <div key={i} style={{ ...styles.tgeRow, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 100%" }}>
+                <span style={{ width: 12, height: 12, borderRadius: 4, background: seg.color, flexShrink: 0 }} />
+                <input
+                  type="text"
+                  value={seg.label}
+                  maxLength={60}
+                  placeholder={t("admin.tokenomicsLabelPh")}
+                  onChange={(e) => { const n = [...tokenomics]; n[i] = { ...n[i], label: e.target.value }; setTokenomics(n); }}
+                  style={{ ...styles.inputNum, flex: 1, width: "auto", textAlign: "right" }}
+                />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                <span style={{ color: C.muted, fontSize: 12 }}>{t("admin.tokenomicsPct")}</span>
+                <input
+                  type="number" min={0} max={100}
+                  value={seg.pct}
+                  onChange={(e) => { const n = [...tokenomics]; n[i] = { ...n[i], pct: Math.max(0, Math.min(100, Number(e.target.value) || 0)) }; setTokenomics(n); }}
+                  style={{ ...styles.inputNum, flex: 1 }}
+                />
+                <span style={{ color: C.muted, fontSize: 12 }}>%</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="color" value={seg.color} onChange={(e) => { const n = [...tokenomics]; n[i] = { ...n[i], color: e.target.value }; setTokenomics(n); }}
+                  style={{ width: 42, height: 36, borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", cursor: "pointer" }} />
+                <button onClick={() => setTokenomics(tokenomics.filter((_, j) => j !== i))}
+                  style={{ background: "rgba(255,77,77,0.12)", border: "1px solid rgba(255,77,77,0.3)", color: "#ff5c5c", borderRadius: 10, padding: "9px", fontSize: 15, cursor: "pointer", textAlign: "center" }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+          {tokenomics.length > 0 && (
+            <button
+              onClick={() => setTokenomics([...tokenomics, { label: "", pct: 0, color: "#22d3ee" }])}
+              className="btn btn-ghost" style={{ width: "100%", marginBottom: 8, padding: "12px", fontSize: 13, border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 12 }}>
+              + {t("admin.tokenomicsAdd")}
+            </button>
+          )}
+          {(() => {
+            const total = tokenomics.reduce((sum, s) => sum + (Number(s.pct) || 0), 0);
+            const ok = Math.abs(total - 100) < 0.5;
+            return (
+              <p style={{ color: ok ? "#22e584" : "#ffb020", fontSize: 12, fontWeight: 800, margin: "0 0 12px" }}>
+                {t("admin.tokenomicsTotal")}: {total}% {ok ? "✅" : `— ${t("admin.tokenomicsWarn")}`}
+              </p>
+            );
+          })()}
+          <button
+            onClick={saveAirdrop}
+            disabled={savingSettings}
+            className="btn btn-primary"
+            style={{ padding: "14px", fontSize: 14, fontWeight: 800, width: "100%" }}
+          >
+            {savingSettings ? t("admin.savingSettings") : t("admin.saveSettings")}
+          </button>
+        </div>
+        </>
       ) : adminTab === "levels" ? (
         <div className="glass" style={styles.card}>
           <h3 style={styles.cardTitle}>{t("admin.levels.title")}</h3>

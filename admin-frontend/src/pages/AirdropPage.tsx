@@ -32,14 +32,6 @@ const DEXS = [
   { name: "Pump.fun", icon: "🚀", color: "#FF5C7A" },
 ];
 
-// 🧬 توزيع العرض الكلي
-const TOKENOMICS = [
-  { key: "airdrop.allocMining", pct: 40, color: "#00ffcc" },
-  { key: "airdrop.allocGames", pct: 25, color: "#7c5cff" },
-  { key: "airdrop.allocCommunity", pct: 20, color: "#ffb020" },
-  { key: "airdrop.allocTeam", pct: 15, color: "#ff5c7a" },
-];
-
 // 🗺️ خارطة الطريق الافتراضية (تُستبدل بالقيمة الحية من إعدادات المدير)
 const DEFAULT_ROADMAP = [
   { icon: "⚙️", label: "بناء النظام الأساسي", status: "done" as const },
@@ -90,6 +82,9 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
   const [tokenSupply, setTokenSupply] = useState(TOKEN_SUPPLY);
   // 🗺️ خارطة الطريق الديناميكية من إعدادات المدير
   const [roadmap, setRoadmap] = useState(DEFAULT_ROADMAP);
+  // 💼 اقتصاديات التوكن الديناميكية من إعدادات المدير (نسب التوزيع + الألوان + التسميات)
+  const [tokenomics, setTokenomics] = useState<{ label: string; pct: number; color: string }[]>([]);
+  const [tokenomicsLoaded, setTokenomicsLoaded] = useState(false);
 
   // ⏳ عدّاد حي
   useEffect(() => {
@@ -164,6 +159,22 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
             if (Array.isArray(data.roadmap) && data.roadmap.length > 0) {
               setRoadmap(data.roadmap);
             }
+            // 💼 تحميل اقتصاديات التوكن الحية (نسب التوزيع + الألوان + التسميات)
+            if (Array.isArray(data.tokenomics) && data.tokenomics.length > 0) {
+              setTokenomics(data.tokenomics.map((s: any) => ({
+                label: String(s.label || ""),
+                pct: Math.max(0, Math.min(100, Number(s.pct) || 0)),
+                color: String(s.color || "#00ffcc"),
+              })));
+            } else {
+              setTokenomics([
+                { label: t("airdrop.allocMining"), pct: 40, color: "#00ffcc" },
+                { label: t("airdrop.allocGames"), pct: 25, color: "#7c5cff" },
+                { label: t("airdrop.allocCommunity"), pct: 20, color: "#ffb020" },
+                { label: t("airdrop.allocTeam"), pct: 15, color: "#ff5c7a" },
+              ]);
+            }
+            setTokenomicsLoaded(true);
           }
         }
       } catch { /* اختياري */ }
@@ -272,24 +283,32 @@ export default function AirdropPage({ userId, token }: AirdropPageProps) {
         </div>
       </div>
 
-      {/* 🧬 اقتصاديات التوكن */}
+      {/* 🧬 اقتصاديات التوكن — نسب يتحكم بها المدير من لوحة الإدارة */}
       <div className="glass" style={styles.card}>
         <h3 style={styles.cardTitle}>{t("airdrop.tokenomicsTitle")}</h3>
         <p style={styles.cardSub}>{t("airdrop.tokenomicsSub")}</p>
-        <div style={styles.tokenBar}>
-          {TOKENOMICS.map((seg) => (
-            <div key={seg.key} style={{ width: `${seg.pct}%`, background: seg.color, height: "100%" }} title={t(seg.key)} />
-          ))}
-        </div>
-        <div style={styles.legend}>
-          {TOKENOMICS.map((seg) => (
-            <div key={seg.key} style={styles.legendItem}>
-              <span style={{ width: 10, height: 10, borderRadius: 3, background: seg.color, flexShrink: 0 }} />
-              <span style={styles.legendText}>{t(seg.key)}</span>
-              <span style={{ ...styles.legendPct, color: seg.color }}>{seg.pct}%</span>
+        {!tokenomicsLoaded ? (
+          <p style={{ color: C.muted, textAlign: "center", padding: 18, fontSize: 13 }}>{t("common.loading")}</p>
+        ) : tokenomics.length === 0 ? (
+          <p style={{ color: C.muted, textAlign: "center", padding: 18, fontSize: 13 }}>{t("airdrop.distNone")}</p>
+        ) : (
+          <>
+            <div style={styles.tokenBar}>
+              {tokenomics.map((seg, i) => (
+                <div key={i} style={{ width: `${seg.pct}%`, background: seg.color, height: "100%" }} title={seg.label} />
+              ))}
             </div>
-          ))}
-        </div>
+            <div style={styles.legend}>
+              {tokenomics.map((seg, i) => (
+                <div key={i} style={styles.legendItem}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: seg.color, flexShrink: 0 }} />
+                  <span style={styles.legendText}>{seg.label}</span>
+                  <span style={{ ...styles.legendPct, color: seg.color }}>{seg.pct}%</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* 📊 توزيعات التوكن — ما تم توزيعه حتى الآن */}

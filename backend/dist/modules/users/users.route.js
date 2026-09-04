@@ -1057,6 +1057,7 @@ router.get("/settings", async (_req, res) => {
             tokenSupply: s.tokenSupply ?? 1000000,
             roadmap: s.roadmap || [],
             wheel: s.wheel || { segments: [], cooldownSec: 3600, dailyCap: 50 },
+            tokenomics: s.tokenomics || [{ label: "التعدين", pct: 40, color: "#00ffcc" }, { label: "الألعاب", pct: 25, color: "#7c5cff" }, { label: "المجتمع", pct: 20, color: "#ffb020" }, { label: "الفريق", pct: 15, color: "#ff5c7a" }],
             levelPlan: getLevelPlan(),
             dailyRewards: s.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
             dailyLevelMult: s.dailyLevelMult ?? 0.05,
@@ -1145,6 +1146,11 @@ const settingsSchema = z.object({
         cooldownSec: z.number().int().min(300).max(604800),
         dailyCap: z.number().int().min(1).max(1000000),
     }).optional(),
+    tokenomics: z.array(z.object({
+        label: z.string().min(1).max(60),
+        pct: z.number().min(0).max(100),
+        color: z.string().min(4).max(12),
+    })).max(12).optional(),
 });
 router.post("/admin/settings", authenticateJWT, async (req, res) => {
     try {
@@ -1171,6 +1177,7 @@ router.post("/admin/settings", authenticateJWT, async (req, res) => {
             tokenSupply: updated.tokenSupply ?? 1000000,
             roadmap: updated.roadmap || [],
             wheel: updated.wheel || { segments: [], cooldownSec: 3600, dailyCap: 50 },
+            tokenomics: updated.tokenomics || [{ label: "التعدين", pct: 40, color: "#00ffcc" }, { label: "الألعاب", pct: 25, color: "#7c5cff" }, { label: "المجتمع", pct: 20, color: "#ffb020" }, { label: "الفريق", pct: 15, color: "#ff5c7a" }],
             levelPlan: getLevelPlan(),
             dailyRewards: updated.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
             dailyLevelMult: updated.dailyLevelMult ?? 0.05,

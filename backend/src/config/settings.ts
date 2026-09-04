@@ -37,8 +37,15 @@ export interface SiteSettings {
   xpBonus: number;                    // 📊 نقاط نشاط المطالبة بالبونص اليومي
   roadmap: RoadmapPhase[];            // 🗺️ مراحل خارطة الطريق (تُدار بالكامل من المدير)
   wheel: WheelSettings;               // 🎰 إعدادات عجلة الحظ (الشرائح والأوزان والسقوف)
+  tokenomics: TokenomicsSplit[];      // 💼 اقتصاديات التوكن — نسب توزيع العرض الكلي (تتحكم بها الإدارة)
 }
 
+// 💼 شريحة واحدة في اقتصاديات التوكن (توزيع العرض الكلي)
+export interface TokenomicsSplit {
+  label: string;   // اسم الفئة (مثال: التعدين، الألعاب، المجتمع، الفريق)
+  pct: number;     // النسبة المئوية من العرض الكلي (0..100)
+  color: string;   // اللون (hex) المستخدم في الشريط والمفتاح بصفحة الإير دروب
+}
 // 🎡 شريحة واحدة في عجلة الحظ
 export interface WheelSegment { value: number; weight: number }
 // 🎰 إعدادات العجلة القابلة للضبط من المدير
@@ -139,6 +146,13 @@ const DEFAULTS: SiteSettings = {
     cooldownSec: 3600,
     dailyCap: 50,
   },
+  // 💼 اقتصاديات التوكن الافتراضية: نسب توزيع العرض الكلي (تتحكم بها الإدارة من لوحة المدير)
+  tokenomics: [
+    { label: "التعدين", pct: 40, color: "#00ffcc" },
+    { label: "الألعاب", pct: 25, color: "#7c5cff" },
+    { label: "المجتمع", pct: 20, color: "#ffb020" },
+    { label: "الفريق", pct: 15, color: "#ff5c7a" },
+  ],
 };
 
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)
