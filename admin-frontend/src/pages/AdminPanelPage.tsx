@@ -6,6 +6,7 @@ import CommunityTasksPanel from "../components/CommunityTasksPanel";
 import TokenSetupPanel from "../components/TokenSetupPanel";
 import BrandingPanel from "../components/BrandingPanel";
 import RulesPanel from "../components/RulesPanel";
+import ProjectAnalytics from "../components/ProjectAnalytics";
 import { useToast } from "../components/Toast";
 import { useLang } from "../i18n/index.tsx";
 import { useBranding } from "../branding";
@@ -711,6 +712,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
           </div>
         ))}
       </div>
+      <ProjectAnalytics token={token} />
         </>
       )}
         </div>

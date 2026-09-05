@@ -654,6 +654,101 @@ router.get("/admin/stats", authenticateJWT, async (req: AuthenticatedRequest, re
   }
 });
 
+// ب. تحليل بيانات المشروع الشامل (لوحة المدير ← تبويب الإدارة العامة)
+router.get("/admin/analytics", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+
+    const day7 = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const day30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+
+    const [
+      totalUsers, activatedUsers, pendingUsers, inactiveUsers, new7, new30, wallets,
+      miningActive, miningCompleted, miningTotal, minedAgg,
+      playsTotal, playsAgg, wheelPlays, tapPlays, catchPlays,
+      wheelAgg, tapAgg, catchAgg,
+      bonusClaims, bonusAgg,
+      referredUsers, referredActivated,
+      tasksDone, tasksAgg,
+      paymentsPaid, paymentsAgg,
+      rewardsCount, rewardsAgg,
+      balanceAgg,
+      levelGroups,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { activationStatus: "active" } }),
+      prisma.user.count({ where: { activationStatus: "pending" } }),
+      prisma.user.count({ where: { activationStatus: "inactive" } }),
+      prisma.user.count({ where: { createdAt: { gte: day7 } } }),
+      prisma.user.count({ where: { createdAt: { gte: day30 } } }),
+      prisma.user.count({ where: { walletAddress: { not: null } } }),
+      prisma.miningSession.count({ where: { status: "active" } }),
+      prisma.miningSession.count({ where: { status: "completed" } }),
+      prisma.miningSession.count(),
+      prisma.miningSession.aggregate({ _sum: { minedAmount: true } }),
+      prisma.gamePlayRecord.count(),
+      prisma.gamePlayRecord.aggregate({ _sum: { reward: true } }),
+      prisma.gamePlayRecord.count({ where: { game: "wheel" } }),
+      prisma.gamePlayRecord.count({ where: { game: "tap" } }),
+      prisma.gamePlayRecord.count({ where: { game: "catch" } }),
+      prisma.gamePlayRecord.aggregate({ where: { game: "wheel" }, _sum: { reward: true } }),
+      prisma.gamePlayRecord.aggregate({ where: { game: "tap" }, _sum: { reward: true } }),
+      prisma.gamePlayRecord.aggregate({ where: { game: "catch" }, _sum: { reward: true } }),
+      prisma.dailyBonus.count(),
+      prisma.dailyBonus.aggregate({ _sum: { rewardAmount: true } }),
+      prisma.user.count({ where: { referrerId: { not: null } } }),
+      prisma.user.count({ where: { referrerId: { not: null }, activationStatus: "active" } }),
+      prisma.socialTask.count({ where: { status: "approved" } }),
+      prisma.socialTask.aggregate({ _sum: { rewardClaimed: true } }),
+      prisma.payment.count({ where: { status: "paid" } }),
+      prisma.payment.aggregate({ where: { status: "paid" }, _sum: { amount: true } }),
+      prisma.reward.count(),
+      prisma.reward.aggregate({ _sum: { amount: true } }),
+      prisma.user.aggregate({ _sum: { balance: true } }),
+      prisma.user.groupBy({ by: ["currentLevel"], _count: { _all: true } }),
+    ]);
+
+    const sum = (agg: any, field: string): number => Number(agg?._sum?.[field] || 0);
+
+    return res.json({
+      users: {
+        total: totalUsers,
+        activated: activatedUsers,
+        pending: pendingUsers,
+        inactive: inactiveUsers,
+        new7,
+        new30,
+        wallets,
+      },
+      mining: {
+        active: miningActive,
+        completed: miningCompleted,
+        total: miningTotal,
+        minedTotal: sum(minedAgg, "minedAmount"),
+      },
+      games: {
+        plays: playsTotal,
+        rewardTotal: sum(playsAgg, "reward"),
+        byType: {
+          wheel: { plays: wheelPlays, reward: sum(wheelAgg, "reward") },
+          tap: { plays: tapPlays, reward: sum(tapAgg, "reward") },
+          catch: { plays: catchPlays, reward: sum(catchAgg, "reward") },
+        },
+      },
+      bonuses: { claims: bonusClaims, rewardTotal: sum(bonusAgg, "rewardAmount") },
+      referrals: { total: referredUsers, activated: referredActivated },
+      tasks: { done: tasksDone, rewardTotal: sum(tasksAgg, "rewardClaimed") },
+      payments: { paid: paymentsPaid, revenue: sum(paymentsAgg, "amount") },
+      rewards: { count: rewardsCount, amountTotal: sum(rewardsAgg, "amount") },
+      balances: { total: sum(balanceAgg, "balance") },
+      levels: levelGroups.map((g: any) => ({ level: g.currentLevel, users: g._count._all })),
+    });
+  } catch (error) {
+    console.error("Admin analytics error:", error);
+    return res.status(500).json({ message: "فشل السيرفر في معالجة طلب التحليل" });
+  }
+});
+
 // ==========================================
 // 🎁 7. مسارات توزيع جوائز التوكن (يدوياً من لوحة المدير)
 // ==========================================
