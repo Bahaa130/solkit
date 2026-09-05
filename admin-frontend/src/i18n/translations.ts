@@ -76,7 +76,6 @@ const ar: Dict = {
   "nav.tasks": "المهمات",
   "nav.bonus": "البونص",
   "nav.admin": "الإدارة",
-  "nav.protect": "التثبيت",
 
   // ─── 🏆 لوحة التصدر ───
   "leaderboard.title": "لوحة التصدر",
@@ -94,24 +93,6 @@ const ar: Dict = {
   "leaderboard.plays": "لعبة",
   "leaderboard.you": "أنت",
   "leaderboard.noData": "لا توجد بيانات بعد",
-
-  // ─── 📲 تخطي حماية Google Play عند التثبيت ───
-  "help.title": "تخطي حماية Google Play عند التثبيت",
-  "help.subtitle": "اضبط أندرويد مرة واحدة لتثبيت تطبيق {app} مباشرةً دون أن يحظره Play Protect.",
-  "help.safeTag": "بدون حظر بعد الضبط 🚀",
-  "help.whatTitle": "لماذا يظهر التحذير؟",
-  "help.whatDesc": "أي تطبيق يُثبَّت من خارج متجر Play يمر عبر فحص Google Play Protect، وقد يظهر «الحظر» أو «مصدر غير معروف» كإجراء وقائي — لا يعني أن الملف مضر، فقط اتبع الخطوات أدناه لتخطيه.",
-  "help.stepsTitle": "الخطوات لتخطي الحظر",
-  "help.step1t": "أوقف الفحص التلقائي",
-  "help.step1d": "افتح «متجر Google Play» ← صورتك الشخصية ← «الإعدادات» ← «Play Protect» ← أوقف «فحص التطبيقات». هذا يمنع الحظر التلقائي ويمكّن التثبيت السلس.",
-  "help.step2t": "اسمح بتركيب المصدر",
-  "help.step2d": "عند أول فتح لملف الـAPK اضغط «الإعدادات» وفعّل «السماح بالتثبيت من هذا المصدر» (أو من إعدادات الأمان على الجهاز مباشرة).",
-  "help.step3t": "ثبّت رغم التحذير",
-  "help.step3d": "إن ظهرت «حظر» أو «تطبيق من مصدر غير معروف» اضغط «مزيد من التفاصيل» ثم «التثبيت على أي حال». وإن لم يظهر الزر فعد للخطوة (1) وتأكد من إيقاف الفحص.",
-  "help.step4t": "ابقَ التحديثات مباشرة",
-  "help.step4d": "بعد السماح للمصدر، تُثبَّت جميع التحديثات الجديدة مباشرةً دون أي خطوات إضافية.",
-  "help.safeTitle": "ملف {app} آمن",
-  "help.safeDesc": "يُستحسن إعادة تشغيل «فحص التطبيقات» في Play Protect بعد التثبيت لاستخدامك اليومي. الملف الذي ثبّته من هذا المشروع لا يجمع بيانات حساسة ولا يطلب صلاحيات غير لازمة.",
 
   // ─── الرئيسية ───
   "home.heroTitle": "مرحباً بعودتك 👋",
@@ -644,7 +625,6 @@ const en: Dict = {
   "nav.tasks": "Tasks",
   "nav.bonus": "Bonus",
   "nav.admin": "Admin",
-  "nav.protect": "Install",
 
   // ─── 🏆 Leaderboard ───
   "leaderboard.title": "Leaderboard",
@@ -662,24 +642,6 @@ const en: Dict = {
   "leaderboard.plays": "plays",
   "leaderboard.you": "You",
   "leaderboard.noData": "No data yet",
-
-  // ─── 📲 Skip Google Play Protect at install ───
-  "help.title": "Skip Google Play Protect at install",
-  "help.subtitle": "Set up Android once so {app} installs directly without being blocked by Play Protect.",
-  "help.safeTag": "No block after setup 🚀",
-  "help.whatTitle": "Why does the warning appear?",
-  "help.whatDesc": "Any app installed from outside the Play Store goes through Google Play Protect scanning, and it may show “blocked” or “unknown source” as a precaution — it does not mean the file is harmful, just follow the steps below to skip it.",
-  "help.stepsTitle": "Steps to skip the block",
-  "help.step1t": "Turn off automatic scanning",
-  "help.step1d": "Open the Google Play Store → your profile → Settings → Play Protect → turn off “Scan apps with Play Protect”. This prevents automatic blocking for a smooth install.",
-  "help.step2t": "Allow installation from the source",
-  "help.step2d": "When opening the APK for the first time, tap Settings and enable “Allow from this source” (or enable it directly from your device security settings).",
-  "help.step3t": "Install anyway",
-  "help.step3d": "If “Blocked” or “Unknown source” appears, tap “More details” then “Install anyway”. If the button doesn't appear, go back to step 1 and make sure scanning is off.",
-  "help.step4t": "Future updates install directly",
-  "help.step4d": "Once the source is allowed, all future updates install directly with no extra steps.",
-  "help.safeTitle": "The {app} file is safe",
-  "help.safeDesc": "It's recommended to turn “Scan apps with Play Protect” back on after installing for daily use. The {app} file you install collects no sensitive data and asks for no unnecessary permissions.",
 
   "home.heroTitle": "Welcome back 👋",
   "home.heroSub": "Run the miner and play games to raise your earnings multiplier",
@@ -1193,7 +1155,6 @@ const fr: Dict = {
   "nav.tasks": "Tâches",
   "nav.bonus": "Bonus",
   "nav.admin": "Admin",
-  "nav.protect": "Installer",
 
   // ─── 🏆 Classement ───
   "leaderboard.title": "Classement",
@@ -1216,24 +1177,6 @@ const fr: Dict = {
   "app.releaseHint": "Relâchez pour actualiser",
   "app.refreshingHint": "Actualisation...",
   "bonus.scrollHint": "Glissez pour voir le reste des jours",
-
-  // ─── 📲 Ignorer Google Play Protect à l'installation ───
-  "help.title": "Ignorer Google Play Protect lors de l'installation",
-  "help.subtitle": "Réglez Android une seule fois pour installer {app} directement sans blocage par Play Protect.",
-  "help.safeTag": "Aucun blocage après réglage 🚀",
-  "help.whatTitle": "Pourquoi l'avertissement apparaît-il ?",
-  "help.whatDesc": "Toute application installée hors du Play Store passe par l'analyse de Google Play Protect et peut afficher « bloquée » ou « source inconnue » par précaution — cela ne signifie pas que le fichier est dangereux, suivez simplement les étapes ci-dessous.",
-  "help.stepsTitle": "Étapes pour ignorer le blocage",
-  "help.step1t": "Désactivez l'analyse automatique",
-  "help.step1d": "Ouvrez le Google Play Store → votre profil → Paramètres → Play Protect → désactivez « Analyser les applications avec Play Protect ». Cela évite le blocage automatique.",
-  "help.step2t": "Autorisez l'installation depuis la source",
-  "help.step2d": "À la première ouverture de l'APK, touchez Paramètres et activez « Autoriser à partir de cette source » (ou depuis les paramètres de sécurité du téléphone).",
-  "help.step3t": "Installer quand même",
-  "help.step3d": "Si « Bloqué » ou « Source inconnue » apparaît, touchez « Plus de détails » puis « Installer quand même ». Si le bouton n'apparaît pas, revenez à l'étape 1.",
-  "help.step4t": "Les mises à jour s'installent directement",
-  "help.step4d": "Une fois la source autorisée, toutes les prochaines mises à jour s'installent directement sans étapes supplémentaires.",
-  "help.safeTitle": "Le fichier {app} est sûr",
-  "help.safeDesc": "Il est recommandé de réactiver « Analyser les applications avec Play Protect » après l'installation. Le fichier {app} ne collecte aucune donnée sensible et ne demande aucun accès inutile.",
 
   "home.heroTitle": "Bon retour 👋",
   "home.heroSub": "Lancez le mineur et jouez pour augmenter votre multiplicateur de gains",
@@ -1746,7 +1689,6 @@ const es: Dict = {
   "nav.tasks": "Tareas",
   "nav.bonus": "Bono",
   "nav.admin": "Admin",
-  "nav.protect": "Instalar",
 
   // ─── 🏆 Clasificación ───
   "leaderboard.title": "Clasificación",
@@ -1769,24 +1711,6 @@ const es: Dict = {
   "app.releaseHint": "Suelta para actualizar",
   "app.refreshingHint": "Actualizando...",
   "bonus.scrollHint": "Desliza para ver el resto de los días",
-
-  // ─── 📲 Saltar Google Play Protect al instalar ───
-  "help.title": "Saltar Google Play Protect al instalar",
-  "help.subtitle": "Configura Android una sola vez para instalar {app} directamente sin que Play Protect lo bloquee.",
-  "help.safeTag": "Sin bloqueo tras configurar 🚀",
-  "help.whatTitle": "¿Por qué aparece el aviso?",
-  "help.whatDesc": "Toda app instalada fuera de Play Store pasa por el análisis de Google Play Protect y puede mostrar «bloqueada» o «fuente desconocida» como precaución — no significa que el archivo sea dañino; solo sigue los pasos.",
-  "help.stepsTitle": "Pasos para saltar el bloqueo",
-  "help.step1t": "Desactiva el análisis automático",
-  "help.step1d": "Abre Google Play Store → tu perfil → Configuración → Play Protect → desactiva «Analizar aplicaciones con Play Protect». Evita el bloqueo automático.",
-  "help.step2t": "Permite la instalación desde la fuente",
-  "help.step2d": "Al abrir el APK por primera vez, toca Configuración y activa «Permitir desde esta fuente» (o actívalo desde la seguridad del teléfono).",
-  "help.step3t": "Instalar de todos modos",
-  "help.step3d": "Si aparece «Bloqueada» o «Fuente desconocida», toca «Más detalles» y luego «Instalar de todos modos». Si el botón no aparece, vuelve al paso 1.",
-  "help.step4t": "Las futuras actualizaciones se instalan directas",
-  "help.step4d": "Con la fuente permitida, todas las actualizaciones futuras se instalan directamente sin pasos extra.",
-  "help.safeTitle": "El archivo {app} es seguro",
-  "help.safeDesc": "Se recomienda reactivar «Analizar aplicaciones con Play Protect» después de instalar. El archivo {app} no recopila datos sensibles ni pide permisos innecesarios.",
 
   "home.heroTitle": "Bienvenido de nuevo 👋",
   "home.heroSub": "Lanza la minería y juega para subir tu multiplicador de ganancias",
@@ -2298,30 +2222,11 @@ const tr: Dict = {
   "nav.tasks": "Görevler",
   "nav.bonus": "Bonus",
   "nav.admin": "Yönetici",
-  "nav.protect": "Kurulum",
   "app.splashLoading": "Uygulama yükleniyor...",
   "app.pullHint": "Yenilemek için aşağı kaydırın",
   "app.releaseHint": "Yenilemek için bırakın",
   "app.refreshingHint": "Yenileniyor...",
   "bonus.scrollHint": "Diğer günleri görmek için kaydırın",
-
-  // ─── 📲 Kurulumda Google Play Protect'i atlama ───
-  "help.title": "Kurulumda Google Play Protect'i atlayın",
-  "help.subtitle": "{app} uygulamasının Play Protect tarafından engellenmeden doğrudan kurulması için Android'i bir kez ayarlayın.",
-  "help.safeTag": "Ayardan sonra engel yok 🚀",
-  "help.whatTitle": "Uyarı neden görünüyor?",
-  "help.whatDesc": "Play Store dışından kurulan her uygulama Google Play Protect taramasından geçer ve önlem olarak «engellendi» veya «bilinmeyen kaynak» gösterebilir — bu, dosyanın zararlı olduğu anlamına gelmez; aşağıdaki adımları izlemeniz yeterli.",
-  "help.stepsTitle": "Engeli atlama adımları",
-  "help.step1t": "Otomatik taramayı kapatın",
-  "help.step1d": "Google Play Store'u açın → profiliniz → Ayarlar → Play Protect → «Uygulamaları Play Protect ile tara» seçeneğini kapatın. Otomatik engellemeyi önler.",
-  "help.step2t": "Kaynaktan kuruluma izin verin",
-  "help.step2d": "APK'yı ilk açtığınızda Ayarlar'a dokunun ve «Bu kaynaktan izin ver» seçeneğini etkinleştirin (veya telefon güvenlik ayarlarından).",
-  "help.step3t": "Yine de kurun",
-  "help.step3d": "«Engellendi» veya «Bilinmeyen kaynak» görünürse «Diğer ayrıntılar» ve ardından «Yine de kur» öğesine dokunun. Düğme görünmezse 1. adıma dönün.",
-  "help.step4t": "Sonraki güncellemeler doğrudan kurulur",
-  "help.step4d": "Kaynağa izin verildiğinde tüm güncellemeler ekstra adım olmadan doğrudan kurulur.",
-  "help.safeTitle": "{app} dosyası güvenli",
-  "help.safeDesc": "Kurulumdan sonra «Uygulamaları Play Protect ile tara» seçeneğini yeniden açmanız önerilir. {app} dosyası hassas veri toplamaz ve gereksiz izin istemez.",
 
   "home.heroTitle": "Tekrar hoş geldiniz 👋",
   "home.heroSub": "Kazanç çarpanınızı artırmak için madenciyi çalıştırın ve oyunlar oynayın",
