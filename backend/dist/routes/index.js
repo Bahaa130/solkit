@@ -7,6 +7,7 @@ import referralRoute from "../modules/referral/referral.route.js";
 import tasksRoute from "../modules/tasks/tasks.route.js";
 import bonusRoute from "../modules/bonus/bonus.route.js";
 import solanaRoute from "../modules/solana/solana.route.js";
+import leaderboardRoute from "../modules/leaderboard/leaderboard.route.js";
 const router = Router();
 router.use("/health", healthRoute);
 router.use("/users", usersRoute);
@@ -15,4 +16,5 @@ router.use("/referral", referralRoute); // صفحة شبكة الإحالة
 router.use("/tasks", tasksRoute); // صفحة هدايا الاشتراك والمهمات
 router.use("/bonus", bonusRoute); // صفحة البونص اليومي والمستويات
 router.use("/solana", solanaRoute); // 🔀 بروكسي Solana RPC (يتجاوز قيود CORS)
+router.use("/leaderboard", leaderboardRoute); // 🏆 لوحة التصدر
 export default router;

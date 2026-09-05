@@ -622,6 +622,7 @@ export default function App() {
     { key: "referral", icon: "🔗", adminOnly: false },
     { key: "tasks", icon: "🎁", adminOnly: false },
     { key: "bonus", icon: "📅", adminOnly: false },
+    { key: "levels", icon: "🏆", adminOnly: false },
     { key: "protect", icon: "📲", adminOnly: false },
     { key: "admin", icon: "👑", adminOnly: true },
   ].filter((tb) => !tb.adminOnly || session.walletAddress === ADMIN_WALLET);

@@ -9,10 +9,19 @@ import { useToast } from "../components/Toast";
 interface BonusPageProps { userId: number; token: string; }
 
 const STREAK_REWARDS = [1, 2, 3, 4, 5, 6, 10];
-const XP_PER_LEVEL = 100;
 const LOCK_MS = 24 * 3600 * 1000; // قفل 24 ساعة
-// 🧮 مضاعف البونص حسب مستوى الحساب (مطابق للخلفية)
-const LEVEL_MULT: Record<number, number> = { 1: 1.0, 2: 1.05, 3: 1.1 };
+// 🎯 خطة المستويات الافتراضية (تُستبدل بخطة المدير تلقائياً) — تُستخدم لحساب تقدم الخبرة
+const DEFAULT_LEVEL_PLAN = [
+  { level: 1, minXp: 0, name: "المبتدئ", color: "#94a3b8" },
+  { level: 2, minXp: 120, name: "المبتدئ+", color: "#4ade80" },
+  { level: 3, minXp: 300, name: "النشط", color: "#22d3ee" },
+  { level: 4, minXp: 600, name: "المتقدم", color: "#3b82f6" },
+  { level: 5, minXp: 1100, name: "المحترف", color: "#a855f7" },
+  { level: 6, minXp: 1900, name: "الخبير", color: "#ec4899" },
+  { level: 7, minXp: 3200, name: "الأسطوري", color: "#f59e0b" },
+  { level: 8, minXp: 5200, name: "الفخري", color: "#ef4444" },
+  { level: 9, minXp: 8000, name: "القمة", color: "#fde047" },
+];
 
 export default function BonusPage({ userId, token }: BonusPageProps) {
   const { dir, t } = useLang();
@@ -23,11 +32,44 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
   const [lastClaimAt, setLastClaimAt] = useState<number | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [now, setNow] = useState(Date.now());
+  // ⚙️ إعدادات المدير الحية: مكافآت السلسلة + مضاعف المستوى + خطة المستويات
+  const [dailyRewards, setDailyRewards] = useState<number[]>(STREAK_REWARDS);
+  const [dailyLevelMult, setDailyLevelMult] = useState<number>(0.05);
+  const [levelPlan, setLevelPlan] = useState<{ level: number; minXp: number; name: string; color: string }[]>(DEFAULT_LEVEL_PLAN);
 
   // ⏱️ عدّاد حي لعدّاد القفل
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(iv);
+  }, []);
+
+  // ⚙️ تحميل إعدادات المدير الحية من الخادم (مكافآت السلسلة + مضاعف المستوى + خطة المستويات)
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/users/settings");
+        if (!res.ok) return;
+        const raw = await res.text();
+        if (!raw || !active) return;
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.dailyRewards) && data.dailyRewards.length > 0) {
+          setDailyRewards(data.dailyRewards.map((r: any) => Math.max(0, Number(r) || 0)));
+        }
+        if (Number.isFinite(Number(data.dailyLevelMult))) {
+          setDailyLevelMult(Math.max(0, Math.min(1, Number(data.dailyLevelMult))));
+        }
+        if (Array.isArray(data.levelPlan) && data.levelPlan.length > 0) {
+          setLevelPlan(data.levelPlan.map((d: any) => ({
+            level: Number(d.level) || 1,
+            minXp: Number(d.minXp) || 0,
+            name: String(d.name || ""),
+            color: String(d.color || "#22d3ee"),
+          })));
+        }
+      } catch { /* تجاهل */ }
+    })();
+    return () => { active = false; };
   }, []);
 
   const fetchBonus = useCallback(async () => {
@@ -66,10 +108,16 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
     else { nextStreak = streak; claimedUpTo = streak; } // لا يزال مقفلاً اليوم
   }
 
-  const mult = LEVEL_MULT[level] || 1;
-  const nextLevel = level < 3 ? level + 1 : 3;
-  const nextMult = LEVEL_MULT[nextLevel] || mult;
-  const xpPct = Math.min(100, Math.round((xp / XP_PER_LEVEL) * 100));
+  // 🧮 مضاعف البونص حسب المستوى — مطابق للخلفية: 1 + (المستوى-1) × مضاعف المستوى
+  const maxLevel = levelPlan.length > 0 ? levelPlan[levelPlan.length - 1].level : level;
+  const curDef = levelPlan.find((d) => d.level === level) || levelPlan[0];
+  const nextDef = levelPlan.find((d) => d.level === level + 1) || null;
+  const xpFrom = curDef ? curDef.minXp : 0;
+  const xpTo = nextDef ? nextDef.minXp : (curDef ? curDef.minXp : 100);
+  const xpPct = Math.min(100, Math.max(0, xpTo > xpFrom ? Math.round(((xp - xpFrom) / (xpTo - xpFrom)) * 100) : 100));
+  const mult = 1 + (level - 1) * dailyLevelMult;
+  const nextLevel = nextDef ? level + 1 : level;
+  const nextMult = 1 + (nextDef ? (nextLevel - 1) * dailyLevelMult : (level - 1) * dailyLevelMult);
 
   const remainSec = locked && nextClaimAt ? Math.max(0, Math.ceil((nextClaimAt - now) / 1000)) : 0;
   const hh = String(Math.floor(remainSec / 3600)).padStart(2, "0");
@@ -110,7 +158,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
           <div style={{ width: `${xpPct}%`, height: "100%", background: G.primary, borderRadius: 8, transition: "width .5s ease" }} />
         </div>
         <div style={styles.xpMeta}>
-          <span style={styles.xpText}>{t("bonus.xpText", { xp })}</span>
+          <span style={styles.xpText}>{t("bonus.xpProgress", { xp, target: xpTo })}</span>
           <span style={{ ...styles.xpText, color: C.teal, fontWeight: 900 }}>{t("bonus.xpPercent", { p: xpPct })}</span>
         </div>
 
@@ -118,7 +166,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
         <div style={styles.multBox}>
           <span style={styles.multLabel}>{t("bonus.multBonus")}</span>
           <span className="gradient-text" style={styles.multValue}>×{mult.toFixed(2)}</span>
-          {level < 3 && (
+          {level < maxLevel && (
             <span style={styles.multHint}>{t("bonus.multNext", { n: nextLevel, m: nextMult.toFixed(2) })}</span>
           )}
         </div>
@@ -128,10 +176,11 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
       <div className="glass" style={styles.xpCard}>
         <h3 style={styles.gridTitle}>{t("bonus.streakGrid")}</h3>
         <div className="bonus-streak" style={styles.grid}>
-          {STREAK_REWARDS.map((r, i) => {
+          {dailyRewards.map((r, i) => {
             const day = i + 1;
             const isClaimed = day <= claimedUpTo;
             const isNext = day === nextStreak;
+            const shown = Number.isInteger(r) ? String(r) : r.toFixed(2);
             return (
               <div
                 key={day}
@@ -147,7 +196,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
                   {t("bonus.day", { n: day })}
                 </span>
                 <span style={{ ...styles.dayReward, color: isNext ? C.amber : isClaimed ? C.green : C.muted }}>
-                  {t("bonus.dayReward", { r })}
+                  {t("bonus.dayReward", { r: shown })}
                 </span>
                 <span style={{ ...styles.dayState, color: isNext ? C.amber : isClaimed ? C.green : C.faint, fontSize: 9.5 }}>
                   {isNext ? (locked ? "🔒" : t("bonus.todayNext")) : isClaimed ? t("bonus.claimed") : t("bonus.lockedFuture")}
