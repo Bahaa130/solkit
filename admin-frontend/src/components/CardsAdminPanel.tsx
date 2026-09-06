@@ -9,6 +9,7 @@ import { useToast } from "../components/Toast";
 interface CardRow {
   key: string;
   icon: string;
+  image: string;
   label: string;
   color: string;
   baseCost: string;
@@ -38,6 +39,7 @@ export default function CardsAdminPanel({ token }: Props) {
         setRows(d.cards.map((c: any) => ({
           key: String(c.key || ""),
           icon: String(c.icon || "🎴"),
+          image: String(c.image || ""),
           label: String(c.label || ""),
           color: String(c.color || "#7c5cff"),
           baseCost: String(c.baseCost ?? ""),
@@ -59,7 +61,7 @@ export default function CardsAdminPanel({ token }: Props) {
   const addRow = () => {
     const base = `card_${Date.now().toString(36)}`;
     setRows((prev) => [...prev, {
-      key: base, icon: "🎴", label: "", color: COLORS[prev.length % COLORS.length],
+      key: base, icon: "🎴", image: "", label: "", color: COLORS[prev.length % COLORS.length],
       baseCost: "100", costGrowth: "1.2", reward: "0.05", maxLevel: "10", duration: "1",
     }]);
   };
@@ -82,6 +84,7 @@ export default function CardsAdminPanel({ token }: Props) {
       return {
         key: r.key.trim().slice(0, 60),
         icon: r.icon.trim().slice(0, 12) || "🎴",
+        image: r.image.trim() || undefined,
         label: r.label.trim().slice(0, 60),
         color: r.color.trim().slice(0, 20) || "#7c5cff",
         baseCost: Math.max(0, num(r.baseCost, 100)),
@@ -109,6 +112,49 @@ export default function CardsAdminPanel({ token }: Props) {
     }
   };
 
+  // 🖼️ رفع صورة مصغّرة للكارت — تُخزَّن على الخادم ويُحفظ رابطها في إعدادات الكروت
+  const handleImage = async (i: number, file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error(t("admin.cardsImageError")); return; }
+    const okType = ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type);
+    if (!okType) { toast.error(t("admin.cardsImageError")); return; }
+    try {
+      const dataUri = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("read"));
+        reader.readAsDataURL(file);
+      });
+      const res = await apiFetch("/api/users/admin/card-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ dataUri }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, image: data.url } : r)));
+        toast.success(t("admin.cardsImageUploaded"));
+      } else {
+        toast.error(data.message || t("admin.cardsImageError"));
+      }
+    } catch {
+      toast.error(t("admin.cardsImageError"));
+    }
+  };
+
+  const removeImage = async (i: number) => {
+    const url = rows[i]?.image;
+    if (!url) return;
+    try {
+      await apiFetch("/api/users/admin/card-image/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ url }),
+      });
+    } catch { /* تجاهل فشل حذف الملف */ }
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, image: "" } : r)));
+  };
+
   return (
     <div className="glass" style={styles.card}>
       <h3 style={styles.title}>🎴 {t("admin.cardsTitle")}</h3>
@@ -116,12 +162,36 @@ export default function CardsAdminPanel({ token }: Props) {
 
       {rows.map((r, i) => (
         <div key={r.key} style={styles.row}>
+          <p style={{ margin: "0 0 10px", color: C.faint, fontSize: 11, lineHeight: 1.7 }}>
+            <span style={{ color: C.teal, fontWeight: 800 }}>⬆️ صورة: </span>
+            {t("admin.cardsImageNote")}
+          </p>
           <div style={styles.rowHeader}>
+            <div style={styles.imgWrap}>
+              {r.image ? (
+                <>
+                  <img src={r.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <button
+                    onClick={() => removeImage(i)}
+                    title={t("admin.cardsRemoveImage")}
+                    style={styles.imgRemove}
+                  >✕</button>
+                </>
+              ) : (
+                <span style={{ fontSize: 20, color: C.muted }}>{r.icon || "🎴"}</span>
+              )}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={(e) => { handleImage(i, e.target.files?.[0]); e.target.value = ""; }}
+                style={styles.fileInput}
+              />
+            </div>
             <input
               className="input"
               value={r.icon}
               onChange={(e) => setField(i, "icon", e.target.value)}
-              style={{ ...styles.input, width: 64, textAlign: "center" }}
+              style={{ ...styles.input, width: 58, textAlign: "center" }}
               maxLength={4}
             />
             <input
@@ -193,4 +263,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   actions: { display: "flex", justifyContent: "space-between", gap: 10, marginTop: 6 },
   addBtn: { background: "rgba(0,255,204,0.1)", border: "1px dashed rgba(0,255,204,0.4)", color: C.teal, padding: "11px 16px", fontWeight: 900, borderRadius: 12, fontSize: 13 },
   saveBtn: { padding: "11px 22px", fontWeight: 900, borderRadius: 12, fontSize: 13 },
+  imgWrap: { position: "relative", width: 44, height: 44, borderRadius: 10, overflow: "hidden", flexShrink: 0, background: "rgba(255,255,255,0.05)", border: "1px dashed rgba(255,255,255,0.25)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" },
+  fileInput: { position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" },
+  imgRemove: { position: "absolute", top: 0, right: 0, background: "rgba(0,0,0,0.75)", color: "#ff5c7a", border: "none", borderRadius: "0 0 0 8px", fontSize: 11, lineHeight: 1, padding: "3px 6px", cursor: "pointer", fontWeight: 900 },
 };

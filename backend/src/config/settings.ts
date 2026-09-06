@@ -51,14 +51,15 @@ export interface TokenomicsSplit {
 // 📇 كارت دخل قابل للترقية (نموذج هامستر — تستهلك الرصيد وترفع معدل التعدين)
 export interface CardDef {
   key: string;       // مفتاح فريد (مطابق لـ CardUpgrade.cardKey)
-  icon: string;      // إيموجي الكارت
+  icon: string;      // إيموجي الكارت (احتياطي)
+  image?: string;    // 🖼️ رابط صورة مصغّرة مرفوعة من المدير (يغلب على الإيموجي إن وُجد) — مثال: /uploads/cards/xxx.png
   label: string;     // اسم الحملة/الإعلان
   color: string;     // لون الكارت (hex)
   baseCost: number;  // تكلفة الترقية الأولى بالنقاط (الرصيد)
   costGrowth: number; // مضاعف التكلفة لكل مستوى لاحق (مثال 1.2)
   reward: number;    // الدخل الكلي لكل مستوى (نقاط/24 ساعة) — كل مستوى يضيف هذا المقدار
   maxLevel: number;  // سقف عدد الترقيات
-  duration?: number; // ⏳ مدة كل ترقية بالساعات (عدّاد قبل تفعيل الترقية) — يضبطها المدير
+  duration?: number; // ⏳ مدة فترة إعادة الشحن بين الترقيات بالساعات — يضبطها المدير
 }
 // 🎡 شريحة واحدة في عجلة الحظ
 export interface WheelSegment { value: number; weight: number }

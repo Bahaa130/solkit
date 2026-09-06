@@ -3,3 +3,5 @@ node_modules
 .env
 
 /generated/prisma
+# صور الكروت المرفوعة (ملفات وقت التشغيل — تُنشأ على الخادم)
+/uploads/

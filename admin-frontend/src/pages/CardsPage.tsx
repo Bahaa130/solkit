@@ -8,6 +8,7 @@ import { useToast } from "../components/Toast";
 interface CardInfo {
   key: string;
   icon: string;
+  image: string | null;
   label: string;
   color: string;
   level: number;
@@ -54,7 +55,7 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [token]);
 
-  // ⏱️ عدّاد اللحظات: كل ثانية، وعند انتهاء أي ترقية معلّقة نعيد التحميل لتسويتها تلقائياً
+  // ⏱️ عدّاد اللحظات: كل ثانية، وعند انتهاء أي فترة إعادة شحن معلّقة نعيد التحميل لمسح حالة "upgrading"
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -99,7 +100,14 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
         setBalance(Number(j.balance ?? balance));
         const endTs = j.upgradeDoneAt ? new Date(j.upgradeDoneAt).getTime() : Date.now() + Number(j.durationH || 1) * 3600000;
         setCards((prev) => prev.map((c) => c.key === cardKey
-          ? { ...c, upgrading: true, upgradeEndsAt: new Date(endTs).toISOString(), upgradeTimeLeft: Math.max(1, Math.floor((endTs - Date.now()) / 1000)) }
+          ? {
+            ...c,
+            upgrading: true,
+            level: Number(j.level ?? c.level),
+            income: j.income !== undefined ? Number(j.income) : c.income,
+            upgradeEndsAt: new Date(endTs).toISOString(),
+            upgradeTimeLeft: Math.max(1, Math.floor((endTs - Date.now()) / 1000)),
+          }
           : c));
         setTotalIncome(Number(j.totalIncome ?? totalIncome));
         loadedAtRef.current = Date.now();
@@ -156,7 +164,11 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
           return (
             <div key={c.key} className="glass" style={styles.card}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <span style={{ ...styles.icon, background: `${c.color}22`, border: `1px solid ${c.color}55` }}>{c.icon}</span>
+                {c.image ? (
+                  <img src={c.image} alt={c.label} style={{ ...styles.icon, objectFit: "cover" }} />
+                ) : (
+                  <span style={{ ...styles.icon, background: `${c.color}22`, border: `1px solid ${c.color}55` }}>{c.icon}</span>
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", color: C.text, fontWeight: 900, fontSize: 13 }}>{c.label}</span>
                   <span style={{ display: "block", color: c.color, fontWeight: 800, fontSize: 12 }}>

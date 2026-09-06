@@ -86,6 +86,10 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 app.use("/api", router);
+// 🖼️ خدمة صور الكروت المرفوعة ( uploads/ )
+const UPLOADS_DIR = path.resolve(__dirname, "../uploads");
+fs.mkdirSync(path.join(UPLOADS_DIR, "cards"), { recursive: true });
+app.use("/uploads", express.static(UPLOADS_DIR));
 // 🚫 معالج 404 موحّد وآمن للمسارات البرمجية (/api/*)
 // يمنع كشف بنية الخادم ويُرجع JSON موحّد بدل صفحة خطأ HTML افتراضية
 app.use("/api", (req, res) => {

@@ -1,6 +1,9 @@
 // backend/src/modules/users/users.route.ts
 import { Router, Response, Request } from "express";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { Connection, PublicKey } from "@solana/web3.js"; // 🌐 استدعاء مكتبة الـ Web3 القياسية للتحقق
@@ -14,6 +17,9 @@ import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; //
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 
 const router = Router();
+// 🗺️ مسار المجلد الجاري (متوافق مع ESM في src/ و dist/ — مثل app.ts)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 // 🔐 إغلاق آمن: رفض البدائل العامة (كانت معروفة في مستودع مفتوح = ثغرة تزوير توكنات).
 // الخادم يتوقف فوراً إن لم تُضبط المتغيرات على Render؛ اضبطها من لوحة Render
 // (Settings ← Environment): JWT_SECRET (قيمة عشوائية طويلة) و ADMIN_WALLET (عنوان مدير Phantom).
@@ -489,7 +495,9 @@ router.get("/referral-network", authenticateJWT, async (req: AuthenticatedReques
 // 📇 قراءة تعريفات الكروت من إعدادات المدير (settings.json ← cards[])
 const getCardDefs = (): CardDef[] => (getSettings().cards || []).filter((c: CardDef) => c && c.key);
 
-// ⏳ تسوية الترقيات المكتملة (انتهى عدّاد المدير): تفعيل المستوى + رفع معدل الجلسة النشطة بأرباح الكارت
+// ⏳ تسوية ترقيات الكروت منتهية فترة إعادة الشحن (عدّاد المدير):
+//    - سجلات جديدة (applied=true): المستوى والربحية أُضيفا لحظياً عند الشراء → نخبر العدّاد وننهيه فقط.
+//    - سجلات قديمة (applied=false، قبل هذا التحديث): المستوى لم يُضف بعد → نطبّقه الآن احتراماً للوعد السابق.
 const settleUpgrades = async (userId: number): Promise<void> => {
   const defs = getCardDefs();
   if (!defs.length) return;
@@ -501,14 +509,23 @@ const settleUpgrades = async (userId: number): Promise<void> => {
       const pending = await tx.cardUpgrade.findMany({ where: { userId, upgrading: true, upgradeDoneAt: { lte: now } } });
       if (!pending.length) return;
       for (const p of pending) {
-        await tx.cardUpgrade.update({
-          where: { userId_cardKey: { userId, cardKey: p.cardKey } },
-          data: { level: { increment: 1 }, upgrading: false, upgradeDoneAt: null },
-        });
-        const reward = byKey.get(p.cardKey) || 0;
-        if (reward > 0) {
-          const active = await tx.miningSession.findFirst({ where: { userId, status: "active" }, orderBy: { startedAt: "desc" } });
-          if (active) await tx.miningSession.update({ where: { id: active.id }, data: { miningRate: { increment: reward } } });
+        if (p.applied) {
+          // 🆕 السجلات الجديدة: المستوى مفعَّل مسبقاً → ننهي العدّاد فقط
+          await tx.cardUpgrade.update({
+            where: { userId_cardKey: { userId, cardKey: p.cardKey } },
+            data: { upgrading: false, upgradeDoneAt: null, applied: false },
+          });
+        } else {
+          // 🐌 سجل قديم قيد العدّاد (قبل التفعيل الفوري): نطبّق المستوى + رفع الجلسة النشطة
+          await tx.cardUpgrade.update({
+            where: { userId_cardKey: { userId, cardKey: p.cardKey } },
+            data: { level: { increment: 1 }, upgrading: false, upgradeDoneAt: null },
+          });
+          const reward = byKey.get(p.cardKey) || 0;
+          if (reward > 0) {
+            const active = await tx.miningSession.findFirst({ where: { userId, status: "active" }, orderBy: { startedAt: "desc" } });
+            if (active) await tx.miningSession.update({ where: { id: active.id }, data: { miningRate: { increment: reward } } });
+          }
         }
       }
     });
@@ -643,6 +660,7 @@ router.get("/cards/list", authenticateJWT, async (req: AuthenticatedRequest, res
       return {
         key: d.key,
         icon: d.icon || "🎴",
+        image: d.image || null,
         label: d.label || d.key,
         color: d.color || "#7c5cff",
         level,
@@ -685,8 +703,8 @@ router.post("/cards/upgrade", authenticateJWT, async (req: AuthenticatedRequest,
 
     const existing = await (prisma as any).cardUpgrade.findUnique({ where: { userId_cardKey: { userId, cardKey } } });
 
-    // 🔒 ترقية سابقة قيد العدّاد؟ نمنع الترقية المزدوجة حتى تنتهي مدتها
-    if (existing && Boolean(existing.upgrading)) {
+    // 🔒 ترقية سابقة قيد فترة إعادة الشحن (لم تنتهِ بعد)؟ نمنع الترقية المزدوجة
+    if (existing && Boolean(existing.upgrading) && (!existing.upgradeDoneAt || new Date(existing.upgradeDoneAt).getTime() > Date.now())) {
       const leftSec = existing.upgradeDoneAt ? Math.max(0, Math.floor((new Date(existing.upgradeDoneAt).getTime() - Date.now()) / 1000)) : 0;
       return res.status(400).json({ message: "الترقية قيد التنفيذ، انتظر انتهاء العدّاد", upgrading: true, timeLeft: leftSec });
     }
@@ -702,22 +720,31 @@ router.post("/cards/upgrade", authenticateJWT, async (req: AuthenticatedRequest,
     const durationH = Math.max(0, Number(def.duration) || 1);
     const upgradeDoneAt = new Date(Date.now() + durationH * 3600 * 1000);
 
+    // ✅ الترقية فورية: المستوى والربحية يرتفعان لحظة الشراء — والمدة المتبقية هي فترة إعادة شحن قبل الترقية التالية فقط
+    const newLevel = level + 1;
     await prisma.$transaction(async (tx: any) => {
       if (existing) {
         await tx.cardUpgrade.update({
           where: { userId_cardKey: { userId, cardKey } },
-          data: { upgrading: true, upgradeDoneAt },
+          data: { level: newLevel, upgrading: true, upgradeDoneAt, applied: true },
         });
       } else {
-        await tx.cardUpgrade.create({ data: { userId, cardKey, level: 0, upgrading: true, upgradeDoneAt } });
+        await tx.cardUpgrade.create({ data: { userId, cardKey, level: newLevel, upgrading: true, upgradeDoneAt, applied: true } });
+      }
+      // 📈 رفع معدل الجلسة النشطة فوراً (ربحية التعدين ترتفع لحظياً)
+      if (reward > 0) {
+        const active = await tx.miningSession.findFirst({ where: { userId, status: "active" }, orderBy: { startedAt: "desc" } });
+        if (active) await tx.miningSession.update({ where: { id: active.id }, data: { miningRate: { increment: reward } } });
       }
       await tx.user.update({ where: { id: userId }, data: { balance: { decrement: cost } } });
     });
 
     const totalIncome = await getCardIncome(userId);
     return res.json({
-      success: true, cardKey, upgrading: true, upgradeDoneAt: upgradeDoneAt.toISOString(),
+      success: true, cardKey, level: newLevel, upgrading: true,
+      upgradeDoneAt: upgradeDoneAt.toISOString(),
       durationH, cost, balance: balance - cost, totalIncome, reward,
+      income: reward * newLevel,
     });
   } catch (e) {
     console.error("Card upgrade error:", e);
@@ -1479,10 +1506,11 @@ const settingsSchema = z.object({
     pct: z.number().min(0).max(100),
     color: z.string().min(4).max(12),
   })).max(12).optional(),
-  // 📇 بطاقات الدخل القابلة للترقية — إضافة/حذف/تعديل + مدة كل ترقية بالساعات
+  // 📇 بطاقات الدخل القابلة للترقية — إضافة/حذف/تعديل + مدة إعادة الشحن بالساعات + صورة مصغّرة
   cards: z.array(z.object({
     key: z.string().min(1).max(60),
     icon: z.string().min(1).max(12),
+    image: z.string().max(300).optional(),
     label: z.string().min(1).max(60),
     color: z.string().min(4).max(20),
     baseCost: z.number().min(0).max(1_000_000_000),
@@ -1561,6 +1589,38 @@ router.post("/admin/reset-levels", authenticateJWT, async (req: AuthenticatedReq
     console.error("Reset levels error:", error);
     return res.status(500).json({ message: "فشل تصفير تقدم المستويات" });
   }
+});
+
+// 🖼️ رفع صورة مصغّرة لكارت الدخل (ADMINS-ONLY) — تُخزَّن على القرص وتُعاد كرابط /uploads/cards/...
+const CARDS_UPLOAD_DIR = path.resolve(__dirname, "../../../uploads/cards");
+fs.mkdirSync(CARDS_UPLOAD_DIR, { recursive: true });
+
+router.post("/admin/card-image", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const { dataUri } = req.body || {};
+    if (!dataUri || typeof dataUri !== "string") return res.status(400).json({ message: "الصورة مطلوبة" });
+    const m = dataUri.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,(.+)$/s);
+    if (!m) return res.status(400).json({ message: "تنسيق صورة غير صالح — الصيغ: png/jpg/webp/gif" });
+    const ext = m[1].toLowerCase() === "jpg" ? "jpg" : m[1].toLowerCase();
+    const buf = Buffer.from(m[2], "base64");
+    if (buf.length > 2 * 1024 * 1024) return res.status(413).json({ message: "الصورة كبيرة جداً — الحد 2MB" });
+    const name = `card-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
+    fs.writeFileSync(path.join(CARDS_UPLOAD_DIR, name), buf);
+    return res.json({ url: `/uploads/cards/${name}` });
+  } catch { return res.status(500).json({ message: "فشل رفع الصورة" }); }
+});
+
+// 🗑️ حذف صورة كارت مرفوعة (ADMINS-ONLY)
+router.post("/admin/card-image/delete", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const { url } = req.body || {};
+    if (typeof url !== "string" || !url.startsWith("/uploads/cards/")) return res.status(400).json({ message: "رابط غير صالح" });
+    const file = path.resolve(__dirname, "../../../uploads", url.replace(/^\/+/, ""));
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    return res.json({ success: true });
+  } catch { return res.status(500).json({ message: "فشل حذف الصورة" }); }
 });
 
   router.get("/:id", async (req, res) => {
