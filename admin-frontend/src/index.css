@@ -453,3 +453,28 @@ button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 
 /* صفوف الفحص/القرار في مهام المجتمع: أزرار تلتف بنظام دون فيضان */
 .table-wrapper + .pendingList { width: 100%; }
+
+/* ============================================
+   🪙 مؤثر تطاير العملة عند ترقية الكروت (دافع بصري)
+   ============================================ */
+.coin-burst-layer {
+  position: fixed; inset: 0; z-index: 9999;
+  pointer-events: none; overflow: hidden;
+}
+.coin-particle {
+  position: absolute;
+  will-change: transform, opacity;
+  animation: coinFly 1.05s cubic-bezier(0.15, 0.55, 0.35, 1) forwards;
+}
+@keyframes coinFly {
+  0%   { transform: translate3d(-50%, -50%, 0) rotate(0deg) scale(0.4); opacity: 0; }
+  10%  { opacity: 1; }
+  60%  { opacity: 1; }
+  100% { transform: translate3d(calc(-50% + var(--dx)), calc(-50% + var(--dy)), 0) rotate(var(--rot)) scale(1.15); opacity: 0; }
+}
+/* وميض متلألئ خفيف حول الكارت بعد الترقية */
+@keyframes levelGlow {
+  0%   { box-shadow: 0 0 0 0 rgba(0,255,204,0.55); }
+  100% { box-shadow: 0 0 0 22px rgba(0,255,204,0); }
+}
+.card-upgraded-glow { animation: levelGlow 0.7s ease-out 1; }

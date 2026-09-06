@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
+import CoinBurst, { type CoinBurstItem } from "../components/CoinBurst";
 
 interface CardInfo {
   key: string;
@@ -32,6 +33,7 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
   const [loading, setLoading] = useState(true);
   const [pendingBump, setPendingBump] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [bursts, setBursts] = useState<CoinBurstItem[]>([]);
   const loadedAtRef = useRef(Date.now());
   const reloadingRef = useRef(false);
 
@@ -54,6 +56,27 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [token]);
+
+  // 🪙 تمرير لحظي لمؤثر تطاير العملة عند النجاح في ترقية كارت
+  const fireBurst = (cardKey: string) => {
+    try {
+      const el = document.getElementById(`card-${cardKey}`);
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (!r) return;
+      setBursts((prev) => [...prev, { id: Date.now() + Math.random(), x: r.left + r.width / 2, y: r.top }]);
+      el.classList.remove("card-upgraded-glow");
+      void el.offsetWidth; // إعادة تشغيل الوميض
+      el.classList.add("card-upgraded-glow");
+    } catch { /* تجاهل */ }
+  };
+
+  // حذف تلقائي للبُرز المنتهية (بعد انتهاء الحركة)
+  useEffect(() => {
+    if (!bursts.length) return;
+    const t = setTimeout(() => setBursts((prev) => prev.slice(1)), 1250);
+    return () => clearTimeout(t);
+  }, [bursts]);
 
   // ⏱️ عدّاد اللحظات: كل ثانية، وعند انتهاء أي فترة إعادة شحن معلّقة نعيد التحميل لمسح حالة "upgrading"
   useEffect(() => {
@@ -97,6 +120,7 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
       const j = await res.json();
       if (res.ok) {
         toast.success(t("cards.startUpgrade"));
+        fireBurst(cardKey);
         setBalance(Number(j.balance ?? balance));
         const endTs = j.upgradeDoneAt ? new Date(j.upgradeDoneAt).getTime() : Date.now() + Number(j.durationH || 1) * 3600000;
         setCards((prev) => prev.map((c) => c.key === cardKey
@@ -162,7 +186,7 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
             ? Math.min(100, Math.round(((c.durationH * 3600 - left) / (c.durationH * 3600)) * 100))
             : 0;
           return (
-            <div key={c.key} className="glass" style={styles.card}>
+            <div key={c.key} id={`card-${c.key}`} className="glass" style={styles.card}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                 {c.image ? (
                   <img src={c.image} alt={c.label} style={{ ...styles.icon, objectFit: "cover" }} />
@@ -221,6 +245,8 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
           );
         })}
       </div>
+
+      <CoinBurst bursts={bursts} />
     </div>
   );
 }
