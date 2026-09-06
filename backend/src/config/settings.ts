@@ -58,6 +58,7 @@ export interface CardDef {
   costGrowth: number; // مضاعف التكلفة لكل مستوى لاحق (مثال 1.2)
   reward: number;    // الدخل الكلي لكل مستوى (نقاط/24 ساعة) — كل مستوى يضيف هذا المقدار
   maxLevel: number;  // سقف عدد الترقيات
+  duration?: number; // ⏳ مدة كل ترقية بالساعات (عدّاد قبل تفعيل الترقية) — يضبطها المدير
 }
 // 🎡 شريحة واحدة في عجلة الحظ
 export interface WheelSegment { value: number; weight: number }
@@ -168,12 +169,12 @@ const DEFAULTS: SiteSettings = {
   ],
   // 📇 بطاقات الدخل الافتراضية (حملات إعلانية تُرقى بالنقاط = إيراد يضاف لمعدل التعدين)
   cards: [
-    { key: "ads_influencer", icon: "🤳", label: "مؤثرون للتسويق", color: "#f43f5e", baseCost: 50, costGrowth: 1.18, reward: 0.04, maxLevel: 20 },
-    { key: "ads_video", icon: "🎬", label: "فيديو ترويجي", color: "#8b5cf6", baseCost: 120, costGrowth: 1.2, reward: 0.08, maxLevel: 15 },
-    { key: "ads_banner", icon: "🖼️", label: "لافتات إعلانية", color: "#0ea5e9", baseCost: 300, costGrowth: 1.22, reward: 0.16, maxLevel: 12 },
-    { key: "ads_telegram", icon: "📣", label: "قنوات تيليجرام", color: "#22c55e", baseCost: 750, costGrowth: 1.25, reward: 0.32, maxLevel: 10 },
-    { key: "ads_coupons", icon: "🎟️", label: "كوبونات خصم", color: "#f59e0b", baseCost: 1800, costGrowth: 1.28, reward: 0.64, maxLevel: 8 },
-    { key: "ads_tv", icon: "📺", label: "إعلان تلفزيوني", color: "#ef4444", baseCost: 4500, costGrowth: 1.3, reward: 1.2, maxLevel: 6 },
+    { key: "ads_influencer", icon: "🤳", label: "مؤثرون للتسويق", color: "#f43f5e", baseCost: 50, costGrowth: 1.18, reward: 0.04, maxLevel: 20, duration: 1 },
+    { key: "ads_video", icon: "🎬", label: "فيديو ترويجي", color: "#8b5cf6", baseCost: 120, costGrowth: 1.2, reward: 0.08, maxLevel: 15, duration: 1 },
+    { key: "ads_banner", icon: "🖼️", label: "لافتات إعلانية", color: "#0ea5e9", baseCost: 300, costGrowth: 1.22, reward: 0.16, maxLevel: 12, duration: 2 },
+    { key: "ads_telegram", icon: "📣", label: "قنوات تيليجرام", color: "#22c55e", baseCost: 750, costGrowth: 1.25, reward: 0.32, maxLevel: 10, duration: 2 },
+    { key: "ads_coupons", icon: "🎟️", label: "كوبونات خصم", color: "#f59e0b", baseCost: 1800, costGrowth: 1.28, reward: 0.64, maxLevel: 8, duration: 3 },
+    { key: "ads_tv", icon: "📺", label: "إعلان تلفزيوني", color: "#ef4444", baseCost: 4500, costGrowth: 1.3, reward: 1.2, maxLevel: 6, duration: 4 },
   ],
 };
 

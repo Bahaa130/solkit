@@ -1,6 +1,6 @@
 // src/pages/CardsPage.tsx
 import { apiFetch } from "../lib/api";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
@@ -15,6 +15,10 @@ interface CardInfo {
   reward: number;
   cost: number;
   income: number;
+  durationH: number;
+  upgrading: boolean;
+  upgradeEndsAt: string | null;
+  upgradeTimeLeft: number;
 }
 
 export default function CardsPage({ token }: { userId: number; token: string }) {
@@ -25,9 +29,12 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
   const [totalIncome, setTotalIncome] = useState(0);
   const [baseRate, setBaseRate] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [pendingBump, setPendingBump] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const loadedAtRef = useRef(Date.now());
+  const reloadingRef = useRef(false);
 
-  const load = async () => {
+  const load = async (silent = false) => {
     try {
       const res = await apiFetch("/api/users/cards/list", { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error("load failed");
@@ -36,18 +43,50 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
       setBalance(Number(j.balance || 0));
       setTotalIncome(Number(j.totalIncome || 0));
       setBaseRate(Number(j.baseRate || 0));
+      loadedAtRef.current = Date.now();
+      setNow(Date.now());
     } catch {
-      toast.error(t("cards.error"));
+      if (!silent) toast.error(t("cards.error"));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, [token]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [token]);
+
+  // ⏱️ عدّاد اللحظات: كل ثانية، وعند انتهاء أي ترقية معلّقة نعيد التحميل لتسويتها تلقائياً
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const anyDone = cards.some((c) => c.upgrading && c.upgradeTimeLeft > 0 && remainingOf(c) <= 0);
+    if (anyDone && !reloadingRef.current) {
+      reloadingRef.current = true;
+      load(true).finally(() => { reloadingRef.current = false; });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now]);
+
+  const remainingOf = (c: CardInfo): number => {
+    if (!c.upgrading || !c.upgradeEndsAt) return 0;
+    return Math.max(0, c.upgradeTimeLeft - Math.floor((now - loadedAtRef.current) / 1000));
+  };
+
+  const fmtDur = (sec: number) => {
+    const s = Math.max(0, Math.floor(sec));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const s2 = s % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s2}s`;
+    return `${s2}s`;
+  };
 
   const upgrade = async (cardKey: string) => {
-    if (upgrading) return;
-    setUpgrading(cardKey);
+    if (pendingBump) return;
+    setPendingBump(cardKey);
     try {
       const res = await apiFetch("/api/users/cards/upgrade", {
         method: "POST",
@@ -56,17 +95,24 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
       });
       const j = await res.json();
       if (res.ok) {
-        toast.success(t("cards.upgraded"));
+        toast.success(t("cards.startUpgrade"));
         setBalance(Number(j.balance ?? balance));
-        setCards((prev) => prev.map((c) => c.key === cardKey ? { ...c, level: j.level, cost: j.cost, income: Number(j.reward) * j.level } : c));
+        const endTs = j.upgradeDoneAt ? new Date(j.upgradeDoneAt).getTime() : Date.now() + Number(j.durationH || 1) * 3600000;
+        setCards((prev) => prev.map((c) => c.key === cardKey
+          ? { ...c, upgrading: true, upgradeEndsAt: new Date(endTs).toISOString(), upgradeTimeLeft: Math.max(1, Math.floor((endTs - Date.now()) / 1000)) }
+          : c));
         setTotalIncome(Number(j.totalIncome ?? totalIncome));
+        loadedAtRef.current = Date.now();
+        setNow(Date.now());
+        load(true); // 🔄 تحديث بيانات الكروت المحدثة من الخادم (المستوى/التكلفة القادمة...)
       } else {
         toast.error(j.message || t("cards.error"));
+        if (j.upgrading) { /* تنبيه الترقية قيد العدّاد من الخادم */ }
       }
     } catch {
       toast.error(t("cards.error"));
     } finally {
-      setUpgrading(null);
+      setPendingBump(null);
     }
   };
 
@@ -102,6 +148,11 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
           const maxed = c.level >= c.maxLevel;
           const affordable = c.cost > 0 && balance >= c.cost;
           const pct = Math.min(100, Math.round((c.level / Math.max(1, c.maxLevel)) * 100));
+          const pending = c.upgrading;
+          const left = pending ? remainingOf(c) : 0;
+          const durPct = pending && c.durationH > 0
+            ? Math.min(100, Math.round(((c.durationH * 3600 - left) / (c.durationH * 3600)) * 100))
+            : 0;
           return (
             <div key={c.key} className="glass" style={styles.card}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -118,29 +169,41 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
               </div>
 
               <div style={{ ...styles.barTrack, marginBottom: 10 }}>
-                <div style={{ ...styles.barFill, width: `${pct}%`, background: c.color }} />
+                <div style={{ ...styles.barFill, width: pending ? `${durPct}%` : `${pct}%`, background: pending ? "#f59e0b" : c.color }} />
               </div>
 
               {maxed ? (
                 <div style={styles.maxTag}>{t("cards.maxReached")} ✅</div>
+              ) : pending ? (
+                <div style={styles.pendingTag}>
+                  <span style={{ color: "#f59e0b", fontWeight: 900, fontSize: 13 }}>⏳ {t("cards.pending")}</span>
+                  <span style={{ color: C.muted, fontSize: 11.5, fontWeight: 700, marginTop: 3 }}>
+                    {t("cards.timeLeft")}: {fmtDur(left)}
+                  </span>
+                </div>
               ) : (
-                <button
-                  onClick={() => upgrade(c.key)}
-                  disabled={!affordable || upgrading === c.key}
-                  className="btn btn-primary"
-                  style={{
-                    width: "100%", padding: "11px", fontSize: 13, fontWeight: 900, borderRadius: 12,
-                    opacity: affordable ? 1 : 0.55, pointerEvents: affordable ? "auto" : "none",
-                  }}
-                >
-                  {upgrading === c.key ? t("common.loading") : t("cards.upgrade")}
-                  {c.cost > 0 ? ` — ${fmt(c.cost)} Ⓢ` : ""}
-                </button>
-              )}
-              {!maxed && !affordable && (
-                <p style={{ margin: "6px 0 0", color: C.faint, fontSize: 11, textAlign: "center" }}>
-                  {t("cards.nextCost")} {fmt(c.cost)} Ⓢ
-                </p>
+                <>
+                  <button
+                    onClick={() => upgrade(c.key)}
+                    disabled={!affordable || !!pendingBump}
+                    className="btn btn-primary"
+                    style={{
+                      width: "100%", padding: "11px", fontSize: 13, fontWeight: 900, borderRadius: 12,
+                      opacity: affordable ? 1 : 0.55, pointerEvents: affordable ? "auto" : "none",
+                    }}
+                  >
+                    {pendingBump === c.key ? t("common.loading") : t("cards.upgrade")}
+                    {c.cost > 0 ? ` — ${fmt(c.cost)} Ⓢ` : ""}
+                  </button>
+                  <p style={{ margin: "6px 0 0", color: C.faint, fontSize: 10.5, textAlign: "center" }}>
+                    ⏲️ {t("cards.durationH", { h: c.durationH })}
+                  </p>
+                  {!affordable && (
+                    <p style={{ margin: "2px 0 0", color: C.faint, fontSize: 11, textAlign: "center" }}>
+                      {t("cards.nextCost")} {fmt(c.cost)} Ⓢ
+                    </p>
+                  )}
+                </>
               )}
             </div>
           );
@@ -165,4 +228,5 @@ const styles: { [key: string]: React.CSSProperties } = {
   barTrack: { background: "rgba(255,255,255,0.06)", borderRadius: 8, height: 8, overflow: "hidden" },
   barFill: { height: "100%", borderRadius: 8 },
   maxTag: { textAlign: "center", color: "#22e584", fontSize: 13, fontWeight: 900, padding: "11px", border: "1px solid rgba(34,229,132,0.3)", borderRadius: 12, background: "rgba(34,229,132,0.08)" },
+  pendingTag: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "9px", border: "1px dashed rgba(245,158,11,0.45)", borderRadius: 12, background: "rgba(245,158,11,0.08)", textAlign: "center" },
 };

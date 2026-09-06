@@ -454,8 +454,41 @@ router.get("/referral-network", authenticateJWT, async (req, res) => {
 // ==========================================
 // 📇 قراءة تعريفات الكروت من إعدادات المدير (settings.json ← cards[])
 const getCardDefs = () => (getSettings().cards || []).filter((c) => c && c.key);
-// 💰 إجمالي دخل الكروت للساعة (نقاط) = مجموع (رد كل كارت × مستواه)
+// ⏳ تسوية الترقيات المكتملة (انتهى عدّاد المدير): تفعيل المستوى + رفع معدل الجلسة النشطة بأرباح الكارت
+const settleUpgrades = async (userId) => {
+    const defs = getCardDefs();
+    if (!defs.length)
+        return;
+    const byKey = new Map();
+    for (const d of defs)
+        byKey.set(d.key, Number(d.reward || 0));
+    const now = new Date();
+    try {
+        await prisma.$transaction(async (tx) => {
+            const pending = await tx.cardUpgrade.findMany({ where: { userId, upgrading: true, upgradeDoneAt: { lte: now } } });
+            if (!pending.length)
+                return;
+            for (const p of pending) {
+                await tx.cardUpgrade.update({
+                    where: { userId_cardKey: { userId, cardKey: p.cardKey } },
+                    data: { level: { increment: 1 }, upgrading: false, upgradeDoneAt: null },
+                });
+                const reward = byKey.get(p.cardKey) || 0;
+                if (reward > 0) {
+                    const active = await tx.miningSession.findFirst({ where: { userId, status: "active" }, orderBy: { startedAt: "desc" } });
+                    if (active)
+                        await tx.miningSession.update({ where: { id: active.id }, data: { miningRate: { increment: reward } } });
+                }
+            }
+        });
+    }
+    catch (e) {
+        console.error("Card settle error:", e);
+    }
+};
+// 💰 إجمالي دخل الكروت للساعة (نقاط) = مجموع (رد كل كارت × مستواه المفَعَّل)
 const getCardIncome = async (userId) => {
+    await settleUpgrades(userId);
     const defs = getCardDefs();
     if (!defs.length)
         return 0;
@@ -553,20 +586,27 @@ router.post("/mining-start", authenticateJWT, async (req, res) => {
 // ==========================================
 // 📇 3ب. بطاقات الدخل القابلة للترقية (نموذج هامستر) — إيراد يضاف لمعدل التعدين
 // ==========================================
-// 📄 قائمة الكروت + مستويات المستخدم + المجموع الكلي للدخل
+// 📄 قائمة الكروت + مستويات المستخدم + المجموع الكلي للدخل (+ الترقية المعلّقة وعدّادها)
 router.get("/cards/list", authenticateJWT, async (req, res) => {
     try {
         const userId = req.user.id;
+        await settleUpgrades(userId);
         const defs = getCardDefs();
         const rows = await prisma.cardUpgrade.findMany({ where: { userId } });
         const byKey = new Map();
-        rows.forEach((r) => byKey.set(r.cardKey, Number(r.level || 0)));
+        rows.forEach((r) => byKey.set(r.cardKey, { level: Number(r.level || 0), upgrading: Boolean(r.upgrading), upgradeDoneAt: r.upgradeDoneAt ? new Date(r.upgradeDoneAt) : null }));
         const cards = defs.map((d) => {
-            const level = byKey.get(d.key) || 0;
+            const rec = byKey.get(d.key) || { level: 0, upgrading: false, upgradeDoneAt: null };
+            const level = rec.level;
             const nextCost = level >= (Number(d.maxLevel) || 0)
                 ? 0
                 : Math.round((Number(d.baseCost) || 0) * Math.pow(Number(d.costGrowth) || 1, level) * 100) / 100;
             const reward = Number(d.reward) || 0;
+            const durationH = Math.max(0, Number(d.duration) || 1);
+            const upgradeEndsAt = rec.upgrading && rec.upgradeDoneAt ? rec.upgradeDoneAt.toISOString() : null;
+            const upgradeTimeLeft = rec.upgrading && rec.upgradeDoneAt
+                ? Math.max(0, Math.floor((rec.upgradeDoneAt.getTime() - Date.now()) / 1000))
+                : 0;
             return {
                 key: d.key,
                 icon: d.icon || "🎴",
@@ -577,6 +617,10 @@ router.get("/cards/list", authenticateJWT, async (req, res) => {
                 reward,
                 cost: nextCost,
                 income: reward * level,
+                durationH,
+                upgrading: rec.upgrading,
+                upgradeEndsAt,
+                upgradeTimeLeft,
             };
         });
         const totalIncome = cards.reduce((s, c) => s + c.income, 0);
@@ -593,7 +637,8 @@ router.get("/cards/list", authenticateJWT, async (req, res) => {
         return res.status(500).json({ message: "خطأ في تحميل بيانات الكروت" });
     }
 });
-// ⬆️ ترقية كارت: تخصم الرصيد (بالخادم حصراً) وتزيد الإيراد وترفع معدل الجلسة الجارية فوراً
+// ⬆️ ترقية كارت: تخصم الرصيد (بالخادم حصراً) — ثم يدخل الكارت عدّاد زمني (مدة يحددها المدير)
+//    تُفعَّل الترقية والمكسب تلقائياً عند انتهاء العدّاد (يبقى المستوى والدخل مستقرين حتى ذلك الحين)
 router.post("/cards/upgrade", authenticateJWT, async (req, res) => {
     try {
         const userId = req.user.id;
@@ -605,6 +650,11 @@ router.post("/cards/upgrade", authenticateJWT, async (req, res) => {
         if (!user || user.activationStatus !== "active")
             return res.status(403).json({ message: "يجب تفعيل الحساب أولاً" });
         const existing = await prisma.cardUpgrade.findUnique({ where: { userId_cardKey: { userId, cardKey } } });
+        // 🔒 ترقية سابقة قيد العدّاد؟ نمنع الترقية المزدوجة حتى تنتهي مدتها
+        if (existing && Boolean(existing.upgrading)) {
+            const leftSec = existing.upgradeDoneAt ? Math.max(0, Math.floor((new Date(existing.upgradeDoneAt).getTime() - Date.now()) / 1000)) : 0;
+            return res.status(400).json({ message: "الترقية قيد التنفيذ، انتظر انتهاء العدّاد", upgrading: true, timeLeft: leftSec });
+        }
         const level = existing ? Number(existing.level) : 0;
         if (level >= (Number(def.maxLevel) || 0))
             return res.status(400).json({ message: "وصل الكارت إلى الحد الأقصى" });
@@ -613,23 +663,25 @@ router.post("/cards/upgrade", authenticateJWT, async (req, res) => {
         if (balance < cost)
             return res.status(400).json({ message: "الرصيد غير كافٍ", need: cost, balance });
         const reward = Number(def.reward) || 0;
-        const newLevel = level + 1;
+        const durationH = Math.max(0, Number(def.duration) || 1);
+        const upgradeDoneAt = new Date(Date.now() + durationH * 3600 * 1000);
         await prisma.$transaction(async (tx) => {
             if (existing) {
-                await tx.cardUpgrade.update({ where: { userId_cardKey: { userId, cardKey } }, data: { level: newLevel } });
+                await tx.cardUpgrade.update({
+                    where: { userId_cardKey: { userId, cardKey } },
+                    data: { upgrading: true, upgradeDoneAt },
+                });
             }
             else {
-                await tx.cardUpgrade.create({ data: { userId, cardKey, level: newLevel } });
+                await tx.cardUpgrade.create({ data: { userId, cardKey, level: 0, upgrading: true, upgradeDoneAt } });
             }
             await tx.user.update({ where: { id: userId }, data: { balance: { decrement: cost } } });
-            // 🔄 جلسة تعدين نشطة؟ ارفع معدلها فوراً بمكسب الكارت الجديد (يربّح المستخدم لحظياً من استثماره)
-            const active = await tx.miningSession.findFirst({ where: { userId, status: "active" }, orderBy: { startedAt: "desc" } });
-            if (active) {
-                await tx.miningSession.update({ where: { id: active.id }, data: { miningRate: { increment: reward } } });
-            }
         });
         const totalIncome = await getCardIncome(userId);
-        return res.json({ success: true, cardKey, level: newLevel, cost, balance: balance - cost, totalIncome, reward });
+        return res.json({
+            success: true, cardKey, upgrading: true, upgradeDoneAt: upgradeDoneAt.toISOString(),
+            durationH, cost, balance: balance - cost, totalIncome, reward,
+        });
     }
     catch (e) {
         console.error("Card upgrade error:", e);
@@ -1258,6 +1310,7 @@ router.get("/settings", async (_req, res) => {
             xpRef: s.xpRef ?? 50,
             xpMine: s.xpMine ?? 30,
             xpBonus: s.xpBonus ?? 15,
+            cards: s.cards || [],
         });
     }
     catch (error) {
@@ -1338,6 +1391,18 @@ const settingsSchema = z.object({
         pct: z.number().min(0).max(100),
         color: z.string().min(4).max(12),
     })).max(12).optional(),
+    // 📇 بطاقات الدخل القابلة للترقية — إضافة/حذف/تعديل + مدة كل ترقية بالساعات
+    cards: z.array(z.object({
+        key: z.string().min(1).max(60),
+        icon: z.string().min(1).max(12),
+        label: z.string().min(1).max(60),
+        color: z.string().min(4).max(20),
+        baseCost: z.number().min(0).max(1000000000),
+        costGrowth: z.number().min(1).max(100),
+        reward: z.number().min(0).max(1000000),
+        maxLevel: z.number().int().min(1).max(1000),
+        duration: z.number().min(0).max(8760).optional(),
+    })).max(50).optional(),
 });
 router.post("/admin/settings", authenticateJWT, async (req, res) => {
     try {
@@ -1378,6 +1443,7 @@ router.post("/admin/settings", authenticateJWT, async (req, res) => {
             xpRef: updated.xpRef ?? 50,
             xpMine: updated.xpMine ?? 30,
             xpBonus: updated.xpBonus ?? 15,
+            cards: updated.cards || [],
         });
     }
     catch (error) {
