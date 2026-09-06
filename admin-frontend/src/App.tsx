@@ -9,6 +9,7 @@ import BonusPage from "./pages/BonusPage";
 import AdminPanelPage from "./pages/AdminPanelPage";
 import AirdropPage from "./pages/AirdropPage";
 import LevelsPage from "./pages/LevelsPage";
+import CardsPage from "./pages/CardsPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import MaintenancePage from "./pages/MaintenancePage";
 import { Connection, PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
@@ -104,7 +105,7 @@ export default function App() {
   const { address: walletAddressHook, connectWallet, sendTransaction } = useSolanaWallet();
   const [session, setSession] = useState<Session | null>(null);
   // 🗺️ قائمة التبويبات المعروفة (تُستخدم لفلترة المسارات غير الصالحة → 404)
-  const KNOWN_TABS = ["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels"];
+  const KNOWN_TABS = ["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels", "cards"];
   // 🔗 قراءة التبويب من معامل ?tab= في الرابط عند التحميل (قيمة غير معروفة → "404")
   const [activeTab, setActiveTab] = useState<string>(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
@@ -747,6 +748,7 @@ export default function App() {
               {activeTab === "tasks" && <TasksPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "bonus" && <BonusPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "levels" && <LevelsPage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "cards" && <CardsPage userId={session.userId} token={session.jwtToken || ""} />}
               {/* 👑 تبويب المدير: لا يُتاح إلا لصاحب محفظة المدير حصراً — أي مستخدم آخر يفتح ?tab=admin يُوجَّه فوراً لصفحة 404 */}
               {activeTab === "admin" && (
                 session.walletAddress === ADMIN_WALLET
@@ -755,7 +757,7 @@ export default function App() {
               )}
               
               {/* 🚫 تبويب غير معروف → صفحة 404 آمنة */}
-              {!["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels"].includes(activeTab) && (
+              {!["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels", "cards"].includes(activeTab) && (
                 <NotFoundPage onNavigateTab={navigateTab} />
               )}
             </div>

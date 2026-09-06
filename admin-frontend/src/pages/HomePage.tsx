@@ -194,6 +194,18 @@ export default function HomePage({ userId, token, onNavigateTab }: HomePageProps
         <span style={{ fontSize: 20 }}>🏆</span>
       </div>
 
+      {/* 📈 صندوق كروت الإعلانات (قابل للنقر → صفحة الكروت) */}
+      <div className="glass" style={styles.cardsBox} onClick={() => onNavigateTab && onNavigateTab("cards")}>
+        <div style={{ ...styles.lbBadge, background: "#f59e0b22", borderColor: "#f59e0b55" }}>
+          <span style={{ fontSize: 26 }}>📈</span>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ ...styles.lbName, color: "#f59e0b" }}>{t("cards.portalTitle")}</div>
+          <div style={{ ...styles.lbHint, color: C.muted }}>{t("cards.portalHint")}</div>
+        </div>
+        <span style={{ fontSize: 20 }}>💸</span>
+      </div>
+
       {/* ⛏️ التعدين */}
       <div className="glass" style={styles.miningCard}>
         <div style={styles.cardHeader}>
@@ -365,6 +377,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   lbNum: { fontSize: 18, fontWeight: 900, lineHeight: 1 },
   lbName: { fontWeight: 800, fontSize: 13.5 },
   lbHint: { fontSize: 11, marginTop: 2 },
+  // 📈 كروت الإعلانات
+  cardsBox: { display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", cursor: "pointer", border: "1px solid rgba(255,255,255,0.08)" },
   // ⛏️ التعدين
   miningCard: { padding: "18px 18px 20px" },
   cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },

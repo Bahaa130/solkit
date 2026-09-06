@@ -38,6 +38,7 @@ export interface SiteSettings {
   roadmap: RoadmapPhase[];            // 🗺️ مراحل خارطة الطريق (تُدار بالكامل من المدير)
   wheel: WheelSettings;               // 🎰 إعدادات عجلة الحظ (الشرائح والأوزان والسقوف)
   tokenomics: TokenomicsSplit[];      // 💼 اقتصاديات التوكن — نسب توزيع العرض الكلي (تتحكم بها الإدارة)
+  cards?: CardDef[];                  // 📇 بطاقات الدخل القابلة للترقية (نموذج هامستر)
 }
 
 // 💼 شريحة واحدة في اقتصاديات التوكن (توزيع العرض الكلي)
@@ -45,6 +46,18 @@ export interface TokenomicsSplit {
   label: string;   // اسم الفئة (مثال: التعدين، الألعاب، المجتمع، الفريق)
   pct: number;     // النسبة المئوية من العرض الكلي (0..100)
   color: string;   // اللون (hex) المستخدم في الشريط والمفتاح بصفحة الإير دروب
+}
+
+// 📇 كارت دخل قابل للترقية (نموذج هامستر — تستهلك الرصيد وترفع معدل التعدين)
+export interface CardDef {
+  key: string;       // مفتاح فريد (مطابق لـ CardUpgrade.cardKey)
+  icon: string;      // إيموجي الكارت
+  label: string;     // اسم الحملة/الإعلان
+  color: string;     // لون الكارت (hex)
+  baseCost: number;  // تكلفة الترقية الأولى بالنقاط (الرصيد)
+  costGrowth: number; // مضاعف التكلفة لكل مستوى لاحق (مثال 1.2)
+  reward: number;    // الدخل الكلي لكل مستوى (نقاط/24 ساعة) — كل مستوى يضيف هذا المقدار
+  maxLevel: number;  // سقف عدد الترقيات
 }
 // 🎡 شريحة واحدة في عجلة الحظ
 export interface WheelSegment { value: number; weight: number }
@@ -152,6 +165,15 @@ const DEFAULTS: SiteSettings = {
     { label: "الألعاب", pct: 25, color: "#7c5cff" },
     { label: "المجتمع", pct: 20, color: "#ffb020" },
     { label: "الفريق", pct: 15, color: "#ff5c7a" },
+  ],
+  // 📇 بطاقات الدخل الافتراضية (حملات إعلانية تُرقى بالنقاط = إيراد يضاف لمعدل التعدين)
+  cards: [
+    { key: "ads_influencer", icon: "🤳", label: "مؤثرون للتسويق", color: "#f43f5e", baseCost: 50, costGrowth: 1.18, reward: 0.04, maxLevel: 20 },
+    { key: "ads_video", icon: "🎬", label: "فيديو ترويجي", color: "#8b5cf6", baseCost: 120, costGrowth: 1.2, reward: 0.08, maxLevel: 15 },
+    { key: "ads_banner", icon: "🖼️", label: "لافتات إعلانية", color: "#0ea5e9", baseCost: 300, costGrowth: 1.22, reward: 0.16, maxLevel: 12 },
+    { key: "ads_telegram", icon: "📣", label: "قنوات تيليجرام", color: "#22c55e", baseCost: 750, costGrowth: 1.25, reward: 0.32, maxLevel: 10 },
+    { key: "ads_coupons", icon: "🎟️", label: "كوبونات خصم", color: "#f59e0b", baseCost: 1800, costGrowth: 1.28, reward: 0.64, maxLevel: 8 },
+    { key: "ads_tv", icon: "📺", label: "إعلان تلفزيوني", color: "#ef4444", baseCost: 4500, costGrowth: 1.3, reward: 1.2, maxLevel: 6 },
   ],
 };
 

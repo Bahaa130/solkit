@@ -9,7 +9,7 @@ import bs58 from "bs58"; // 🔐 فك ترميز عنوان المحفظة (base
 import { ed25519 } from "@noble/curves/ed25519"; // ✍️ التحقق من توقيع ed25519
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
-import { getSettings, updateSettings, type SiteSettings } from "../../config/settings.js";
+import { getSettings, updateSettings, type SiteSettings, type CardDef } from "../../config/settings.js";
 import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; // 🎯 نظام المستويات حسب النشاط
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 
@@ -486,6 +486,24 @@ router.get("/referral-network", authenticateJWT, async (req: AuthenticatedReques
 // ⛏️ 3. مسارات التعدين والمطالبة بالبونص اليومي (الـ Endpoint المفقود تم إنشاؤه)
 // ==========================================
 
+// 📇 قراءة تعريفات الكروت من إعدادات المدير (settings.json ← cards[])
+const getCardDefs = (): CardDef[] => (getSettings().cards || []).filter((c: CardDef) => c && c.key);
+
+// 💰 إجمالي دخل الكروت للساعة (نقاط) = مجموع (رد كل كارت × مستواه)
+const getCardIncome = async (userId: number): Promise<number> => {
+  const defs = getCardDefs();
+  if (!defs.length) return 0;
+  const rows = await (prisma as any).cardUpgrade.findMany({ where: { userId } });
+  const byKey = new Map<string, number>();
+  rows.forEach((r: any) => byKey.set(r.cardKey, Number(r.level || 0)));
+  let total = 0;
+  for (const d of defs) {
+    const lvl = byKey.get(d.key) || 0;
+    if (lvl > 0) total += Number(d.reward || 0) * lvl;
+  }
+  return total;
+};
+
 router.get("/mining-status", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
@@ -497,8 +515,9 @@ router.get("/mining-status", authenticateJWT, async (req: AuthenticatedRequest, 
       orderBy: { startedAt: "desc" }
     });
 
-    const currentRate = rateForLevel(user.currentLevel || 1);
-    if (!activeSession) return res.json({ status: "stopped", miningRate: currentRate, timeLeft: 0, pendingMinedAmount: 0 });
+    const cardIncome = await getCardIncome(userId);
+    const currentRate = rateForLevel(user.currentLevel || 1) + cardIncome;
+    if (!activeSession) return res.json({ status: "stopped", miningRate: currentRate, cardIncome, timeLeft: 0, pendingMinedAmount: 0 });
 
     const now = new Date();
     const timeLeftSeconds = Math.max(0, Math.floor((new Date(activeSession.endsAt).getTime() - now.getTime()) / 1000));
@@ -506,17 +525,18 @@ router.get("/mining-status", authenticateJWT, async (req: AuthenticatedRequest, 
     // ✅ عند انتهاء جلسة الـ 24 ساعة: قيد الأرباح اللحظية الفعلية (ما مضى فعلاً) لرصيد المستخدم وأكمل الجلسة
     if (timeLeftSeconds <= 0) {
       const secondsPassed = 24 * 60 * 60; // الجلسة اكتملت كاملة
-      const minedAmount = (secondsPassed * currentRate) / 3600;
+      const minedAmount = (secondsPassed * Number(activeSession.miningRate)) / 3600;
       await finishMiningSession(activeSession, minedAmount, userId);
-      return res.json({ status: "stopped", miningRate: currentRate, timeLeft: 0, pendingMinedAmount: 0 });
+      return res.json({ status: "stopped", miningRate: currentRate, cardIncome, timeLeft: 0, pendingMinedAmount: 0 });
     }
 
-    // 🔄 جلسة نشطة: أرباح لحظية = الزمن المنقضي فعلياً × المعدّل
+    // 🔄 جلسة نشطة: أرباح لحظية = الزمن المنقضي فعلياً × معدل الجلسة (يشمل ترقيات الكروت)
     const secondsPassed = Math.floor((now.getTime() - new Date(activeSession.startedAt).getTime()) / 1000);
-    const pendingMinedAmount = (secondsPassed * currentRate) / 3600;
+    const pendingMinedAmount = (secondsPassed * Number(activeSession.miningRate)) / 3600;
     return res.json({
       status: "active",
-      miningRate: currentRate,
+      miningRate: Number(activeSession.miningRate),
+      cardIncome,
       timeLeft: timeLeftSeconds,
       endsAt: activeSession.endsAt,
       pendingMinedAmount,
@@ -555,13 +575,103 @@ router.post("/mining-start", authenticateJWT, async (req: AuthenticatedRequest, 
       await finishMiningSession(existing, minedAmount, userId);
     }
 
-    const currentRate = rateForLevel(user.currentLevel || 1);
+    const cardIncome = await getCardIncome(userId);
+    const currentRate = rateForLevel(user.currentLevel || 1) + cardIncome;
     const startedAt = new Date();
     const endsAt = new Date(startedAt.getTime() + 24 * 60 * 60 * 1000);
 
     const created = await (prisma as any).miningSession.create({ data: { userId, miningRate: currentRate, startedAt, endsAt, status: "active" } });
-    return res.status(201).json({ message: "Mining started", sessionId: created.id, startedAt, endsAt });
+    return res.status(201).json({ message: "Mining started", sessionId: created.id, startedAt, endsAt, miningRate: currentRate, cardIncome });
   } catch { return res.status(500).json({ message: "Error" }); }
+});
+
+// ==========================================
+// 📇 3ب. بطاقات الدخل القابلة للترقية (نموذج هامستر) — إيراد يضاف لمعدل التعدين
+// ==========================================
+
+// 📄 قائمة الكروت + مستويات المستخدم + المجموع الكلي للدخل
+router.get("/cards/list", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const defs = getCardDefs();
+    const rows = await (prisma as any).cardUpgrade.findMany({ where: { userId } });
+    const byKey = new Map<string, number>();
+    rows.forEach((r: any) => byKey.set(r.cardKey, Number(r.level || 0)));
+
+    const cards = defs.map((d: CardDef) => {
+      const level = byKey.get(d.key) || 0;
+      const nextCost = level >= (Number(d.maxLevel) || 0)
+        ? 0
+        : Math.round((Number(d.baseCost) || 0) * Math.pow(Number(d.costGrowth) || 1, level) * 100) / 100;
+      const reward = Number(d.reward) || 0;
+      return {
+        key: d.key,
+        icon: d.icon || "🎴",
+        label: d.label || d.key,
+        color: d.color || "#7c5cff",
+        level,
+        maxLevel: Number(d.maxLevel) || 0,
+        reward,
+        cost: nextCost,
+        income: reward * level,
+      };
+    });
+
+    const totalIncome = cards.reduce((s, c) => s + c.income, 0);
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { balance: true, currentLevel: true } });
+    return res.json({
+      cards,
+      totalIncome,
+      balance: Number(user?.balance || 0),
+      baseRate: user ? rateForLevel(user.currentLevel || 1) : 0,
+    });
+  } catch (e) {
+    console.error("Cards list error:", e);
+    return res.status(500).json({ message: "خطأ في تحميل بيانات الكروت" });
+  }
+});
+
+// ⬆️ ترقية كارت: تخصم الرصيد (بالخادم حصراً) وتزيد الإيراد وترفع معدل الجلسة الجارية فوراً
+router.post("/cards/upgrade", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { cardKey } = req.body || {};
+    const def = getCardDefs().find((c: CardDef) => c.key === cardKey);
+    if (!def) return res.status(400).json({ message: "كارت غير معروف" });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.activationStatus !== "active") return res.status(403).json({ message: "يجب تفعيل الحساب أولاً" });
+
+    const existing = await (prisma as any).cardUpgrade.findUnique({ where: { userId_cardKey: { userId, cardKey } } });
+    const level = existing ? Number(existing.level) : 0;
+    if (level >= (Number(def.maxLevel) || 0)) return res.status(400).json({ message: "وصل الكارت إلى الحد الأقصى" });
+
+    const cost = Math.round((Number(def.baseCost) || 0) * Math.pow(Number(def.costGrowth) || 1, level) * 100) / 100;
+    const balance = Number(user.balance || 0);
+    if (balance < cost) return res.status(400).json({ message: "الرصيد غير كافٍ", need: cost, balance });
+
+    const reward = Number(def.reward) || 0;
+    const newLevel = level + 1;
+    await prisma.$transaction(async (tx: any) => {
+      if (existing) {
+        await tx.cardUpgrade.update({ where: { userId_cardKey: { userId, cardKey } }, data: { level: newLevel } });
+      } else {
+        await tx.cardUpgrade.create({ data: { userId, cardKey, level: newLevel } });
+      }
+      await tx.user.update({ where: { id: userId }, data: { balance: { decrement: cost } } });
+      // 🔄 جلسة تعدين نشطة؟ ارفع معدلها فوراً بمكسب الكارت الجديد (يربّح المستخدم لحظياً من استثماره)
+      const active = await tx.miningSession.findFirst({ where: { userId, status: "active" }, orderBy: { startedAt: "desc" } });
+      if (active) {
+        await tx.miningSession.update({ where: { id: active.id }, data: { miningRate: { increment: reward } } });
+      }
+    });
+
+    const totalIncome = await getCardIncome(userId);
+    return res.json({ success: true, cardKey, level: newLevel, cost, balance: balance - cost, totalIncome, reward });
+  } catch (e) {
+    console.error("Card upgrade error:", e);
+    return res.status(500).json({ message: "خطأ في تنفيذ الترقية" });
+  }
 });
 
 // ✅ 4. مسار المطالبة الفعلي بالبونص اليومي (claim-daily) المفقود
