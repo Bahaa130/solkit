@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { C, G, styles as T } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
+import CoinBurst, { playCoinSound, type CoinBurstItem } from "../components/CoinBurst";
 
 interface BonusPageProps { userId: number; token: string; }
 
@@ -32,10 +33,18 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
   const [lastClaimAt, setLastClaimAt] = useState<number | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [bursts, setBursts] = useState<CoinBurstItem[]>([]);
   // ⚙️ إعدادات المدير الحية: مكافآت السلسلة + مضاعف المستوى + خطة المستويات
   const [dailyRewards, setDailyRewards] = useState<number[]>(STREAK_REWARDS);
   const [dailyLevelMult, setDailyLevelMult] = useState<number>(0.05);
   const [levelPlan, setLevelPlan] = useState<{ level: number; minXp: number; name: string; color: string }[]>(DEFAULT_LEVEL_PLAN);
+
+  // حذف تلقائي للبُرز المنتهية
+  useEffect(() => {
+    if (!bursts.length) return;
+    const t = setTimeout(() => setBursts((prev) => prev.slice(1)), 1800);
+    return () => clearTimeout(t);
+  }, [bursts]);
 
   // ⏱️ عدّاد حي لعدّاد القفل
   useEffect(() => {
@@ -139,6 +148,18 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
         setStreak(nextStreak); // السيرفر أنشأ سجلاً بيوم nextStreak
         setLastClaimAt(Date.now());
         fetchBonus();
+        // 🪙 مؤثر عملة عند المطالبة
+        try {
+          const btn = document.getElementById("bonus-claim-btn") as HTMLElement | null;
+          const src = btn || document.body;
+          const r = src.getBoundingClientRect();
+          const x = r.left + r.width / 2;
+          const y = r.top + r.height / 2;
+          const reward = Number(data.reward ?? 0);
+          const label = reward > 0 ? `+${reward.toFixed(4)}` : undefined;
+          setBursts((prev) => [...prev, { id: Date.now() + Math.random(), x, y, label }]);
+          playCoinSound();
+        } catch { /* تجاهل */ }
       } else {
         toast.warning(data.message || t("bonus.alreadyClaimed"));
       }
@@ -230,12 +251,13 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
           <>
             <div className="floaty" style={{ fontSize: 34 }}>🎁</div>
             <h4 style={styles.lockTitle}>{t("bonus.claimAvailable")}</h4>
-            <button onClick={handleClaim} disabled={claiming} className="btn btn-amber pulse-glow" style={{ padding: "16px 36px", fontSize: 15, marginTop: 8 }}>
+            <button id="bonus-claim-btn" onClick={handleClaim} disabled={claiming} className="btn btn-amber pulse-glow" style={{ padding: "16px 36px", fontSize: 15, marginTop: 8 }}>
               {claiming ? <><span className="spinner" style={{ borderTopColor: "#fff" }} /> {t("common.loading")}</> : t("bonus.claimBtn")}
             </button>
           </>
         )}
       </div>
+      <CoinBurst bursts={bursts} />
     </div>
   );
 }
