@@ -36,6 +36,7 @@ export default function HomePage({ userId, token, onNavigateTab }: HomePageProps
   const [level, setLevel] = useState(1);
   const [levelPlan, setLevelPlan] = useState<{ level: number; name: string; minXp: number; color: string; miningRate: number }[]>([]);
   const [miningStatus, setMiningStatus] = useState({ status: "stopped", miningRate: 0.5, timeLeft: 0, pendingMinedAmount: 0 });
+  const [miningDurationHours, setMiningDurationHours] = useState(24);
   const [gamesStatus, setGamesStatus] = useState<GamesStatus | null>(null);
   const [activeGame, setActiveGame] = useState<GameKey | null>(null);
   const [sessionTotal, setSessionTotal] = useState(0);
@@ -64,6 +65,15 @@ export default function HomePage({ userId, token, onNavigateTab }: HomePageProps
         baseBalanceRef.current = currentBaseBalance;
         setBalance(liveBalance);
       }
+      // جلب مدة التعدين من الإعدادات لتحديث التقدم
+      try {
+        const sRes = await apiFetch("/api/users/settings", { headers: { "Authorization": `Bearer ${token}` } });
+        if (sRes.ok) {
+          const s = await sRes.json();
+          const h = Number(s.miningDuration ?? 24);
+          if (Number.isFinite(h) && h > 0) setMiningDurationHours(h);
+        }
+      } catch { /* غير حاسم */ }
       try {
         setGamesStatus(await fetchGamesStatus(token));
       } catch {
@@ -148,7 +158,9 @@ export default function HomePage({ userId, token, onNavigateTab }: HomePageProps
   };
 
   const isActive = miningStatus.status === "active";
-  const percentage = isActive ? ((86400 - miningStatus.timeLeft) / 86400) * 100 : 0;
+  const totalSeconds = Math.max(1, miningDurationHours * 3600);
+  const percentage = isActive ? Math.min(100, Math.max(0, ((totalSeconds - miningStatus.timeLeft) / totalSeconds) * 100)) : 0;
+  const isNearEnd = isActive && miningStatus.timeLeft > 0 && miningStatus.timeLeft <= 60;
   const gameLevel = gamesStatus?.gameLevel || 1;
   const multiplier = gamesStatus?.multiplier || 1;
   const xpForNext = gamesStatus?.xpForNext || 100;
@@ -217,16 +229,16 @@ export default function HomePage({ userId, token, onNavigateTab }: HomePageProps
         <div style={styles.miningBody}>
           <div style={styles.circleGlow}>
             <div style={{ ...styles.circularProgressBar, background: `conic-gradient(${levelColor} ${percentage}%, rgba(255,255,255,0.06) 0)` }}>
-              <div style={styles.innerCircle}>
-                {isActive ? (
-                  <>
-                    <span style={styles.timerText}>{formatTime(miningStatus.timeLeft)}</span>
-                    <span style={{ ...styles.rateText, color: levelColor }}>{t("home.miningRate", { rate: Number(miningStatus.miningRate).toFixed(4) })}</span>
-                  </>
-                ) : (
-                  <span style={styles.stoppedText}>{t("home.miningReady")}</span>
-                )}
-              </div>
+               <div style={styles.innerCircle}>
+                 {isActive ? (
+                   <>
+                     <span style={{ ...styles.timerText, animation: isNearEnd ? "mining-flash 0.9s infinite" : undefined }}>{formatTime(miningStatus.timeLeft)}</span>
+                     <span style={{ ...styles.rateText, color: levelColor }}>{t("home.miningRate", { rate: Number(miningStatus.miningRate).toFixed(4) })}</span>
+                   </>
+                 ) : (
+                   <span style={styles.stoppedText}>{t("home.miningReady")}</span>
+                 )}
+               </div>
             </div>
           </div>
           <div style={styles.miningInfo}>

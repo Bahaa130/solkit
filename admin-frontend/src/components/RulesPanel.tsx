@@ -12,12 +12,13 @@ const DAY_LABELS = ["اليوم 1", "اليوم 2", "اليوم 3", "اليوم 
 
 export default function RulesPanel({ token }: Props) {
   const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
-  const [daily, setDaily] = useState<string[]>(["1", "2", "3", "4", "5", "6", "10"]);
+const [daily, setDaily] = useState<string[]>(["1", "2", "3", "4", "5", "6", "10"]);
   const [dailyMult, setDailyMult] = useState("5");
   const [fullSol, setFullSol] = useState("0.03");
   const [halfSol, setHalfSol] = useState("0.015");
 const [siteSharePct, setSiteSharePct] = useState("1.5");
   const [refSharePct, setRefSharePct] = useState("1.5");
+  const [miningHours, setMiningHours] = useState("24");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ type: string; text: string } | null>(null);
 
@@ -34,6 +35,7 @@ const [siteSharePct, setSiteSharePct] = useState("1.5");
         setHalfSol(String(Number((Number(d.activationHalfLamports) || 15000000) / 1e9).toFixed(6)));
 setSiteSharePct(String(Number((d.siteShare ?? 0.015) * 100).toFixed(2)));
         setRefSharePct(String(Number((d.referrerShare ?? 0.015) * 100).toFixed(2)));
+        setMiningHours(String(Number(d.miningDuration ?? 24)));
       }
     } catch {
       setStatus({ type: "error", text: "تعذر تحميل الإعدادات الحالية" });
@@ -50,6 +52,10 @@ setSiteSharePct(String(Number((d.siteShare ?? 0.015) * 100).toFixed(2)));
     if (!Number.isFinite(full) || full <= 0 || !Number.isFinite(half) || half <= 0) {
       setStatus({ type: "error", text: "أدخل قيماً صحيحة لرسوم التفعيل (SOL)" }); return;
     }
+    const hours = Number(miningHours);
+    if (!Number.isFinite(hours) || hours < 1 || hours > 168) {
+      setStatus({ type: "error", text: "مدة التعدين يجب أن تكون بين 1 و168 ساعة" }); return;
+    }
     const payload: Record<string, unknown> = {
       dailyRewards: rewards,
       dailyLevelMult: (Number(dailyMult) || 0) / 100,
@@ -57,6 +63,7 @@ setSiteSharePct(String(Number((d.siteShare ?? 0.015) * 100).toFixed(2)));
       activationHalfLamports: Math.round(half * 1e9),
 siteShare: (Number(siteSharePct) || 0) / 100,
       referrerShare: (Number(refSharePct) || 0) / 100,
+      miningDuration: hours,
     };
     try {
       setSaving(true);
@@ -135,6 +142,18 @@ siteShare: (Number(siteSharePct) || 0) / 100,
           </div>
         </div>
 <p style={styles.hint}>الافتراضي: 0.03 كاملة / 0.015+0.015 مقسّمة / 1.5% + 1.5% عمولات. هذه المبالغ تُعرض للمستخدم على صفحة الدفع.</p>
+      </div>
+
+      {/* ⛏️ مدة التعدين */}
+      <div className="glass" style={styles.card}>
+        <h3 style={styles.cardTitle}>⛏️ مدة جلسة التعدين</h3>
+        <div style={styles.grid}>
+          <div style={field()}>
+            <label style={labelStyle}>ساعات التعدين لكل جلسة</label>
+            <input className="input" type="number" min="1" max="168" step="1" style={inputStyle} value={miningHours} onChange={(e) => setMiningHours(e.target.value)} />
+          </div>
+        </div>
+        <p style={styles.hint}>الافتراضي 24 ساعة. تُطبّق على الجلسات الجديدة فور حفظ الإعدادات.</p>
       </div>
 
       {/* 💾 حفظ */}

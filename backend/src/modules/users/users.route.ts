@@ -568,9 +568,9 @@ router.get("/mining-status", authenticateJWT, async (req: AuthenticatedRequest, 
     const now = new Date();
     const timeLeftSeconds = Math.max(0, Math.floor((new Date(activeSession.endsAt).getTime() - now.getTime()) / 1000));
 
-    // ✅ عند انتهاء جلسة الـ 24 ساعة: قيد الأرباح اللحظية الفعلية (ما مضى فعلاً) لرصيد المستخدم وأكمل الجلسة
+    // ✅ عند انتهاء جلسة التعدين: قيد الأرباح اللحظية الفعلية (ما مضى فعلاً) لرصيد المستخدم وأكمل الجلسة
     if (timeLeftSeconds <= 0) {
-      const secondsPassed = 24 * 60 * 60; // الجلسة اكتملت كاملة
+      const secondsPassed = Math.max(0, Math.floor((new Date(activeSession.endsAt).getTime() - new Date(activeSession.startedAt).getTime()) / 1000));
       const minedAmount = (secondsPassed * Number(activeSession.miningRate)) / 3600;
       await finishMiningSession(activeSession, minedAmount, userId);
       return res.json({ status: "stopped", miningRate: currentRate, cardIncome, timeLeft: 0, pendingMinedAmount: 0 });
@@ -615,16 +615,18 @@ router.post("/mining-start", authenticateJWT, async (req: AuthenticatedRequest, 
           pendingMinedAmount: (secondsPassed * Number(existing.miningRate)) / 3600
         });
       }
-      // جلسة سابقة انتهت ولم تُقيد بعد → قيد أرباحها اللحظية أولاً
-      const secondsPassed = 24 * 60 * 60;
-      const minedAmount = (secondsPassed * Number(existing.miningRate)) / 3600;
+      // جلسة سابقة انتهت ولم تُقيد بعد → قيد أرباحها الفعلية بناءً على مدة الجلسة المحفوظة
+      const totalSeconds = Math.max(0, Math.floor((new Date(existing.endsAt).getTime() - new Date(existing.startedAt).getTime()) / 1000));
+      const minedAmount = (totalSeconds * Number(existing.miningRate)) / 3600;
       await finishMiningSession(existing, minedAmount, userId);
     }
 
     const cardIncome = await getCardIncome(userId);
     const currentRate = rateForLevel(user.currentLevel || 1) + cardIncome;
     const startedAt = new Date();
-    const endsAt = new Date(startedAt.getTime() + 24 * 60 * 60 * 1000);
+    const settings = getSettings();
+    const miningHours = Math.max(1, Number(settings.miningDuration) || 24);
+    const endsAt = new Date(startedAt.getTime() + miningHours * 60 * 60 * 1000);
 
     const created = await (prisma as any).miningSession.create({ data: { userId, miningRate: currentRate, startedAt, endsAt, status: "active" } });
     return res.status(201).json({ message: "Mining started", sessionId: created.id, startedAt, endsAt, miningRate: currentRate, cardIncome });
@@ -1487,6 +1489,7 @@ const settingsSchema = z.object({
   xpRef: z.number().int().min(0).max(100000).optional(),
   xpMine: z.number().int().min(0).max(100000).optional(),
   xpBonus: z.number().int().min(0).max(100000).optional(),
+  miningDuration: z.number().int().min(1).max(168).optional(),
   tokenSupply: z.number().int().min(0).max(10_000_000_000).optional(),
   roadmap: z.array(z.object({
     icon: z.string().min(1).max(8),

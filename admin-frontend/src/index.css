@@ -542,6 +542,10 @@ button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   30%  { transform: scale(1.045); }
   100% { transform: scale(1); }
 }
+@keyframes mining-flash {
+  0%, 100% { opacity: 1; transform: scale(1); text-shadow: 0 0 0 rgba(255, 255, 255, 0); }
+  50% { opacity: 0.85; transform: scale(1.05); text-shadow: 0 0 12px rgba(0,255,204,0.8), 0 0 24px rgba(0,255,204,0.4); }
+}
 .card-upgraded-glow {
   animation: levelGlow 0.7s ease-out 1, cardPop 0.55s cubic-bezier(0.3, 1.4, 0.5, 1) 1;
 }

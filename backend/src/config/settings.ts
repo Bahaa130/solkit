@@ -35,6 +35,7 @@ export interface SiteSettings {
   xpRef: number;                      // 📊 نقاط نشاط تفعيل صديق عبر الإحالة
   xpMine: number;                     // 📊 نقاط نشاط إكمال جلسة تعدين (24 ساعة)
   xpBonus: number;                    // 📊 نقاط نشاط المطالبة بالبونص اليومي
+  miningDuration: number;             // ⏱️ مدة جلسة التعدين بالساعات — يضبطها المدير
   roadmap: RoadmapPhase[];            // 🗺️ مراحل خارطة الطريق (تُدار بالكامل من المدير)
   wheel: WheelSettings;               // 🎰 إعدادات عجلة الحظ (الشرائح والأوزان والسقوف)
   tokenomics: TokenomicsSplit[];      // 💼 اقتصاديات التوكن — نسب توزيع العرض الكلي (تتحكم بها الإدارة)
@@ -139,6 +140,7 @@ const DEFAULTS: SiteSettings = {
   xpRef: 50,
   xpMine: 30,
   xpBonus: 15,
+  miningDuration: 24,
   roadmap: [
     { icon: "⚙️", label: "بناء النظام الأساسي", status: "done" },
     { icon: "🔐", label: "تفعيل أمني + اختبار", status: "done" },
