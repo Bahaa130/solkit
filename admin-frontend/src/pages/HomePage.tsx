@@ -160,7 +160,6 @@ export default function HomePage({ userId, token, onNavigateTab }: HomePageProps
   const isActive = miningStatus.status === "active";
   const totalSeconds = Math.max(1, miningDurationHours * 3600);
   const percentage = isActive ? Math.min(100, Math.max(0, ((totalSeconds - miningStatus.timeLeft) / totalSeconds) * 100)) : 0;
-  const isNearEnd = isActive && miningStatus.timeLeft > 0 && miningStatus.timeLeft <= 60;
   const gameLevel = gamesStatus?.gameLevel || 1;
   const multiplier = gamesStatus?.multiplier || 1;
   const xpForNext = gamesStatus?.xpForNext || 100;
@@ -232,7 +231,7 @@ export default function HomePage({ userId, token, onNavigateTab }: HomePageProps
                <div style={styles.innerCircle}>
                  {isActive ? (
                    <>
-                     <span style={{ ...styles.timerText, animation: isNearEnd ? "mining-flash 0.9s infinite" : undefined }}>{formatTime(miningStatus.timeLeft)}</span>
+                      <span style={{ ...styles.timerText, animation: isActive ? "mining-flash 0.9s infinite" : undefined }}>{formatTime(miningStatus.timeLeft)}</span>
                      <span style={{ ...styles.rateText, color: levelColor }}>{t("home.miningRate", { rate: Number(miningStatus.miningRate).toFixed(4) })}</span>
                    </>
                  ) : (
