@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
-import CoinBurst, { playCoinSound, type CoinBurstItem } from "../components/CoinBurst";
+import CoinBurst from "../components/CoinBurst";
+import { useCoinBurst } from "../hooks/useCoinBurst";
 
 interface CardInfo {
   key: string;
@@ -33,7 +34,7 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
   const [loading, setLoading] = useState(true);
   const [pendingBump, setPendingBump] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [bursts, setBursts] = useState<CoinBurstItem[]>([]);
+  const { bursts, trigger: triggerBurst } = useCoinBurst();
   const loadedAtRef = useRef(Date.now());
   const reloadingRef = useRef(false);
 
@@ -68,11 +69,7 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
       if (!r) return;
       const card = cards.find((x) => x.key === cardKey);
       const label = card ? `+${card.reward}` : undefined;
-      // من مركز زر الترقية (نقطة اللمس التي أطلقها المستخدم)
-      const x = r.left + r.width / 2;
-      const y = r.top + r.height / 2;
-      setBursts((prev) => [...prev, { id: Date.now() + Math.random(), x, y, label }]);
-      playCoinSound();
+      triggerBurst(r, label);
       if (cardEl) {
         cardEl.classList.remove("card-upgraded-glow");
         void cardEl.offsetWidth; // إعادة تشغيل الوميض
@@ -80,13 +77,6 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
       }
     } catch { /* تجاهل */ }
   };
-
-  // حذف تلقائي للبُرز المنتهية (بعد انتهاء الحركة)
-  useEffect(() => {
-    if (!bursts.length) return;
-    const t = setTimeout(() => setBursts((prev) => prev.slice(1)), 1800);
-    return () => clearTimeout(t);
-  }, [bursts]);
 
   // ⏱️ عدّاد اللحظات: كل ثانية، وعند انتهاء أي فترة إعادة شحن معلّقة نعيد التحميل لمسح حالة "upgrading"
   useEffect(() => {

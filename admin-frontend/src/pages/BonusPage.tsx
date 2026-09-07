@@ -5,7 +5,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { C, G, styles as T } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
-import CoinBurst, { playCoinSound, type CoinBurstItem } from "../components/CoinBurst";
+import CoinBurst from "../components/CoinBurst";
+import { useCoinBurst } from "../hooks/useCoinBurst";
 
 interface BonusPageProps { userId: number; token: string; }
 
@@ -33,18 +34,11 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
   const [lastClaimAt, setLastClaimAt] = useState<number | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const [bursts, setBursts] = useState<CoinBurstItem[]>([]);
+  const { bursts, trigger: triggerBurst } = useCoinBurst();
   // ⚙️ إعدادات المدير الحية: مكافآت السلسلة + مضاعف المستوى + خطة المستويات
   const [dailyRewards, setDailyRewards] = useState<number[]>(STREAK_REWARDS);
   const [dailyLevelMult, setDailyLevelMult] = useState<number>(0.05);
   const [levelPlan, setLevelPlan] = useState<{ level: number; minXp: number; name: string; color: string }[]>(DEFAULT_LEVEL_PLAN);
-
-  // حذف تلقائي للبُرز المنتهية
-  useEffect(() => {
-    if (!bursts.length) return;
-    const t = setTimeout(() => setBursts((prev) => prev.slice(1)), 1800);
-    return () => clearTimeout(t);
-  }, [bursts]);
 
   // ⏱️ عدّاد حي لعدّاد القفل
   useEffect(() => {
@@ -153,12 +147,9 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
           const btn = document.getElementById("bonus-claim-btn") as HTMLElement | null;
           const src = btn || document.body;
           const r = src.getBoundingClientRect();
-          const x = r.left + r.width / 2;
-          const y = r.top + r.height / 2;
           const reward = Number(data.reward ?? 0);
-          const label = reward > 0 ? `+${reward.toFixed(4)}` : undefined;
-          setBursts((prev) => [...prev, { id: Date.now() + Math.random(), x, y, label }]);
-          playCoinSound();
+          const label = reward > 0 ? `+${reward.toFixed(4)}` : "+0.00";
+          triggerBurst(r, label);
         } catch { /* تجاهل */ }
       } else {
         toast.warning(data.message || t("bonus.alreadyClaimed"));
