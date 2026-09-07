@@ -57,20 +57,27 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [token]);
 
-  // 🪙 تمرير لحظي لمؤثر تطاير العملة 3D عند النجاح في ترقية كارت
+  // 🪙 تمرير لحظي لمؤثر تطاير العملة 3D عند النجاح في ترقية كارت — ينطلق من زر الترقية نفسه
   const fireBurst = (cardKey: string) => {
     try {
-      const el = document.getElementById(`card-${cardKey}`);
-      if (!el) return;
-      const r = el.getBoundingClientRect();
+      const btn = document.getElementById(`upgrade-btn-${cardKey}`) as HTMLElement | null;
+      const cardEl = document.getElementById(`card-${cardKey}`) as HTMLElement | null;
+      const src = btn ?? cardEl;
+      if (!src) return;
+      const r = src.getBoundingClientRect();
       if (!r) return;
       const card = cards.find((x) => x.key === cardKey);
       const label = card ? `+${card.reward}` : undefined;
-      setBursts((prev) => [...prev, { id: Date.now() + Math.random(), x: r.left + r.width / 2, y: r.top, label }]);
+      // من مركز زر الترقية (نقطة اللمس التي أطلقها المستخدم)
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      setBursts((prev) => [...prev, { id: Date.now() + Math.random(), x, y, label }]);
       playCoinSound();
-      el.classList.remove("card-upgraded-glow");
-      void el.offsetWidth; // إعادة تشغيل الوميض
-      el.classList.add("card-upgraded-glow");
+      if (cardEl) {
+        cardEl.classList.remove("card-upgraded-glow");
+        void cardEl.offsetWidth; // إعادة تشغيل الوميض
+        cardEl.classList.add("card-upgraded-glow");
+      }
     } catch { /* تجاهل */ }
   };
 
@@ -223,6 +230,7 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
               ) : (
                 <>
                   <button
+                    id={`upgrade-btn-${c.key}`}
                     onClick={() => upgrade(c.key)}
                     disabled={!affordable || !!pendingBump}
                     className="btn btn-primary"
