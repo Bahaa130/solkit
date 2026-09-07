@@ -11,7 +11,7 @@ export function useCoinBurst() {
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
     setBursts((p) => [...p, { id, x, y, label }]);
-    playCoinSound().catch(() => {});
+    try { playCoinSound(); } catch {}
   };
 
   useEffect(() => {
