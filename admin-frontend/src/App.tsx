@@ -617,12 +617,12 @@ export default function App() {
     : "";
 
   const tabs = [
-    { key: "home", icon: "🏠", adminOnly: false },
-    { key: "airdrop", icon: "🪂", adminOnly: false },
-    { key: "referral", icon: "🔗", adminOnly: false },
-{ key: "tasks", icon: "🎁", adminOnly: false },
-    { key: "bonus", icon: "📅", adminOnly: false },
-    { key: "admin", icon: "👑", adminOnly: true },
+    { key: "home", icon: "https://api.iconify.design/mdi/home.svg", adminOnly: false },
+    { key: "airdrop", icon: "https://api.iconify.design/mdi/parachute.svg", adminOnly: false },
+    { key: "referral", icon: "https://api.iconify.design/mdi/link.svg", adminOnly: false },
+    { key: "tasks", icon: "https://api.iconify.design/mdi/gift.svg", adminOnly: false },
+    { key: "bonus", icon: "https://api.iconify.design/mdi/calendar.svg", adminOnly: false },
+    { key: "admin", icon: "https://api.iconify.design/mdi/crown.svg", adminOnly: true },
   ].filter((tb) => !tb.adminOnly || session.walletAddress === ADMIN_WALLET);
 
   const textAlign = dir === "rtl" ? "right" : "left";
@@ -774,10 +774,21 @@ export default function App() {
                   style={{
                     ...styles.navItem,
                     color: active ? C.teal : C.muted,
-                    ...(active ? { background: "rgba(0,255,204,0.1)", borderTop: "2px solid " + C.teal } : {})
+                    background: active ? "rgba(0,255,204,0.10)" : "transparent",
+                    transform: active ? "scale(1.04)" : "scale(1)",
+                    boxShadow: active ? "0 4px 18px rgba(0,255,204,0.14) inset, 0 0 0 1px rgba(0,255,204,0.22)" : "none",
                   }}
                 >
-                  <span className="app-navIcon" style={styles.navIcon}>{tb.icon}</span>
+                  {tb.icon.startsWith("http") ? (
+                    <img
+                      className="app-navIcon"
+                      src={tb.icon}
+                      alt={tb.key}
+                      style={{ ...styles.navIcon, filter: active ? "brightness(0) invert(1) drop-shadow(0 0 10px rgba(0,255,204,0.6))" : "brightness(0) invert(1)", opacity: active ? 1 : 0.8 }}
+                    />
+                  ) : (
+                    <span className="app-navIcon" style={styles.navIcon}>{tb.icon}</span>
+                  )}
                   <span className="app-navLabel" style={styles.navLabel}>{t(`nav.${tb.key}`)}</span>
                 </button>
               );
@@ -970,13 +981,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     bottom: 0,
     left: 0,
     right: 0,
-    height: "calc(72px + var(--safe-area-inset-bottom, 0px))",
+    height: "calc(84px + var(--safe-area-inset-bottom, 0px))",
     paddingBottom: "var(--safe-area-inset-bottom, 0px)",
     display: "flex",
-    background: "rgba(10,15,30,0.85)",
-    backdropFilter: "blur(16px)",
-    WebkitBackdropFilter: "blur(16px)",
-    borderTop: "1px solid rgba(255,255,255,0.06)",
+    background: "linear-gradient(180deg, rgba(12,18,34,0.92), rgba(6,10,22,0.96))",
+    backdropFilter: "blur(22px)",
+    WebkitBackdropFilter: "blur(22px)",
+    borderTop: "1px solid rgba(0,255,204,0.12)",
+    borderRadius: "28px 28px 0 0",
+    boxShadow: "0 -12px 36px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04) inset",
     zIndex: 100
   },
   navItem: {
@@ -985,16 +998,19 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    gap: 3,
+    gap: 6,
+    padding: "6px 8px",
     background: "transparent",
     border: "none",
+    borderRadius: 14,
     cursor: "pointer",
     fontFamily: font,
-    fontWeight: 700,
+    fontWeight: 800,
     fontSize: 11,
-    transition: "color .2s ease, background .2s ease"
+    transition: "all .22s ease",
+    color: C.muted,
   },
-  navIcon: { fontSize: 20, transition: "transform .2s ease" },
+  navIcon: { width: 26, height: 26, transition: "transform .22s ease, filter .22s ease", display: "block" },
   navLabel: { fontSize: 11, fontWeight: 700 }
 };
 
