@@ -1424,6 +1424,7 @@ router.get("/settings", async (_req: Request, res: Response) => {
       xpRef: s.xpRef ?? 50,
       xpMine: s.xpMine ?? 30,
       xpBonus: s.xpBonus ?? 15,
+      miningDuration: s.miningDuration ?? 24,
       cards: s.cards || [],
     });
   } catch (error: any) {
@@ -1562,6 +1563,7 @@ router.post("/admin/settings", authenticateJWT, async (req: AuthenticatedRequest
       xpRef: updated.xpRef ?? 50,
       xpMine: updated.xpMine ?? 30,
       xpBonus: updated.xpBonus ?? 15,
+      miningDuration: updated.miningDuration ?? 24,
       cards: updated.cards || [],
     });
   } catch (error: any) {
