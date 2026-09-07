@@ -182,14 +182,28 @@ const DEFAULTS: SiteSettings = {
 };
 
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)
+let cachedSettings: SiteSettings | null = null;
+let cacheTime = 0;
+const CACHE_TTL_MS = 5000;
+
 export function getSettings(): SiteSettings {
+  const now = Date.now();
+  if (cachedSettings && now - cacheTime < CACHE_TTL_MS) {
+    return cachedSettings;
+  }
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
       const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
-      return { ...DEFAULTS, ...JSON.parse(raw) };
+      cachedSettings = { ...DEFAULTS, ...JSON.parse(raw) };
+    } else {
+      cachedSettings = { ...DEFAULTS };
     }
   } catch { /* تجاهل أي خطأ قراءة */ }
-  return { ...DEFAULTS };
+  if (!cachedSettings) {
+    cachedSettings = { ...DEFAULTS };
+  }
+  cacheTime = now;
+  return cachedSettings;
 }
 
 // ✏️ تحديث الإعدادات وحفظها على القرص
@@ -198,6 +212,8 @@ export function updateSettings(partial: Partial<SiteSettings>): SiteSettings {
   const updated = { ...current, ...partial };
   try {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2), "utf-8");
+    cachedSettings = updated;
+    cacheTime = Date.now();
   } catch (err) {
     console.error("Failed to save settings:", err);
   }

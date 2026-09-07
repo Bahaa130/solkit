@@ -9,6 +9,7 @@ interface Props {
 }
 
 const DAY_LABELS = ["اليوم 1", "اليوم 2", "اليوم 3", "اليوم 4", "اليوم 5", "اليوم 6", "اليوم 7 🔥"];
+const DAYS_ORDER = [0, 1, 2, 3, 4, 5, 6];
 
 export default function RulesPanel({ token }: Props) {
   const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
@@ -165,8 +166,6 @@ siteShare: (Number(siteSharePct) || 0) / 100,
     </div>
   );
 }
-
-const DAYS_ORDER = [0, 1, 2, 3, 4, 5, 6];
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: { padding: 20, display: "flex", flexDirection: "column", gap: 20, maxWidth: 900, margin: "0 auto", direction: "rtl", fontFamily: font, width: "100%", minWidth: 0, boxSizing: "border-box" },
