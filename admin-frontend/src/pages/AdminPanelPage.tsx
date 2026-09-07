@@ -320,13 +320,15 @@ export default function AdminPanelPage({ token }: { token: string }) {
 
   return (
     <div style={{ ...styles.container, direction: dir }}>
-      <div style={styles.headerBox}>
-        <h1 style={styles.title}>👑 {t("nav.admin")} — {branding.projectName}</h1>
-        <p style={styles.subtitle}>لوحة تحكم المسؤول • إعدادات النظام والإحصائيات في مكان واحد</p>
+      <div className="admin-header-hero">
+        <span className="admin-crown">👑</span>
+        <h1 className="admin-hero-title">{branding.projectName} — {t("nav.admin")}</h1>
+        <p className="admin-hero-sub">⚙️ مركز التحكم الكامل — إدارة تطبيقك في مكان واحد</p>
       </div>
 
       <div className="admin-layout">
         <aside className="admin-sidenav">
+          <span className="admin-sidenav-label">⚙️ الأقسام</span>
           {ADMIN_TABS.map((tb) => (
             <button
               key={tb.key}
@@ -339,7 +341,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
           ))}
         </aside>
 
-        <main className="admin-content"> 
+        <div className="admin-content">
           {adminTab === "distribution" ? (
             <DistributionPanel token={token} />
       ) : adminTab === "tasks" ? (
@@ -706,13 +708,13 @@ export default function AdminPanelPage({ token }: { token: string }) {
         <CardsAdminPanel token={token} />
       ) : (
         <>
-        <div style={styles.statsGrid}>
+        <div className="admin-stats-grid">
           {statCards.map((s, i) => (
-          <div key={i} className="glass" style={styles.statCard}>
-            <span style={styles.statIcon}>{s.icon}</span>
-            <span style={styles.statLabel}>{s.label}</span>
-            <h2 style={{ ...styles.statValue, color: s.color }}>
-              {s.value} <span style={{ fontSize: 12, fontWeight: 700 }}>{s.unit}</span>
+          <div key={i} className="admin-stat-card">
+            <span className="admin-stat-icon">{s.icon}</span>
+            <span className="admin-stat-label">{s.label}</span>
+            <h2 className="admin-stat-value" style={{ color: s.color }}>
+              {s.value} <span className="admin-stat-unit">{s.unit}</span>
             </h2>
           </div>
         ))}
@@ -720,18 +722,18 @@ export default function AdminPanelPage({ token }: { token: string }) {
       <ProjectAnalytics token={token} />
         </>
       )}
-        </main>
+        </div>
       </div>
     </div>
   );
 }
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: { padding: 16, display: "flex", flexDirection: "column", gap: 16, maxWidth: 1200, margin: "0 auto", direction: "rtl", fontFamily: font, width: "100%", minWidth: 0, boxSizing: "border-box" },
+  container: { padding: 16, display: "flex", flexDirection: "column", gap: 16, maxWidth: 900, margin: "0 auto", direction: "rtl", fontFamily: font, width: "100%", minWidth: 0, boxSizing: "border-box" },
   headerBox: { textAlign: "center", marginBottom: 6 },
   title: { fontSize: 22, color: C.text, margin: 0, fontWeight: 900 },
   subtitle: { color: C.muted, fontSize: 13, marginTop: 6 },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 },
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 },
   statCard: { borderRadius: 18, padding: "18px 14px", minWidth: 0, textAlign: "center" },
   statIcon: { fontSize: 22, display: "block", marginBottom: 8 },
   statLabel: { color: C.muted, fontSize: 12.5, display: "block" },

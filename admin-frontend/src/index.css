@@ -352,40 +352,119 @@ html, body { overflow-x: hidden; }
   .btn { min-height: 46px; }
 }
 
-/* ─── لوحة المدير: قائمة جانبية أنيقة تعرض كل الأقسام (لا يختفي أي تبويب خارج الشاشة) ─── */
-.admin-layout { display: flex; gap: 16px; align-items: flex-start; }
+/* ─── لوحة المدير: تصميم عصري بقائمة جانبية زجاجية ─── */
+.admin-layout { display: flex; gap: 18px; align-items: flex-start; }
 .admin-sidenav {
-  flex: 0 0 224px; display: flex; flex-direction: column; gap: 4px;
-  position: sticky; top: 10px; padding: 8px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.09); border-radius: 16px;
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+  flex: 0 0 232px; display: flex; flex-direction: column; gap: 5px;
+  position: sticky; top: 12px; padding: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025));
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 20px;
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.35);
+}
+.admin-sidenav-label {
+  font-size: 10.5px; letter-spacing: 1.5px; color: rgba(255,255,255,0.35);
+  font-weight: 900; padding: 4px 10px 8px; text-transform: uppercase;
 }
 .admin-content { flex: 1; min-width: 0; }
 .admin-tab {
-  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
-  width: 100%; padding: 11px 14px; border-radius: 12px; text-align: right;
-  border: none; background: transparent; color: #8b93ab; font-weight: 800;
-  font-size: 13px; cursor: pointer; font-family: inherit; transition: all .2s ease;
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
+  width: 100%; padding: 11px 13px; border-radius: 13px; text-align: right;
+  border: none; background: transparent; color: #8b93ab; font-weight: 700;
+  font-size: 13px; cursor: pointer; font-family: inherit; transition: all .18s ease;
+  position: relative; overflow: hidden;
 }
-.admin-tab .tab-ico { font-size: 16px; line-height: 1; flex: 0 0 auto; }
+.admin-tab .tab-ico {
+  font-size: 16px; line-height: 1; flex: 0 0 auto;
+  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.07);
+  transition: all .18s ease;
+}
 .admin-tab .tab-label { overflow: hidden; text-overflow: ellipsis; }
-.admin-tab:hover { background: rgba(255,255,255,0.07); color: #c9d2e8; }
-.admin-tab-active {
-  background: linear-gradient(135deg, rgba(0,255,204,0.20), rgba(124,92,255,0.20));
-  color: #00ffcc;
-  box-shadow: 0 0 18px rgba(0,255,204,0.20), inset 0 0 0 1px rgba(0,255,204,0.35);
+.admin-tab:hover {
+  background: rgba(255,255,255,0.07); color: #dbe3f5;
 }
+.admin-tab:hover .tab-ico {
+  background: rgba(0,255,204,0.12); border-color: rgba(0,255,204,0.3);
+  box-shadow: 0 0 12px rgba(0,255,204,0.18);
+}
+.admin-tab-active {
+  background: linear-gradient(135deg, rgba(0,255,204,0.18), rgba(124,92,255,0.18));
+  color: #00ffcc;
+  box-shadow: inset 0 0 0 1px rgba(0,255,204,0.3);
+}
+.admin-tab-active::before {
+  content: ""; position: absolute; right: 0; top: 20%; bottom: 20%; width: 3px;
+  border-radius: 3px; background: linear-gradient(180deg, #00ffcc, #7c5cff);
+  box-shadow: 0 0 12px rgba(0,255,204,0.7);
+}
+.admin-tab-active .tab-ico {
+  background: linear-gradient(135deg, rgba(0,255,204,0.25), rgba(124,92,255,0.25));
+  border-color: rgba(0,255,204,0.45);
+  box-shadow: 0 0 14px rgba(0,255,204,0.28);
+}
+
+/* بطاقات الإحصائيات */
+.admin-stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px;
+  margin-bottom: 18px;
+}
+.admin-stat-card {
+  position: relative; border-radius: 20px; padding: 20px 16px; min-width: 0;
+  text-align: center; overflow: hidden;
+  background: linear-gradient(160deg, rgba(255,255,255,0.09), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.admin-stat-card::before {
+  content: ""; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background: radial-gradient(120px 60px at 50% 0%, rgba(255,255,255,0.14), transparent 70%);
+}
+.admin-stat-card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(0,0,0,0.42); }
+.admin-stat-icon {
+  display: inline-grid; place-items: center; width: 52px; height: 52px;
+  margin-bottom: 10px; font-size: 26px; border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0,255,204,0.18), rgba(124,92,255,0.18));
+  border: 1px solid rgba(0,255,204,0.25);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.admin-stat-label { color: #b6bfd6; font-size: 12.5px; font-weight: 700; display: block; }
+.admin-stat-value { margin: 8px 0 0; font-size: 24px; font-weight: 900; letter-spacing: .2px; }
+.admin-stat-unit { font-size: 11.5px; font-weight: 700; opacity: .75; }
+
+.admin-header-hero {
+  position: relative; text-align: center; padding: 26px 18px 24px; margin-bottom: 18px;
+  border-radius: 24px; overflow: hidden;
+  background: linear-gradient(135deg, rgba(0,255,204,0.12), rgba(124,92,255,0.14), rgba(255,92,122,0.08));
+  border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 14px 44px rgba(0,0,0,0.35);
+}
+.admin-header-hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(280px 100px at 50% 0%, rgba(255,255,255,0.12), transparent 70%);
+}
+.admin-crown { font-size: 40px; display: block; margin-bottom: 6px; filter: drop-shadow(0 6px 18px rgba(0,255,204,0.35)); }
+.admin-hero-title {
+  margin: 0; font-size: 26px; font-weight: 900; letter-spacing: .3px;
+  background: linear-gradient(90deg, #00ffcc, #7c9aff, #ff8ec4);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.admin-hero-sub { color: #aeb8d0; font-size: 12.5px; margin: 8px 0 0; font-weight: 700; }
 
 /* 📱 على الهاتف: القائمة الجانبية تتحوّل لشبكة كاملة لا تخفي أي قسم */
 @media (max-width: 860px) {
   .admin-layout { flex-direction: column; }
   .admin-sidenav {
     flex: 1; width: 100%; position: relative; top: auto;
-    flex-direction: row; flex-wrap: wrap; gap: 6px;
+    flex-direction: row; flex-wrap: wrap; gap: 6px; border-radius: 18px;
   }
+  .admin-sidenav-label { width: 100%; }
   .admin-tab { width: auto; flex: 1 1 calc(50% - 6px); justify-content: flex-start; }
+  .admin-tab-active::before { display: none; }
+  .admin-stats-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 }
 
 /* ─── محرر المستويات: شبكة أعمدة على الشاشات الواسعة، بطاقات مكدّسة على الهاتف ─── */
