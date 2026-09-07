@@ -455,26 +455,93 @@ button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 .table-wrapper + .pendingList { width: 100%; }
 
 /* ============================================
-   🪙 مؤثر تطاير العملة عند ترقية الكروت (دافع بصري)
+   🪙 مؤثر تطاير العملة 3D عند ترقية الكروت (دافع بصري قوي)
    ============================================ */
 .coin-burst-layer {
   position: fixed; inset: 0; z-index: 9999;
   pointer-events: none; overflow: hidden;
 }
-.coin-particle {
-  position: absolute;
+
+/* المسار القوسي بالجاذبية: صعود سريع ثم سقوط لطيف مع انزياح أفقي */
+.coin-orbit {
+  position: absolute; left: 0; top: 0;
   will-change: transform, opacity;
-  animation: coinFly 1.05s cubic-bezier(0.15, 0.55, 0.35, 1) forwards;
+  animation: coinFly3d 1.35s cubic-bezier(0.16, 0.68, 0.4, 1) forwards;
 }
-@keyframes coinFly {
-  0%   { transform: translate3d(-50%, -50%, 0) rotate(0deg) scale(0.4); opacity: 0; }
-  10%  { opacity: 1; }
-  60%  { opacity: 1; }
-  100% { transform: translate3d(calc(-50% + var(--dx)), calc(-50% + var(--dy)), 0) rotate(var(--rot)) scale(1.15); opacity: 0; }
+@keyframes coinFly3d {
+  0%   { transform: translate3d(-50%, -50%, 0) scale(0.2); opacity: 0; }
+  8%   { opacity: 1; }
+  38%  { transform: translate3d(calc(-50% + var(--dx) * 0.75), calc(-50% + var(--up)), 0) scale(var(--sk)); opacity: 1; }
+  72%  { opacity: 1; }
+  100% { transform: translate3d(calc(-50% + var(--dx)), calc(-50% + var(--down)), 0) scale(calc(var(--sk) * 0.85)); opacity: 0; }
 }
+
+/* دوران ثلاثي الأبعاد حول المحور Y (مدّرج أفقي) مع ميل خفيف — إحساس معدن حقيقي */
+.coin-spin {
+  transform-style: preserve-3d;
+  animation: coinSpin var(--spinTime, 0.85s) linear infinite;
+}
+@keyframes coinSpin {
+  0%   { transform: rotateY(0deg) rotateX(16deg); }
+  100% { transform: rotateY(720deg) rotateX(16deg); }
+}
+.coin-face { backface-visibility: hidden; display: block; }
+.coin-back { position: absolute; inset: 0; transform: rotateY(180deg); }
+/* ظل ذهبي خلف العملة يوحي بسماكة معدنية */
+.coin-depth {
+  position: absolute; inset: -2px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 236, 160, 0.9), rgba(180, 120, 20, 0.55) 75%);
+  filter: blur(2px); transform: translateZ(-3px); z-index: -1;
+}
+
+/* حلقة انفجار تومض من مركز الكارت */
+.burst-flash {
+  position: absolute; border-radius: 50%;
+  border: 3px solid rgba(0, 255, 204, 0.85);
+  box-shadow: 0 0 24px 4px rgba(0, 255, 204, 0.55), inset 0 0 20px rgba(0, 255, 204, 0.35);
+  animation: flashRing 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes flashRing {
+  0%   { transform: translate(-50%, -50%) scale(0.15); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(3.9); opacity: 0; }
+}
+
+/* شرارة نجمية صغيرة */
+.burst-spark {
+  position: absolute; font-weight: 900; line-height: 1;
+  text-shadow: 0 0 8px currentColor;
+  animation: sparkFly 0.9s ease-out forwards;
+}
+@keyframes sparkFly {
+  0%   { transform: translate3d(-50%, -50%, 0) scale(0.3) rotate(0deg); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translate3d(calc(-50% + var(--sdx)), calc(-50% + var(--sdy)), 0) scale(1) rotate(var(--srot)); opacity: 0; }
+}
+
+/* نص عائم: مقدار الزيادة في الدخل */
+.burst-label {
+  position: absolute; transform: translate(-50%, -50%);
+  font-weight: 900; white-space: nowrap;
+  color: #00ffcc; text-shadow: 0 0 14px rgba(0, 255, 204, 0.8), 0 2px 6px rgba(0,0,0,0.6);
+  animation: labelRise 1.3s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+@keyframes labelRise {
+  0%   { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+  18%  { transform: translate(-50%, -50%) scale(1.18); opacity: 1; }
+  55%  { opacity: 1; }
+  100% { transform: translate(-50%, calc(-50% - 92px)) scale(1); opacity: 0; }
+}
+
 /* وميض متلألئ خفيف حول الكارت بعد الترقية */
 @keyframes levelGlow {
   0%   { box-shadow: 0 0 0 0 rgba(0,255,204,0.55); }
   100% { box-shadow: 0 0 0 22px rgba(0,255,204,0); }
 }
-.card-upgraded-glow { animation: levelGlow 0.7s ease-out 1; }
+@keyframes cardPop {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.045); }
+  100% { transform: scale(1); }
+}
+.card-upgraded-glow {
+  animation: levelGlow 0.7s ease-out 1, cardPop 0.55s cubic-bezier(0.3, 1.4, 0.5, 1) 1;
+}

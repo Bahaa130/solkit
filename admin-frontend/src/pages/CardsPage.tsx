@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
-import CoinBurst, { type CoinBurstItem } from "../components/CoinBurst";
+import CoinBurst, { playCoinSound, type CoinBurstItem } from "../components/CoinBurst";
 
 interface CardInfo {
   key: string;
@@ -57,14 +57,17 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [token]);
 
-  // 🪙 تمرير لحظي لمؤثر تطاير العملة عند النجاح في ترقية كارت
+  // 🪙 تمرير لحظي لمؤثر تطاير العملة 3D عند النجاح في ترقية كارت
   const fireBurst = (cardKey: string) => {
     try {
       const el = document.getElementById(`card-${cardKey}`);
       if (!el) return;
       const r = el.getBoundingClientRect();
       if (!r) return;
-      setBursts((prev) => [...prev, { id: Date.now() + Math.random(), x: r.left + r.width / 2, y: r.top }]);
+      const card = cards.find((x) => x.key === cardKey);
+      const label = card ? `+${card.reward}` : undefined;
+      setBursts((prev) => [...prev, { id: Date.now() + Math.random(), x: r.left + r.width / 2, y: r.top, label }]);
+      playCoinSound();
       el.classList.remove("card-upgraded-glow");
       void el.offsetWidth; // إعادة تشغيل الوميض
       el.classList.add("card-upgraded-glow");
@@ -74,7 +77,7 @@ export default function CardsPage({ token }: { userId: number; token: string }) 
   // حذف تلقائي للبُرز المنتهية (بعد انتهاء الحركة)
   useEffect(() => {
     if (!bursts.length) return;
-    const t = setTimeout(() => setBursts((prev) => prev.slice(1)), 1250);
+    const t = setTimeout(() => setBursts((prev) => prev.slice(1)), 1800);
     return () => clearTimeout(t);
   }, [bursts]);
 
