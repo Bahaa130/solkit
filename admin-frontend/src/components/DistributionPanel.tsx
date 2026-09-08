@@ -8,6 +8,7 @@ import {
 } from "@solana/spl-token";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
+import { useSolanaWallet } from "../lib/walletProvider";
 
 interface DistributionPanelProps {
   token: string;
@@ -43,6 +44,7 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
   const [status, setStatus] = useState<{ type: string; text: string } | null>(null);
   const [percentage, setPercentage] = useState<number>(100);
   const { t } = useLang();
+  const { address: connectedAddress, connectWallet, sendTransaction } = useSolanaWallet();
 
   const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
 
@@ -97,9 +99,18 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
   // تنفيذ التوزيع: بناء المعاملات وتوقيعها عبر Phantom ثم تأكيدها بلوكشينياً
   const distributeNow = async () => {
     if (!preview || !preview.recipients?.length) return;
-    const provider = (window as any).solana;
-    if (!provider || !provider.isPhantom) {
+
+    // 🪙 ربط محفظة المدير عبر طبقة المحفظة الموحّدة — تعمل على الهاتف (روابط Phantom / WalletConnect) وعلى الويب (امتداد Phantom)
+    let sender = connectedAddress;
+    if (!sender) {
+      setStatus({ type: "loading", text: "جاري ربط محفظة المدير (Phantom) — افتح تطبيق Phantom ووافق..." });
+      try { sender = await connectWallet(); } catch { sender = null; }
+    }
+    if (!sender) {
       return setStatus({ type: "error", text: "الرجاء ربط محفظة المدير (Phantom) أولاً!" });
+    }
+    if (sender !== preview.treasuryWallet) {
+      return setStatus({ type: "error", text: "المحفظة المتصلة ليست محفظة الخزانة (المدير)!" });
     }
 
     try {
@@ -111,11 +122,7 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       const mint = new PublicKey(preview.mint);
       const treasury = new PublicKey(preview.treasuryWallet);
       const treasuryAta = await getAssociatedTokenAddress(mint, treasury);
-      const providerPubkey = new PublicKey(provider.publicKey.toString());
-
-      if (providerPubkey.toBase58() !== preview.treasuryWallet) {
-        return setStatus({ type: "error", text: "المحفظة المتصلة ليست محفظة الخزانة (المدير)!" });
-      }
+      const providerPubkey = new PublicKey(sender);
 
       const decimals = preview.decimals;
       // تقسيم المستلمين لدفعات ضمن حد حجم المعاملة
@@ -150,8 +157,7 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
         tx.recentBlockhash = blockhash.blockhash;
 
         setStatus({ type: "loading", text: `⏳ دفعة ${b + 1}/${batches.length} — افتح Phantom لتوقيع إرسال التوكن...` });
-        const signed = await provider.signAndSendTransaction(tx);
-        const sig = typeof signed === "string" ? signed : signed?.signature;
+        const sig = await sendTransaction(tx, connection);
         if (!sig) throw new Error("لم يُرجع Phantom توقيع المعاملة");
 
         // 🔁 تأكيد محلي "أفضل جهد" — لا يُرمى خطأ انتهاء الارتفاع (block height exceeded):
