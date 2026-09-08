@@ -78,7 +78,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
   const fetchBonus = useCallback(async () => {
     if (!userId) return;
     try {
-      const res = await apiFetch(`/api/users/${userId}`);
+      const res = await apiFetch(`/api/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
         setLevel(Number(data.currentLevel || 1));
@@ -94,7 +94,7 @@ export default function BonusPage({ userId, token }: BonusPageProps) {
         }
       }
     } catch (err) { console.error(err); }
-  }, [userId]);
+  }, [userId, token]);
 
   useEffect(() => { fetchBonus(); }, [fetchBonus]);
 

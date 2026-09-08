@@ -14,6 +14,7 @@ type LeaderboardTab = "xp" | "miners" | "referrers" | "games";
 // 💡 طرق كسب نقاط النشاط للوصول للمستوى التالي — كل مستوى له قيمه الخاصة (يضبطها المدير)
 const HOW_DEFAULTS: { label: string; key: string; pts: number }[] = [
   { label: "levels.actLogin", key: "xpLogin", pts: 10 },
+  { label: "levels.actTask", key: "xpTask", pts: 25 },
   { label: "levels.actGame", key: "xpGame", pts: 5 },
   { label: "levels.actRef", key: "xpRef", pts: 50 },
   { label: "levels.actMine", key: "xpMine", pts: 30 },
@@ -95,10 +96,10 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
 
   const myLevel = plan.find((d) => d.level === me.currentLevel) || plan[0];
   const idx = plan.findIndex((d) => d.level === me.currentLevel);
-  const next = idx >= 0 && idx < plan.length - 1 ? plan[idx + 1] : null;
   const curMin = myLevel?.minXp || 0;
+  const next = idx >= 0 && idx < plan.length - 1 ? plan[idx + 1] : null;
   const nextMin = next?.minXp ?? curMin;
-  const progress = next ? Math.max(0, Math.min(100, ((me.currentXp - curMin) / Math.max(1, nextMin - curMin)) * 100)) : 100;
+  const progress = next ? Math.max(0, Math.min(100, (me.currentXp / nextMin) * 100)) : 100;
   const color = myLevel?.color || C.teal;
   const gap = next ? Math.max(0, next.minXp - me.currentXp) : 0;
 
@@ -109,6 +110,15 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
   });
 
   const short = (w: string | null) => (w && w.length > 10 ? `${w.slice(0, 4)}…${w.slice(-4)}` : (w || "—"));
+
+  // 🎯 تنسيق قيمة كل تصنيف بدقة (XP/إحالات أعداد صحيحة، المعدنون 8 خانات، الألعاب عشريتان)
+  const formatLeaderValue = (tab: LeaderboardTab, v: any) => {
+    const n = Number(v) || 0;
+    if (tab === "xp") return Math.round(n).toLocaleString();
+    if (tab === "referrers") return String(Math.round(n));
+    if (tab === "miners") return n.toFixed(8).replace(/0+$/, "").replace(/\.$/, "");
+    return n.toFixed(2);
+  };
 
   // 🏆 تبويبات لوحة التصدر
   const leaderTabs: { key: LeaderboardTab; icon: string; label: string }[] = [
@@ -282,11 +292,7 @@ export default function LevelsPage({ userId, token }: { userId: number; token: s
                 Lv.{r.currentLevel}
               </span>
               <span style={{ ...styles.xpVal, color: C.teal }}>
-                {typeof r.value === "number"
-                  ? (activeLeaderTab === "xp" || activeLeaderTab === "games"
-                      ? r.value.toLocaleString()
-                      : r.value.toFixed(4))
-                  : r.value}
+                {formatLeaderValue(activeLeaderTab, r.value)}
               </span>
             </div>
           );

@@ -1628,15 +1628,31 @@ router.post("/admin/card-image/delete", authenticateJWT, async (req: Authenticat
   } catch { return res.status(500).json({ message: "فشل حذف الصورة" }); }
 });
 
-  router.get("/:id", async (req, res) => {
+  router.get("/:id", authenticateJWT, async (req: AuthenticatedRequest, res) => {
     try {
+      const requestedId = Number(req.params.id);
+      const callerId = req.user!.id;
+      // السماح فقط لمالك الحساب أو الأدمن
+      if (callerId !== requestedId && req.user!.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
       const user = await prisma.user.findUnique({
-        where: { id: Number(req.params.id) },
-        include: {
-          socialTasks: true,
-          dailyBonuses: true,
-          // 🔗 إرجاع محفظة صاحب الإحالة حتى تستطيع الواجهة الأمامية تقسيم الدفع على البلوكشين
-          referrer: { select: { id: true, walletAddress: true } }
+        where: { id: requestedId },
+        select: {
+          id: true,
+          walletAddress: true,
+          balance: true,
+          currentLevel: true,
+          currentXp: true,
+          activationStatus: true,
+          createdAt: true,
+          xpLoginEarned: true,
+          xpTaskEarned: true,
+          xpGameEarned: true,
+          xpRefEarned: true,
+          xpMineEarned: true,
+          xpBonusEarned: true,
+          dailyBonuses: { select: { id: true, streakDay: true, rewardAmount: true, claimedAt: true } },
         } as any
       });
 
