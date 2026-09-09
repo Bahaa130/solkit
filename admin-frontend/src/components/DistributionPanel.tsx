@@ -144,6 +144,19 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
 
       const results: { recipient: any; txSignature: string }[] = [];
 
+      // 🔄 خادم Render (الفترة المجانية) ينام بعد خمول وقد يرد 503/429 لحظة الإقلاع —
+      // نعيد محاولة قراءة أحدث بلوكهاش حتى يستيقظ ثم نكمل التوقيع.
+      let latestBlockhash: { blockhash: string; lastValidBlockHeight: number } | null = null;
+      for (let attempt = 1; attempt <= 4 && !latestBlockhash; attempt++) {
+        try {
+          if (attempt > 1) setStatus({ type: "loading", text: `إيقاظ الخادم (المحاولة ${attempt}/4) — يرجى الانتظار قليلاً...` });
+          latestBlockhash = await connection.getLatestBlockhash("confirmed");
+        } catch (e) {
+          if (attempt >= 4) throw e;
+          await new Promise((r) => setTimeout(r, 2500));
+        }
+      }
+
       for (let b = 0; b < batches.length; b++) {
         const group = batches[b];
         const tx = new Transaction();
@@ -165,8 +178,8 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
           );
         }
         tx.feePayer = providerPubkey;
-        const blockhash = await connection.getLatestBlockhash("confirmed");
-        tx.recentBlockhash = blockhash.blockhash;
+        if (!latestBlockhash) throw new Error("Failed to fetch blockhash");
+        tx.recentBlockhash = latestBlockhash.blockhash;
 
         setStatus({ type: "loading", text: `⏳ دفعة ${b + 1}/${batches.length} — افتح Phantom لتوقيع إرسال التوكن...` });
         const sig = await sendTransaction(tx, connection);
@@ -201,11 +214,15 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       } else {
         setStatus({ type: "error", text: confirmData.message || "فشل تأكيد التوزيع" });
       }
-    } catch (e: any) {
+} catch (e: any) {
       console.error("Distribution error:", e);
-      const msg = e?.message || "";
+      let msg = e?.message || "";
+      // 🌐 فشل شبكة نموذجي (خادم Render النائم في الفترة المجانية يعيد 503/429 عند الإقلاع)
+      if (/Failed to fetch|NetworkError|load failed|No data received|ERR_/i.test(msg)) {
+        msg = "تعذّر الوصول لخادم البلوكشين الآن (كان الخادم نائماً ويعود الآن). أعد الضغط على «توزيع المجمع وتصفير الأرصدة» وسيكمل التوزيع من حيث توقف — الأموال محفوظة بالكامل.";
+      }
       // 🧭 خطأ "انتهاء صلاحية الارتفاع" شائع بسبب تذبذب عقد devnet — نترجمه برسالة
-      // عربية واضحة ونطمئن: الأموال محفوظة والتوثي النهائي يتم بالسيرفر عند المحاولة التالية.
+      // عربية واضحة ونطمئن: الأموال محفوظة والتوثيق النهائي يتم بالسيرفر عند المحاولة التالية.
       if (/expired|block height exceeded/i.test(msg)) {
         setStatus({
           type: "error",
