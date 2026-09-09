@@ -140,17 +140,13 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
 
   useCapacitorWalletLinkBridge();
 
-  // 📱 عنوان المحفظة عند الربط عبر رابط Phantom الموحّد (خارج تطبيق المحفظة)
-  const [phantomAddress, setPhantomAddress] = useState<string | null>(null);
-
-  // 🔁 استعادة جلسة Phantom المحفوظة فور تشغيل التطبيق — حتى لا تُطلب شاشة
-  // «ربط المحفظة» مجدداً عند كل إعادة تشغيل (التوقيع ينتقل مباشرة للتأكيد).
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform() || isInsideWalletApp()) return;
-    const addr = restorePhantomSession();
-    console.log("[PHANTOM] جلسة محفوظة مستعادة:", addr ? addr.slice(0, 6) + "…" : "لا توجد");
-    if (addr) setPhantomAddress(addr);
-  }, []);
+  // 📱 عنوان المحفظة عند الربط عبر رابط Phantom الموحّد (خارج تطبيق المحفظة).
+  // نُهيّئه فوراً وبشكل متزامن من الجلسة المحفوظة حتى تكون محفظة التوقيع جاهزة من
+  // أول عرض بلا انتظار — فلا تظهر شاشة «ربط المحفظة» أثناء توزيع الجوائز إطلاقاً.
+  const [phantomAddress, setPhantomAddress] = useState<string | null>(() => {
+    if (!Capacitor.isNativePlatform() || isInsideWalletApp()) return null;
+    return restorePhantomSession();
+  });
 
   const nativeMobile = Capacitor.isNativePlatform() && !isInsideWalletApp();
 
@@ -225,7 +221,7 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
   const signMessageBase64 = useCallback(
     async (message: string): Promise<string | null> => {
       // 📱 موبايل أصلي خارج المحفظة: استخدم رابط التوقيع الموحّد (يُظهر نافذة التوقيع)
-      if (nativeMobile && phantomAddress) {
+      if (nativeMobile && (phantomAddress || restorePhantomSession())) {
         return await signMessagePhantomMobile(message);
       }
       // 🪟 داخل متصفح المحفظة المدمج
@@ -260,7 +256,7 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
   const sendTransactionSafe = useCallback(
     async (transaction: Transaction, connection: Connection): Promise<string> => {
       // 📱 موبايل أصلي خارج المحفظة: صفّ المحفظة عبر رابط الإرسال الموحّد
-      if (nativeMobile && phantomAddress) {
+      if (nativeMobile && (phantomAddress || restorePhantomSession())) {
         const serialized = transaction.serialize({ requireAllSignatures: false });
         return await sendTransactionPhantomMobile(serialized, connection);
       }

@@ -9,6 +9,8 @@ import {
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useSolanaWallet } from "../lib/walletProvider";
+import { restorePhantomSession } from "../lib/phantomDeeplink";
+import { Capacitor } from "@capacitor/core";
 
 interface DistributionPanelProps {
   token: string;
@@ -100,14 +102,24 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
   const distributeNow = async () => {
     if (!preview || !preview.recipients?.length) return;
 
-    // 🪙 ربط محفظة المدير عبر طبقة المحفظة الموحّدة — تعمل على الهاتف (روابط Phantom / WalletConnect) وعلى الويب (امتداد Phantom)
+    // 📱 على الموبايل: لا تُعرض شاشة «ربط المحفظة» من هنا إطلاقاً — جلسة التوقيع
+    // تُربط مرة واحدة أثناء تسجيل الدخول وتُحفظ محلياً وتُستعاد تلقائياً، فينتقل
+    // التوزيع مباشرةً إلى نافذة تأكيد/توقيع الدفع داخل Phantom.
     let sender = connectedAddress;
-    if (!sender) {
-      setStatus({ type: "loading", text: "جاري ربط محفظة المدير (Phantom) — افتح تطبيق Phantom ووافق..." });
+    if (!sender && Capacitor.isNativePlatform()) {
+      sender = restorePhantomSession();
+    } else if (!sender) {
+      // 💻 الويب: نافذة اتصال Phantom المنبثقة (سلوك طبيعي على المتصفح)
+      setStatus({ type: "loading", text: "جاري ربط محفظة المدير (Phantom) — وافق من النافذة المنبثقة..." });
       try { sender = await connectWallet(); } catch { sender = null; }
     }
     if (!sender) {
-      return setStatus({ type: "error", text: "الرجاء ربط محفظة المدير (Phantom) أولاً!" });
+      return setStatus({
+        type: "error",
+        text: Capacitor.isNativePlatform()
+          ? "لا توجد جلسة توقيع محفظة محفوظة بعد على هذا الهاتف. سجّل الدخول بالمحفظة المدير مرة واحدة (تُربط المحفظة وتُحفظ الجلسة تلقائياً) ثم عد إلى «توزيع المجمع» — سيظهر توقيع الدفع مباشرةً دون أي شاشة ربط."
+          : "الرجاء ربط محفظة المدير (Phantom) أولاً!",
+      });
     }
     if (sender !== preview.treasuryWallet) {
       return setStatus({ type: "error", text: "المحفظة المتصلة ليست محفظة الخزانة (المدير)!" });
