@@ -15,6 +15,7 @@ const SCHEME = "app.solkit.mobile";
 const PHANTOM_BASE = "https://phantom.app/ul/v1";
 const APP_URL = "app.solkit.mobile://";
 const CLUSTER = "devnet";
+const SESSION_KEY = "solkit_phantom_session";
 const RPC_URL =
   (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) ||
   "https://api.devnet.solana.com";
@@ -30,6 +31,27 @@ let session: PhantomSession | null = null;
 
 export function resetPhantomSession() {
   session = null;
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* تجاهل */ }
+}
+
+// 🔁 استعادة الجلسة المحفوظة بعد إعادة تشغيل التطبيق — بلا شاشة «ربط المحفظة» مجدداً
+// (الفائدة: الضغط على «توزيع» ينتقل مباشرة إلى توقيع المعاملة داخل Phantom).
+export function restorePhantomSession(): string | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (!saved?.dappSecret || !saved?.phantomEncPub || !saved?.session || !saved?.publicKey) return null;
+    const secretKey = bs58.decode(saved.dappSecret);
+    const dappKeyPair = nacl.box.keyPair.fromSecretKey(secretKey);
+    const sharedSecret = nacl.box.before(bs58.decode(saved.phantomEncPub), dappKeyPair.secretKey);
+    session = { dappKeyPair, sharedSecret, session: saved.session, publicKey: saved.publicKey };
+    return saved.publicKey;
+  } catch {
+    try { localStorage.removeItem(SESSION_KEY); } catch { /* تجاهل */ }
+    session = null;
+    return null;
+  }
 }
 
 type Pending = {
@@ -148,6 +170,18 @@ export async function connectPhantomMobile(): Promise<string> {
     session: decrypted.session,
     publicKey: decrypted.public_key,
   };
+  // 💾 احفظ الجلسة لاستعادتها بعد إعادة تشغيل التطبيق (توقيع لحظي دون إعادة ربط)
+  try {
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({
+        dappSecret: bs58.encode(dappKeyPair.secretKey),
+        phantomEncPub: bs58.encode(phantomEncPub),
+        session: decrypted.session,
+        publicKey: decrypted.public_key,
+      })
+    );
+  } catch { /* تجاهل */ }
   return decrypted.public_key;
 }
 

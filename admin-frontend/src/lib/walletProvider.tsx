@@ -29,6 +29,7 @@ import {
   connectPhantomMobile,
   signMessagePhantomMobile,
   sendTransactionPhantomMobile,
+  restorePhantomSession,
   resetPhantomSession,
 } from "./phantomDeeplink";
 
@@ -141,6 +142,15 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
 
   // 📱 عنوان المحفظة عند الربط عبر رابط Phantom الموحّد (خارج تطبيق المحفظة)
   const [phantomAddress, setPhantomAddress] = useState<string | null>(null);
+
+  // 🔁 استعادة جلسة Phantom المحفوظة فور تشغيل التطبيق — حتى لا تُطلب شاشة
+  // «ربط المحفظة» مجدداً عند كل إعادة تشغيل (التوقيع ينتقل مباشرة للتأكيد).
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || isInsideWalletApp()) return;
+    const addr = restorePhantomSession();
+    console.log("[PHANTOM] جلسة محفوظة مستعادة:", addr ? addr.slice(0, 6) + "…" : "لا توجد");
+    if (addr) setPhantomAddress(addr);
+  }, []);
 
   const nativeMobile = Capacitor.isNativePlatform() && !isInsideWalletApp();
 
