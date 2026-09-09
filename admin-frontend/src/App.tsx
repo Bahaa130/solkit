@@ -370,22 +370,33 @@ export default function App() {
   useEffect(() => {
     const savedJwt = localStorage.getItem("solkit_token");
     const savedWallet = localStorage.getItem("solkit_wallet");
-    const savedRole = localStorage.getItem("solkit_role");
-    const savedStatus = localStorage.getItem("solkit_status");
 
-    if (savedJwt && savedWallet) {
-      const payload = parseJwt(savedJwt);
-      const resolvedUserId = payload?.id || payload?.userId || 0;
+    if (!savedJwt || !savedWallet) return;
 
-      if (resolvedUserId > 0) {
-        setSession({
-          userId: Number(resolvedUserId),
-          walletAddress: savedWallet,
-          jwtToken: savedJwt,
-          role: savedRole ?? "user",
-          activationStatus: savedStatus ?? "inactive"
-        });
-      }
+    const payload = parseJwt(savedJwt);
+
+    // ⏳ التوكن منتهي؟ نمسح الجلسة فوراً بدل عرض صفحة "محطّمة" ببيانات فارغة
+    // (المشكلة الأصلية: كان التطبيق يثق بالقيم المخزنة ويرسل توكناً باطلاً،
+    // فترد كل المسارات بـ 403 وتظهر الأرقام أصفاراً و"التعدين متوقف").
+    if (!payload || !payload.exp || payload.exp * 1000 <= Date.now()) {
+      ["solkit_token", "solkit_wallet", "solkit_role", "solkit_status", "solkit_user_id"]
+        .forEach((k) => localStorage.removeItem(k));
+      return;
+    }
+
+    const resolvedUserId = Number(payload?.id || payload?.userId || 0);
+    if (resolvedUserId > 0) {
+      // 🛡️ الدور وحالة التفعيل من JWT الموقَّع من الخادم (مرجع موثوق) لا من localStorage
+      const role = payload?.role || localStorage.getItem("solkit_role") || "user";
+      const activationStatus = payload?.activationStatus || localStorage.getItem("solkit_status") || "inactive";
+      const walletAddress = payload?.walletAddress || savedWallet;
+      setSession({
+        userId: resolvedUserId,
+        walletAddress,
+        jwtToken: savedJwt,
+        role,
+        activationStatus
+      });
     }
   }, []);
 
@@ -602,8 +613,8 @@ export default function App() {
     );
   }
 
-  // 🔧 وضع الصيانة — يُعرض للجميع ما عدا محفظة المدير
-  if (maintenance?.enabled && session.walletAddress !== ADMIN_WALLET) {
+  // 🔧 وضع الصيانة — يُعرض للجميع ما عدا المدير
+  if (maintenance?.enabled && session.role !== "admin" && session.walletAddress !== ADMIN_WALLET) {
     return (
       <>
         <MaintenancePage onLogout={handleLogout} />
@@ -623,7 +634,7 @@ export default function App() {
     { key: "tasks", icon: "https://api.iconify.design/mdi/gift.svg", adminOnly: false },
     { key: "bonus", icon: "https://api.iconify.design/mdi/calendar.svg", adminOnly: false },
     { key: "admin", icon: "https://api.iconify.design/mdi/crown.svg", adminOnly: true },
-  ].filter((tb) => !tb.adminOnly || session.walletAddress === ADMIN_WALLET);
+  ].filter((tb) => !tb.adminOnly || session.role === "admin" || session.walletAddress === ADMIN_WALLET);
 
   const textAlign = dir === "rtl" ? "right" : "left";
 
@@ -751,7 +762,7 @@ export default function App() {
               {activeTab === "cards" && <CardsPage userId={session.userId} token={session.jwtToken || ""} />}
               {/* 👑 تبويب المدير: لا يُتاح إلا لصاحب محفظة المدير حصراً — أي مستخدم آخر يفتح ?tab=admin يُوجَّه فوراً لصفحة 404 */}
               {activeTab === "admin" && (
-                session.walletAddress === ADMIN_WALLET
+                (session.role === "admin" || session.walletAddress === ADMIN_WALLET)
                   ? <AdminPanelPage token={session.jwtToken || ""} />
                   : <NotFoundPage onNavigateTab={navigateTab} />
               )}

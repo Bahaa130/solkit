@@ -175,6 +175,14 @@ router.post("/login-wallet", async (req: Request, res: Response) => {
     // 🛡️ محفظة المدير مفعّلة دائماً — لا تتطلب دفع رسوم التفعيل
     const effectiveStatus = role === "admin" ? "active" : user.activationStatus;
 
+    // 💾 أحفظ التفعيل في قاعدة البيانات أيضاً (وليس التوكن فقط) — حتى تظهر بيانات
+    // المدير صحيحة في كل الصفحات الخادمية (التعدين/البونص/الألعاب/اللوائح) التي
+    // تقرأ الحالة من الصف مباشرةً، ولا نحتاج حقنه يدوياً بعد كل نشر.
+    if (role === "admin" && user.activationStatus !== "active") {
+      await prisma.user.update({ where: { id: user.id }, data: { activationStatus: "active" } });
+      user.activationStatus = "active";
+    }
+
     // ⭐ تضمين حالة التفعيل الفعلي الحية الحالية داخل الـ JWT Payload
     const token = jwt.sign(
       { id: user.id, walletAddress: user.walletAddress, role, activationStatus: effectiveStatus },
@@ -554,7 +562,7 @@ router.get("/mining-status", authenticateJWT, async (req: AuthenticatedRequest, 
   try {
     const userId = req.user!.id;
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.activationStatus !== "active") return res.status(403).json({ message: "Account inactive" });
+    if (!user || (user.activationStatus !== "active" && req.user!.role !== "admin")) return res.status(403).json({ message: "Account inactive" });
 
     const activeSession = await (prisma as any).miningSession.findFirst({
       where: { userId, status: "active" },
@@ -595,7 +603,7 @@ router.post("/mining-start", authenticateJWT, async (req: AuthenticatedRequest, 
   try {
     const userId = req.user!.id;
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.activationStatus !== "active") return res.status(403).json({ message: "Forbidden" });
+    if (!user || (user.activationStatus !== "active" && req.user!.role !== "admin")) return res.status(403).json({ message: "Forbidden" });
 
     // 🔒 منع الجلسات المزدوجة + قيد أرباح أي جلسة سابقة انتهت لحظياً قبل بدء جديدة
     const existing = await (prisma as any).miningSession.findFirst({
@@ -701,7 +709,7 @@ router.post("/cards/upgrade", authenticateJWT, async (req: AuthenticatedRequest,
     if (!def) return res.status(400).json({ message: "كارت غير معروف" });
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.activationStatus !== "active") return res.status(403).json({ message: "يجب تفعيل الحساب أولاً" });
+    if (!user || (user.activationStatus !== "active" && req.user!.role !== "admin")) return res.status(403).json({ message: "يجب تفعيل الحساب أولاً" });
 
     const existing = await (prisma as any).cardUpgrade.findUnique({ where: { userId_cardKey: { userId, cardKey } } });
 
@@ -761,7 +769,7 @@ router.post("/claim-daily", authenticateJWT, async (req: AuthenticatedRequest, r
     const now = new Date();
     
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.activationStatus !== "active") return res.status(403).json({ message: "يجب تفعيل الحساب أولاً" });
+    if (!user || (user.activationStatus !== "active" && req.user!.role !== "admin")) return res.status(403).json({ message: "يجب تفعيل الحساب أولاً" });
 
     // التحقق برمجياً من جدول الـ DailyBonus لمنع استلام الجائزة مرتين في نفس اليوم
     const lastClaim = await (prisma as any).dailyBonus.findFirst({
