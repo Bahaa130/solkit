@@ -48,6 +48,21 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
   const { t } = useLang();
   const { address: connectedAddress, connectWallet, sendTransaction } = useSolanaWallet();
 
+  const rpc = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
+  const [warmBlockhash, setWarmBlockhash] = useState<{ blockhash: string; lastValidBlockHeight: number } | null>(null);
+
+  // 🔥 إحماء مسبق لبروكسي RPC فور فتح اللوحة (بلا إزعاج): نقرأ أحدث بلوكهاش في الخلفية
+  // حتى يكون جاهزاً لحظة الضغط على «توزيع» — فيفتح توقيع الدفع فوراً دون انتظار إيقاظ الخادم.
+  useEffect(() => {
+    const conn = new Connection(rpc, "confirmed");
+    conn
+      .getLatestBlockhash("confirmed")
+      .then(setWarmBlockhash)
+      .catch(() => {
+        /* يُكمَل عبر محاولات الاستيقاظ عند التوزيع */
+      });
+  }, [rpc]);
+
   const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
 
   const fetchAll = async () => {
@@ -129,7 +144,6 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       setDistributing(true);
       setStatus({ type: "loading", text: "جاري بناء معاملات توزيع التوكن..." });
 
-      const rpc = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
       const connection = new Connection(rpc, "confirmed");
       const mint = new PublicKey(preview.mint);
       const treasury = new PublicKey(preview.treasuryWallet);
@@ -145,15 +159,19 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       const results: { recipient: any; txSignature: string }[] = [];
 
       // 🔄 خادم Render (الفترة المجانية) ينام بعد خمول وقد يرد 503/429 لحظة الإقلاع —
-      // نعيد محاولة قراءة أحدث بلوكهاش حتى يستيقظ ثم نكمل التوقيع.
-      let latestBlockhash: { blockhash: string; lastValidBlockHeight: number } | null = null;
-      for (let attempt = 1; attempt <= 4 && !latestBlockhash; attempt++) {
-        try {
-          if (attempt > 1) setStatus({ type: "loading", text: `إيقاظ الخادم (المحاولة ${attempt}/4) — يرجى الانتظار قليلاً...` });
-          latestBlockhash = await connection.getLatestBlockhash("confirmed");
-        } catch (e) {
-          if (attempt >= 4) throw e;
-          await new Promise((r) => setTimeout(r, 2500));
+      // نعيد محاولة قراءة أحدث بلوكهاش حتى يستيقظ ثم نكمل التوقيع مباشرةً.
+      // ونبدأ بالبلوكهاش المُحمّى مسبقاً (إن وُجد) لتجنّب أي انتظار عند التوزيع.
+      let latestBlockhash = warmBlockhash;
+      if (!latestBlockhash) {
+        for (let attempt = 1; attempt <= 6 && !latestBlockhash; attempt++) {
+          try {
+            if (attempt > 1) setStatus({ type: "loading", text: `إيقاظ الخادم (المحاولة ${attempt}/6) — يرجى الانتظار قليلاً...` });
+            latestBlockhash = await connection.getLatestBlockhash("confirmed");
+            setWarmBlockhash(latestBlockhash);
+          } catch (e) {
+            if (attempt >= 6) throw e;
+            await new Promise((r) => setTimeout(r, 3000));
+          }
         }
       }
 
