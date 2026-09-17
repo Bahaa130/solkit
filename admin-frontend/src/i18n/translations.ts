@@ -498,6 +498,20 @@ const ar: Dict = {
   "admin.analyticsUsersCount": "سجل",
   "admin.analyticsLevels": "توزيع المستويات",
 
+  // 🚀 تحليل الاكتتاب (ICO)
+  "admin.analyticsIco": "الاكتتاب (ICO)",
+  "admin.analyticsIcoPurchases": "عمليات الشراء",
+  "admin.analyticsIcoParticipants": "مشاركون",
+  "admin.analyticsIcoUndelivered": "بانتظار التوزيع",
+  "admin.analyticsIcoRaised": "المجموع المحصّل",
+  "admin.analyticsIcoTokens": "توكنات مُخصصة",
+  "admin.analyticsIcoLimits": "حدود الشراء",
+  "admin.analyticsIcoWallet": "محفظة",
+  "admin.analyticsIcoStatus": "الحالة",
+  "admin.analyticsIcoOpen": "مفتوح ✅",
+  "admin.analyticsIcoClosed": "مغلق",
+  "admin.analyticsIcoNotSet": "غير مُضبط",
+
   // 📇 بطاقات الإعلانات القابلة للترقية (نموذج هامستر)
   "cards.portalTitle": "📈 كروت الإعلانات",
   "cards.portalHint": "ترقية الكروت تزيد دخل التعدين",
@@ -1106,6 +1120,20 @@ const en: Dict = {
   "admin.analyticsUsersCount": "records",
   "admin.analyticsLevels": "Level distribution",
 
+  // 🚀 ICO analytics
+  "admin.analyticsIco": "ICO Pre-sale",
+  "admin.analyticsIcoPurchases": "Purchases",
+  "admin.analyticsIcoParticipants": "Participants",
+  "admin.analyticsIcoUndelivered": "Awaiting delivery",
+  "admin.analyticsIcoRaised": "Raised",
+  "admin.analyticsIcoTokens": "Tokens allocated",
+  "admin.analyticsIcoLimits": "Purchase limits",
+  "admin.analyticsIcoWallet": "wallet",
+  "admin.analyticsIcoStatus": "Status",
+  "admin.analyticsIcoOpen": "Open ✅",
+  "admin.analyticsIcoClosed": "Closed",
+  "admin.analyticsIcoNotSet": "Not configured",
+
   // 📇 Upgradeable ad cards (Hamster-style)
   "cards.portalTitle": "📈 Ad cards",
   "cards.portalHint": "Upgrade cards to boost mining income",
@@ -1711,6 +1739,20 @@ const fr: Dict = {
   "admin.analyticsRewardLog": "Journal des récompenses",
   "admin.analyticsUsersCount": "enregistrements",
   "admin.analyticsLevels": "Répartition des niveaux",
+
+  // 🚀 Analyse ICO
+  "admin.analyticsIco": "Prévente ICO",
+  "admin.analyticsIcoPurchases": "Achats",
+  "admin.analyticsIcoParticipants": "Participants",
+  "admin.analyticsIcoUndelivered": "En attente de distribution",
+  "admin.analyticsIcoRaised": "Montant collecté",
+  "admin.analyticsIcoTokens": "Jetons alloués",
+  "admin.analyticsIcoLimits": "Limites d'achat",
+  "admin.analyticsIcoWallet": "portefeuille",
+  "admin.analyticsIcoStatus": "Statut",
+  "admin.analyticsIcoOpen": "Ouvert ✅",
+  "admin.analyticsIcoClosed": "Fermé",
+  "admin.analyticsIcoNotSet": "Non configuré",
 
   // 📇 Cartes pub améliorables (modèle Hamster)
   "cards.portalTitle": "📈 Cartes pub",
@@ -2318,6 +2360,20 @@ const es: Dict = {
   "admin.analyticsUsersCount": "registros",
   "admin.analyticsLevels": "Distribución de niveles",
 
+  // 🚀 Análisis ICO
+  "admin.analyticsIco": "Preventa ICO",
+  "admin.analyticsIcoPurchases": "Compras",
+  "admin.analyticsIcoParticipants": "Participantes",
+  "admin.analyticsIcoUndelivered": "Pendientes de entrega",
+  "admin.analyticsIcoRaised": "Recaudado",
+  "admin.analyticsIcoTokens": "Tokens asignados",
+  "admin.analyticsIcoLimits": "Límites de compra",
+  "admin.analyticsIcoWallet": "billetera",
+  "admin.analyticsIcoStatus": "Estado",
+  "admin.analyticsIcoOpen": "Abierto ✅",
+  "admin.analyticsIcoClosed": "Cerrado",
+  "admin.analyticsIcoNotSet": "No configurado",
+
   // 📇 Tarjetas publicitarias mejorable (modelo Hamster)
   "cards.portalTitle": "📈 Tarjetas publicitarias",
   "cards.portalHint": "Mejora las tarjetas para aumentar la minería",
@@ -2904,6 +2960,20 @@ const tr: Dict = {
   "admin.analyticsRewardLog": "Token ödül kaydı",
   "admin.analyticsUsersCount": "kayıt",
   "admin.analyticsLevels": "Seviye dağılımı",
+
+  // 🚀 ICO analizi
+  "admin.analyticsIco": "ICO Ön Satış",
+  "admin.analyticsIcoPurchases": "Satın alımlar",
+  "admin.analyticsIcoParticipants": "Katılımcılar",
+  "admin.analyticsIcoUndelivered": "Dağıtım bekliyor",
+  "admin.analyticsIcoRaised": "Toplanan",
+  "admin.analyticsIcoTokens": "Ayrılan tokenlar",
+  "admin.analyticsIcoLimits": "Satın alma limitleri",
+  "admin.analyticsIcoWallet": "cüzdan",
+  "admin.analyticsIcoStatus": "Durum",
+  "admin.analyticsIcoOpen": "Açık ✅",
+  "admin.analyticsIcoClosed": "Kapalı",
+  "admin.analyticsIcoNotSet": "Yapılandırılmadı",
 
   // 📇 Yükseltilebilir reklam kartları (Hamster modeli)
   "cards.portalTitle": "📈 Reklam kartları",

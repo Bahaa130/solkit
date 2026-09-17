@@ -872,6 +872,7 @@ router.get("/admin/analytics", authenticateJWT, async (req: AuthenticatedRequest
       rewardsCount, rewardsAgg,
       balanceAgg,
       levelGroups,
+      icoPurchases, icoAgg, icoUndelivered, icoParticipants,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { activationStatus: "active" } }),
@@ -904,6 +905,10 @@ router.get("/admin/analytics", authenticateJWT, async (req: AuthenticatedRequest
       prisma.reward.aggregate({ _sum: { amount: true } }),
       prisma.user.aggregate({ _sum: { balance: true } }),
       prisma.user.groupBy({ by: ["currentLevel"], _count: { _all: true } }),
+      (prisma as any).icoPurchase.count(),
+      (prisma as any).icoPurchase.aggregate({ _sum: { solAmount: true, tokenAmount: true } }),
+      (prisma as any).icoPurchase.count({ where: { delivered: false } }),
+      (prisma as any).icoPurchase.groupBy({ by: ["userId"], _count: { _all: true } }),
     ]);
 
     const sum = (agg: any, field: string): number => Number(agg?._sum?.[field] || 0);
@@ -940,6 +945,32 @@ router.get("/admin/analytics", authenticateJWT, async (req: AuthenticatedRequest
       rewards: { count: rewardsCount, amountTotal: sum(rewardsAgg, "amount") },
       balances: { total: sum(balanceAgg, "balance") },
       levels: levelGroups.map((g: any) => ({ level: g.currentLevel, users: g._count._all })),
+      // 🚀 الاكتتاب (ICO): المشتريات والتسليم والسقوف الحيّة
+      ico: {
+        purchases: icoPurchases,
+        raisedSOL: sum(icoAgg, "solAmount"),
+        tokenAmount: sum(icoAgg, "tokenAmount"),
+        undelivered: icoUndelivered,
+        participants: Array.isArray(icoParticipants) ? icoParticipants.length : 0,
+        config: (() => {
+          const c = getSettings().ico;
+          return c
+            ? {
+                enabled: c.enabled,
+                priceSOL: c.priceSOL,
+                minSOL: c.minSOL,
+                maxSOL: c.maxSOL,
+                maxPerWalletSOL: c.maxPerWalletSOL ?? 10,
+                totalAllocation: c.totalAllocation,
+                softCapSOL: c.softCapSOL,
+                hardCapSOL: c.hardCapSOL,
+                startDate: c.startDate,
+                endDate: c.endDate,
+                tgePercent: c.tgePercent,
+              }
+            : null;
+        })(),
+      },
     });
   } catch (error) {
     console.error("Admin analytics error:", error);

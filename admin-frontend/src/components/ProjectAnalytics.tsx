@@ -15,6 +15,26 @@ interface AnalyticsData {
   rewards: { count: number; amountTotal: number };
   balances: { total: number };
   levels: { level: number; users: number }[];
+  ico: {
+    purchases: number;
+    raisedSOL: number;
+    tokenAmount: number;
+    undelivered: number;
+    participants: number;
+    config: {
+      enabled: boolean;
+      priceSOL: number;
+      minSOL: number;
+      maxSOL: number;
+      maxPerWalletSOL: number;
+      totalAllocation: number;
+      softCapSOL: number;
+      hardCapSOL: number;
+      startDate: number;
+      endDate: number;
+      tgePercent: number;
+    } | null;
+  };
 }
 
 const fmtN = (n: number): string => new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(n || 0);
@@ -64,6 +84,7 @@ export default function ProjectAnalytics({ token }: { token: string }) {
 
   const u = data.users;
   const g = data.games;
+  const ico = data.ico || { purchases: 0, raisedSOL: 0, tokenAmount: 0, undelivered: 0, participants: 0, config: null };
   const levels = [...(data.levels || [])].sort((a, b) => a.level - b.level);
   const maxLevelUsers = Math.max(1, ...levels.map((l) => l.users));
 
@@ -161,6 +182,19 @@ export default function ProjectAnalytics({ token }: { token: string }) {
         <Row label={t("admin.analyticsPaidRevenue")} value={`${fmtN(data.payments.paid)} ${t("admin.unitRequests")} — ${fmtSmall(data.payments.revenue)} SOL`} color="#ffb020" />
         <Row label={t("admin.analyticsBalance")} value={`${fmtSmall(data.balances.total)} Ⓢ`} color="#ff5c7a" />
         <Row label={t("admin.analyticsRewardLog")} value={`${fmtN(data.rewards.count)} ${t("admin.analyticsUsersCount")} — ${fmtSmall(data.rewards.amountTotal)} Ⓢ`} color="#22e584" />
+      </Section>
+
+      <Section icon="🚀" label={t("admin.analyticsIco")} color="#00ffcc">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <Metric label={t("admin.analyticsIcoPurchases")} value={`${fmtN(ico.purchases)}`} color={C.amber} />
+          <Metric label={t("admin.analyticsIcoParticipants")} value={`${fmtN(ico.participants)}`} color={C.text} />
+          <Metric label={t("admin.analyticsIcoUndelivered")} value={`${fmtN(ico.undelivered)}`} color={ico.undelivered > 0 ? "#ff5c7a" : "#22e584"} />
+        </div>
+        <div style={{ height: 10 }} />
+        <Row label={`${t("admin.analyticsIcoRaised")} (${fmtN(ico.config?.hardCapSOL || 0)} ${t("admin.unitSOL")})`} value={`${fmtSmall(ico.raisedSOL)} ${t("admin.unitSOL")}${ico.config?.hardCapSOL ? ` — ${Math.min(100, (ico.raisedSOL / ico.config.hardCapSOL) * 100).toFixed(1)}%` : ""}`} color="#ffb020" />
+        <Row label={`${t("admin.analyticsIcoTokens")} (${fmtN(ico.config?.totalAllocation || 0)})`} value={`${fmtN(ico.tokenAmount)}`} color={C.teal} />
+        <Row label={t("admin.analyticsIcoLimits")} value={`${fmtN(ico.config?.minSOL || 0)}–${fmtN(ico.config?.maxSOL || 0)} ${t("admin.unitSOL")} · 👛 ${fmtN(ico.config?.maxPerWalletSOL || 10)} ${t("admin.unitSOL")}/${t("admin.analyticsIcoWallet")}`} />
+        <Row label={t("admin.analyticsIcoStatus")} value={ico.config ? (ico.config.enabled ? t("admin.analyticsIcoOpen") : t("admin.analyticsIcoClosed")) : t("admin.analyticsIcoNotSet")} color={ico.config?.enabled ? "#22e584" : C.muted} />
       </Section>
 
       {levels.length > 0 && (
