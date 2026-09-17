@@ -189,9 +189,10 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
       const msg = err?.message;
       const known = errorMessageFor(msg);
       if (known) {
-        // 🧪 عند خطأ غير متوقع نُلحق نص الخطأ الخام من المحفظة لتشخيص السبب بدقة
-        if (msg === "sign_unknown" && err?.raw) toast.warning(`${known} (${String(err.raw).slice(0, 140)})`);
-        else toast.warning(known);
+        // 🧪 عند أي خطأ تقني نُلحق نص الخطأ الخام من المحفظة لتشخيص السبب بدقة
+        if ((msg === "sign_unknown" || msg === "sign_phantom_error") && err?.raw) {
+          toast.warning(`${known} (${String(err.raw).slice(0, 140)})`);
+        } else toast.warning(known);
       }
       else if (typeof msg === "string" && msg && !isUserCancel(msg)) toast.warning(msg);
       else toast.warning(t("connect.toastCancelled"));
