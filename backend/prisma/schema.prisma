@@ -122,16 +122,19 @@ model Payment {
 }
 
 // ⛏️ مشتريات الاكتتاب (ICO / pre-sale) — شراء التوكن قبل الطرح بالسوق
-// كل صف = عملية شراء مؤكَّدة على البلوكشين (SOL → له خزنة)، تُمنح توكنات
-// من مخصصات الاكتتاب وتُضاف لرصيد المشتري عند التحقق.
+// كل صف = عملية شراء مؤكَّدة على البلوكشين (SOL → له خزنة). توزيع التوكنات
+// يتم يدوياً من «توزيعات الاكتتاب» داخل لوحة المدير (يوقّع المدير إرسال التوكن
+// لمحافظ المشترين) ثم تُعلَّم كمُسلَّمة لمنع التكرار.
 model IcoPurchase {
-  id          Int      @id @default(autoincrement())
-  userId      Int
-  solAmount   Decimal  @db.Decimal(18, 8) // المبلغ المدفوع بالـ SOL
-  tokenAmount Decimal  @db.Decimal(18, 8) // عدد التوكنات الممنوحة
-  status      String   @default("purchased") // purchased | refunded
-  txHash      String?  @unique
-  createdAt   DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  solAmount      Decimal  @db.Decimal(18, 8) // المبلغ المدفوع بالـ SOL
+  tokenAmount    Decimal  @db.Decimal(18, 8) // عدد التوكنات المستحقة
+  status         String   @default("purchased") // purchased | refunded
+  delivered      Boolean  @default(false) // هل أرسل المدير التوكن للمشتري؟
+  deliveryTxHash String?  // توقيع معاملة التوزيع التي سلّمت التوكن
+  txHash         String?  @unique // توقيع معاملة دفع SOL
+  createdAt      DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

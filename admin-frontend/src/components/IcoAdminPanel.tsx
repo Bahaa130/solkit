@@ -6,6 +6,7 @@ import React, { useEffect, useState } from "react";
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useToast } from "../components/Toast";
+import IcoDistributionPanel from "./IcoDistributionPanel";
 
 interface Perk { icon: string; title: string; desc: string }
 interface Faq { q: string; a: string }
@@ -368,6 +369,9 @@ export default function IcoAdminPanel({ token }: Props) {
           </div>
         )}
       </div>
+
+      {/* 📤 توزيع توكنات الاكتتاب يدوياً من المدير */}
+      <IcoDistributionPanel token={token} />
     </div>
   );
 }

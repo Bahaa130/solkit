@@ -1725,20 +1725,16 @@ router.post("/ico/purchase", authenticateJWT, async (req: AuthenticatedRequest, 
       return res.status(400).json({ message: "لم نجد الدفع المؤكد لمحفظة الخزانة" });
     }
 
-    // 💾 اعتماد الشراء: سجل + رصيد + مكافأة (في معاملة واحدة ذرّية)
-    const created = await prisma.$transaction([
-      (prisma as any).icoPurchase.create({
-        data: { userId, solAmount: amount, tokenAmount, status: "purchased", txHash },
-      }),
-      prisma.user.update({ where: { id: userId }, data: { balance: { increment: tokenAmount } } }),
-      prisma.reward.create({
-        data: { userId, type: "ico_purchase", amount: tokenAmount },
-      }),
-    ]);
+    // 💾 اعتماد الشراء: تسجيل الدفعة فقط — توزيع التوكن يتم يدوياً من لوحة المدير
+// («توزيعات الاكتتاب») بعد تجمع مشتريات مؤكدّة، ثم يوقّع المدير إرسال التوكن
+// لمحافظ المشترين وتُعلَّم الصفوف كمُسلَّمة لمنع التكرار.
+    const purchase = await (prisma as any).icoPurchase.create({
+      data: { userId, solAmount: amount, tokenAmount, status: "purchased", delivered: false, txHash },
+    });
 
     return res.status(201).json({
-      message: `تم تأكيد المشاركة ✅ خصّصنا لك ${tokenAmount.toLocaleString()} توكن`,
-      purchase: created[0],
+      message: `تم تأكيد المشاركة ✅ خُصّص لك ${tokenAmount.toLocaleString()} توكن — تُسلَّم بعد موافقة التوزيع.`,
+      purchase,
       tokenAmount,
     });
   } catch (error: any) {
@@ -1787,6 +1783,106 @@ router.get("/admin/ico/purchases", authenticateJWT, async (req: AuthenticatedReq
   } catch (error: any) {
     console.error("GET / admin/ico/purchases error:", error);
     return res.status(500).json({ message: "خطأ في جلب سجل الاكتتاب" });
+  }
+});
+
+// 📤 طلبات توزيع الاكتتاب المعلّقة: المشتريات المؤكّدة التي لم تُسلَّم توكناتها بعد
+// (مجمّعة لكل محفظة مشترٍ) — لتوقيع المدير إرسال التوكن يدوياً من اللوحة.
+router.get("/admin/ico/pending", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const rows = await (prisma as any).icoPurchase.findMany({
+      where: { status: "purchased", delivered: false },
+      include: { user: { select: { walletAddress: true, email: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // ⚡ دمج المشتريات لكل محفظة (أقل معاملات توزيع) واستبعاد أصحاب المحافظ غير الصالحة
+    const byWallet = new Map<string, { walletAddress: string; tokenAmount: number; purchaseIds: number[] }>();
+    let skippedInvalid = 0;
+    for (const r of rows) {
+      const wallet = r.user?.walletAddress;
+      if (!wallet || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet)) {
+        skippedInvalid++;
+        continue;
+      }
+      const entry: { walletAddress: string; tokenAmount: number; purchaseIds: number[] } =
+        byWallet.get(wallet) || { walletAddress: wallet, tokenAmount: 0, purchaseIds: [] };
+      entry.tokenAmount += Number(r.tokenAmount);
+      entry.purchaseIds.push(r.id);
+      byWallet.set(wallet, entry);
+    }
+
+    const recipients = Array.from(byWallet.values()).map((e) => ({
+      walletAddress: e.walletAddress,
+      tokenAmount: e.tokenAmount,
+      purchaseIds: e.purchaseIds,
+    }));
+    return res.json({
+      pendingCount: rows.length,
+      skippedInvalid,
+      totalTokens: recipients.reduce((s, r) => s + r.tokenAmount, 0),
+      recipients,
+    });
+  } catch (error: any) {
+    console.error("GET / admin/ico/pending error:", error);
+    return res.status(500).json({ message: "خطأ في جلب طلبات التوزيع المعلّقة" });
+  }
+});
+
+// ✅ اعتماد توزيع الاكتتاب بعد توقيع المدير: يتحقق بلوكشينياً من استلام كل محفظة
+// للتوكن، ثم يعلّم المشتريات كمُسلَّمة (وسطّ التوزيع عبر getAssociatedTokenAddress)
+// body: { deliver: [{ walletAddress, tokenAmount, purchaseIds, txSignature }] }
+router.post("/admin/ico/distribute", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const { deliver } = req.body || {};
+    if (!Array.isArray(deliver) || deliver.length === 0) {
+      return res.status(400).json({ message: "لا توجد دفعات للتوزيع" });
+    }
+    const cfg = getTokenConfig();
+    if (!cfg.mint) return res.status(400).json({ message: "عقد التوكن غير مربوط بعد (من إعدادات التوكن)" });
+    const connection = new Connection(getRpcUrl(), "confirmed");
+    const mint = new PublicKey(cfg.mint);
+
+    const results: { walletAddress: string; tokenAmount: number; ok: boolean; purchaseIds: number[] }[] = [];
+    let deliveredTokens = 0;
+
+    for (const item of deliver) {
+      const wallet = String(item.walletAddress || "");
+      const tokenAmount = Number(item.tokenAmount);
+      const sig = String(item.txSignature || "");
+      const purchaseIds: number[] = Array.isArray(item.purchaseIds) ? item.purchaseIds.map(Number) : [];
+      if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet) || !Number.isFinite(tokenAmount) || tokenAmount <= 0 || !sig) {
+        results.push({ walletAddress: wallet, tokenAmount, ok: false, purchaseIds });
+        continue;
+      }
+      const ok = await verifyTokenReceipt(connection, sig, mint, wallet, tokenAmount);
+      results.push({ walletAddress: wallet, tokenAmount, ok, purchaseIds });
+      if (ok) {
+        deliveredTokens += tokenAmount;
+      }
+    }
+
+    // 🏷️ تحديد المشتريات المُسلَّمة دفعة واحدة مع توقيع التوزيع — ومنع إعادة التوزيع
+    for (let i = 0; i < deliver.length; i++) {
+      const r = results[i];
+      if (r && r.ok && r.purchaseIds.length) {
+        await (prisma as any).icoPurchase.updateMany({
+          where: { id: { in: r.purchaseIds }, delivered: false },
+          data: { delivered: true, deliveryTxHash: String(deliver[i].txSignature || "") },
+        });
+      }
+    }
+
+    return res.json({
+      message: `تم توزيع ${deliveredTokens.toLocaleString()} توكن على ${results.filter((r) => r.ok).length} محفظة ✅`,
+      delivered: results.filter((r) => r.ok),
+      failed: results.filter((r) => !r.ok),
+    });
+  } catch (error: any) {
+    console.error("POST / admin/ico/distribute error:", error);
+    return res.status(500).json({ message: "فشل اعتماد توزيع الاكتتاب" });
   }
 });
 
