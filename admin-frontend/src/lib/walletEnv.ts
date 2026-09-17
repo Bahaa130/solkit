@@ -47,9 +47,14 @@ export const ensureConnected = async (): Promise<string | null> => {
 // نعيد التوقيع Base64 جاهزاً للإرسال عبر JSON إلى السيرفر للتحقق منه.
 // ⚠️ لا نعيد المحاولة تلقائياً هنا: الإعادة تُظهر نافذة توقيع ثانية مضللة،
 // والأفضل أن يُعيد المستخدم النقر بنفسه (نقرة جديدة = نافذة توقيع جديدة صادقة).
+// 🧪 نكشف سبب الفشل الحقيقي: إلغاء المستخدم (مثل 4001/رفض) → نعيد null
+// كي تعرض الواجهة «تم الإلغاء»، وأي خطأ تقني آخر → نرميه برمز واضح بدل
+// إخفائه خلف رسالة «أُلغي» المضللة.
 export const signMessage = async (message: string): Promise<string | null> => {
   const provider = getInjectedProvider();
-  if (!provider || typeof provider.signMessage !== "function") return null;
+  if (!provider || typeof provider.signMessage !== "function") {
+    throw new Error("sign_no_provider");
+  }
   try {
     const encoded = new TextEncoder().encode(message);
     // ⚠️ حاسم: رسالة نصية UTF-8 يجب أن تُوقَّع مع تمرير "utf8" كوسيط ثانٍ،
@@ -65,8 +70,22 @@ export const signMessage = async (message: string): Promise<string | null> => {
     return btoa(binary);
   } catch (err: any) {
     // 🧪 تسجيل السبب الدقيق للتمكن من تشخيص المشكلة بدقة
-    console.warn("[PHANTOM] injected signMessage failed:", err?.message || err);
-    return null;
+    const raw = err?.message || String(err || "");
+    const code = err?.code;
+    console.warn("[PHANTOM] injected signMessage failed:", raw);
+    // إلغاء حقيقي من المستخدم (رفض/إغلاق النافذة) → null ليعرض «تم الإلغاء»
+    if (code === 4001 || /user rejected|user denied|user declined|request rejected|cancel|not approved/i.test(raw)) {
+      return null;
+    }
+    // خطأ تقني فعلي (نافذة أُغلقت بلا استجابة، خطأ غير متوقع، دالة غير مدعومة...)
+    if (/unexpected error|could not|not supported|timeout|network/i.test(raw)) {
+      const e = new Error("sign_phantom_error");
+      (e as any).raw = raw;
+      throw e;
+    }
+    const e = new Error("sign_unknown");
+    (e as any).raw = raw;
+    throw e;
   }
 };
 

@@ -197,6 +197,9 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
     }
 
     // 💻 الويب/سطح المكتب (بدون امتداد محقون): محوّل wallet-adapter كاحتياطي
+    if (!getInjectedProvider()) {
+      throw new Error("no_wallet_in_browser");
+    }
     const target =
       wallets.find((w) => w.adapter.name === "Phantom") || wallets[0];
     if (!target) throw new Error("no_wallet_adapter");
@@ -227,15 +230,7 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
       if (isInsideWalletApp()) {
         const sig = await signWithInjected(message);
         if (sig) return sig;
-        // احتياطي عبر محوّل الويب في حال فشل المزوّد المحقون
-        if (signMessage) {
-          try {
-            const s = await signMessage(new TextEncoder().encode(message));
-            return base64FromUint8(s);
-          } catch (e: any) {
-            console.error("[PHANTOM] signMessage adapter fallback failed:", e);
-          }
-        }
+        // إلغاء من المستخدم → لا نعرض نافذة توقيع ثانية مضللة
         return null;
       }
       // 💻 محوّل الويب/سطح المكتب (إرجاع null بدل رمي استثناء لتظهر الواجهة الرسالة

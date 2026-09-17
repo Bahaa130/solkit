@@ -258,6 +258,10 @@ const ar: Dict = {
   "connect.toastCancelled": "تم إلغاء عملية ربط المحفظة وتصريح الدخول.",
   "connect.noInjected": "لم يتم العثور على محفظة Phantom في المتصفح. تأكد من تنصيب الامتداد.",
   "connect.noAddress": "المحفظة لم تُرجِع عنواناً. جرّب مرة أخرى أو أعد فتح المتصفح.",
+  "connect.noWalletHint": "لم نجد محفظة Phantom مثبتة في هذا المتصفح — ثبّت إضافة Phantom من المتجر ثم حدّث الصفحة وأعد المحاولة، أو افتح الموقع داخل تطبيق المحفظة.",
+  "connect.openInWalletApp": "فتح داخل تطبيق المحفظة",
+  "connect.signUnexpected": "تعذّر إكمال التوقيع بسبب خطأ تقني في المحفظة. أعد النقر على التوقيع وأبقِ نافذة المحفظة مفتوحة حتى الاكتمال.",
+  "connect.signNoProvider": "تعذّر الوصول لمحفظة التوقيع — أعد فتح الموقع داخل تطبيق المحفظة (Phantom) ثم أعد المحاولة.",
 
   // ─── السحب ───
 
@@ -432,10 +436,10 @@ const ar: Dict = {
   "admin.tgeNoTarget": "لا يوجد عدّاد مُعيّن حالياً.",
   "admin.saveSettings": "💾 حفظ الإعدادات",
   "admin.savingSettings": "جاري الحفظ...",
-  "admin.statsTitle": "📊 الإدارة العامّة",
-  "admin.distTitle": "🎁 توزيع الجوائز",
-  "admin.tasksTitle": "🎯 مهام المجتمع",
-  "admin.constantsTitle": "🧮 الثوابت والأرقام",
+  "admin.statsTitle": " الإدارة العامّة",
+  "admin.distTitle": " توزيع الجوائز",
+  "admin.tasksTitle": " مهام المجتمع",
+  "admin.constantsTitle": " الثوابت والأرقام",
   "admin.roadmapTitle": "خارطة الطريق",
   "admin.roadmapDesc": "أضف وعدّل مراحل خارطة الطريق التي تظهر في صفحة الإسقاط الجوي. حدد أي مرحلة كـ مكتملة / حالية / قادمة.",
   "admin.roadmapAdd": "إضافة مرحلة جديدة",
@@ -885,6 +889,10 @@ const en: Dict = {
   "connect.toastSignAgain": "Please sign the new message to continue.",
   "connect.toastConnFailed": "Secure connection to the server failed.",
   "connect.toastCancelled": "Wallet connection and sign-in were cancelled.",
+  "connect.noWalletHint": "No Phantom wallet found in this browser — install the Phantom extension and refresh, or open the site inside the wallet app.",
+  "connect.openInWalletApp": "Open inside the wallet app",
+  "connect.signUnexpected": "Signing failed due to a technical wallet error. Tap sign again and keep the wallet window open until it completes.",
+  "connect.signNoProvider": "Couldn't reach the signing wallet — reopen the site inside the wallet app (Phantom) and try again.",
 
 
   "referral.earnings": "Referral earnings",
@@ -1054,10 +1062,10 @@ const en: Dict = {
   "admin.tgeNoTarget": "No countdown set yet.",
   "admin.saveSettings": "💾 Save settings",
   "admin.savingSettings": "Saving...",
-  "admin.statsTitle": "📊 General admin",
-  "admin.distTitle": "🎁 Reward distribution",
-  "admin.tasksTitle": "🎯 Community tasks",
-  "admin.constantsTitle": "🧮 Constants & numbers",
+  "admin.statsTitle": " General admin",
+  "admin.distTitle": " Reward distribution",
+  "admin.tasksTitle": " Community tasks",
+  "admin.constantsTitle": " Constants & numbers",
   "admin.roadmapTitle": "Roadmap",
   "admin.roadmapDesc": "Add and edit the roadmap phases shown on the airdrop page. Mark each phase as done / current / upcoming.",
   "admin.roadmapAdd": "Add new phase",
@@ -1506,6 +1514,10 @@ const fr: Dict = {
   "connect.toastSignAgain": "Veuillez signer le nouveau message pour continuer.",
   "connect.toastConnFailed": "La connexion sécurisée au serveur a échoué.",
   "connect.toastCancelled": "La connexion du portefeuille a été annulée.",
+  "connect.noWalletHint": "Aucun portefeuille Phantom trouvé dans ce navigateur — installez l'extension Phantom et actualisez, ou ouvrez le site dans l'application de portefeuille.",
+  "connect.openInWalletApp": "Ouvrir dans l'application de portefeuille",
+  "connect.signUnexpected": "La signature a échoué en raison d'une erreur technique du portefeuille. Signez à nouveau en gardant la fenêtre du portefeuille ouverte jusqu'à la fin.",
+  "connect.signNoProvider": "Impossible d'accéder au portefeuille de signature — rouvrez le site dans l'application de portefeuille (Phantom) puis réessayez.",
 
 
   "referral.earnings": "Gains de parrainage",
@@ -2126,6 +2138,10 @@ const es: Dict = {
   "connect.toastSignAgain": "Firma el nuevo mensaje para continuar.",
   "connect.toastConnFailed": "Falló la conexión segura con el servidor.",
   "connect.toastCancelled": "Se canceló la conexión de la billetera.",
+  "connect.noWalletHint": "No se encontró una billetera Phantom en este navegador — instala la extensión de Phantom y actualiza, o abre el sitio dentro de la aplicación de la billetera.",
+  "connect.openInWalletApp": "Abrir dentro de la aplicación de la billetera",
+  "connect.signUnexpected": "La firma falló por un error técnico de la billetera. Vuelve a firmar manteniendo la ventana de la billetera abierta hasta terminar.",
+  "connect.signNoProvider": "No se pudo acceder a la billetera de firma — abre el sitio dentro de la aplicación de la billetera (Phantom) e inténtalo de nuevo.",
 
 
   "referral.earnings": "Ganancias por referidos",
@@ -2728,6 +2744,10 @@ const tr: Dict = {
   "connect.toastSignAgain": "Devam etmek için yeni mesajı imzala.",
   "connect.toastConnFailed": "Sunucuya güvenli bağlantı başarısız oldu.",
   "connect.toastCancelled": "Cüzdan bağlantısı ve giriş iptal edildi.",
+  "connect.noWalletHint": "Bu tarayıcıda Phantom cüzdanı bulunamadı — Phantom uzantısını kurun ve sayfayı yenileyin veya siteyi cüzdan uygulaması içinde açın.",
+  "connect.openInWalletApp": "Cüzdan uygulaması içinde aç",
+  "connect.signUnexpected": "Cüzdandaki teknik bir hata nedeniyle imzalama başarısız oldu. Cüzdan penceresini tamamlanana kadar açık tutarak tekrar imzalayın.",
+  "connect.signNoProvider": "İmza cüzdanına erişilemedi — siteyi cüzdan uygulaması (Phantom) içinde yeniden açın ve tekrar deneyin.",
 
   "referral.earnings": "Referans kazancı",
   "referral.totalInvited": "Toplam davet",

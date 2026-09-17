@@ -6,6 +6,7 @@ import { useBranding } from "../branding";
 import CoinIcon from "../components/CoinIcon";
 import { useToast } from "../components/Toast";
 import { useSolanaWallet } from "../lib/walletProvider";
+import { getInjectedProvider, openInWalletApp } from "../lib/walletEnv";
 
 interface ConnectWalletPageProps {
   onWalletConnected: (jwtToken: string, walletAddress: string, role: string, activationStatus: string) => void;
@@ -25,6 +26,22 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
   const toast = useToast();
   // 🔄 تجديد تلقائي محدود لمرة واحدة لجلسة الربط عند انتهاء صلاحية التحدي
   const autoRenewed = useRef(false);
+
+  // هل تتوفر محفظة محقونة (امتداد Phantom / متصفح المحفظة الداخلي)؟
+  const [hasInjected, setHasInjected] = useState(false);
+
+  useEffect(() => {
+    setHasInjected(!!getInjectedProvider());
+  }, []);
+
+  // 🧪 ترجمة أكواد أخطاء المحفظة المعروفة إلى رسائل واضحة بدل "أُلغي" المضللة
+  const errorMessageFor = (msg?: string): string | null => {
+    if (!msg) return null;
+    if (msg === "no_wallet_in_browser") return t("connect.noWalletHint");
+    if (msg === "sign_phantom_error" || msg === "sign_unknown") return t("connect.signUnexpected");
+    if (msg === "sign_no_provider") return t("connect.signNoProvider");
+    return null;
+  };
 
   // 1. التقاط كود الإحالة تلقائياً من الرابط عند فتح الصفحة
   useEffect(() => {
@@ -77,7 +94,9 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
     } catch (err: any) {
       console.error("Wallet Connect Error:", err);
       const msg = err?.message;
-      if (msg === "no_injected_provider") toast.warning(t("connect.noInjected"));
+      const known = errorMessageFor(msg);
+      if (known) toast.warning(known);
+      else if (msg === "no_injected_provider") toast.warning(t("connect.noInjected"));
       else if (msg === "connect_no_address") toast.warning(t("connect.noAddress"));
       else if (typeof msg === "string" && msg && !isUserCancel(msg)) toast.warning(msg);
       else toast.warning(t("connect.toastCancelled"));
@@ -168,7 +187,13 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
     } catch (err: any) {
       console.error("Wallet Login Error:", err);
       const msg = err?.message;
-      if (typeof msg === "string" && msg && !isUserCancel(msg)) toast.warning(msg);
+      const known = errorMessageFor(msg);
+      if (known) {
+        // 🧪 عند خطأ غير متوقع نُلحق نص الخطأ الخام من المحفظة لتشخيص السبب بدقة
+        if (msg === "sign_unknown" && err?.raw) toast.warning(`${known} (${String(err.raw).slice(0, 140)})`);
+        else toast.warning(known);
+      }
+      else if (typeof msg === "string" && msg && !isUserCancel(msg)) toast.warning(msg);
       else toast.warning(t("connect.toastCancelled"));
       setPhase("ready");
     }
@@ -188,13 +213,33 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
         )}
 
         {phase === "idle" && (
-          <button
-            onClick={handleConnectWallet}
-            className="btn btn-purple btn-block"
-            style={{ padding: "16px", fontSize: 15, marginTop: 8 }}
-          >
-            {t("connect.connectBtn")}
-          </button>
+          <>
+            <button
+              onClick={handleConnectWallet}
+              className="btn btn-purple btn-block"
+              style={{ padding: "16px", fontSize: 15, marginTop: 8 }}
+            >
+              {t("connect.connectBtn")}
+            </button>
+
+            {!hasInjected && (
+              <>
+                <p style={{ ...styles.hint, marginTop: 12, color: "#ffb84d" }}>
+                  {t("connect.noWalletHint")}
+                </p>
+                <button
+                  onClick={() => {
+                    toast.info(t("connect.openingWallet"));
+                    openInWalletApp();
+                  }}
+                  className="btn btn-block"
+                  style={{ padding: "12px", fontSize: 13, marginTop: 8, background: "rgba(255,255,255,0.07)", color: C.text, border: "1px solid rgba(255,255,255,0.15)" }}
+                >
+                  {t("connect.openInWalletApp")}
+                </button>
+              </>
+            )}
+          </>
         )}
 
         {phase === "connecting" && (
