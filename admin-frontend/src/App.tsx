@@ -21,6 +21,7 @@ import { useBranding } from "./branding";
 import CoinIcon from "./components/CoinIcon";
 import { useSolanaWallet } from "./lib/walletProvider";
 import { getNetworkConfig } from "./lib/network";
+import { TAB_ICONS } from "./lib/tabIcons";
 
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
 
@@ -636,13 +637,13 @@ export default function App() {
     : "";
 
   const tabs = [
-    { key: "home", icon: "https://api.iconify.design/mdi/home.svg", adminOnly: false },
-    { key: "airdrop", icon: "https://api.iconify.design/mdi/parachute.svg", adminOnly: false },
-    { key: "referral", icon: "https://api.iconify.design/mdi/link.svg", adminOnly: false },
-    { key: "tasks", icon: "https://api.iconify.design/mdi/gift.svg", adminOnly: false },
-    { key: "bonus", icon: "https://api.iconify.design/mdi/calendar.svg", adminOnly: false },
-    { key: "ico", icon: "https://api.iconify.design/mdi/rocket-launch.svg", adminOnly: false },
-    { key: "admin", icon: "https://api.iconify.design/mdi/crown.svg", adminOnly: true },
+    { key: "home", icon: TAB_ICONS.home, adminOnly: false },
+    { key: "airdrop", icon: TAB_ICONS.airdrop, adminOnly: false },
+    { key: "referral", icon: TAB_ICONS.referral, adminOnly: false },
+    { key: "tasks", icon: TAB_ICONS.tasks, adminOnly: false },
+    { key: "bonus", icon: TAB_ICONS.bonus, adminOnly: false },
+    { key: "ico", icon: TAB_ICONS.ico, adminOnly: false },
+    { key: "admin", icon: TAB_ICONS.admin, adminOnly: true },
   ].filter((tb) => !tb.adminOnly || session.role === "admin" || session.walletAddress === ADMIN_WALLET);
 
   const textAlign = dir === "rtl" ? "right" : "left";
@@ -800,7 +801,7 @@ export default function App() {
                     boxShadow: active ? "0 4px 18px rgba(0,255,204,0.14) inset, 0 0 0 1px rgba(0,255,204,0.22)" : "none",
                   }}
                 >
-                  {tb.icon.startsWith("http") ? (
+                  {(tb.icon.startsWith("http") || tb.icon.startsWith("data:")) ? (
                     <img
                       className="app-navIcon"
                       src={tb.icon}
