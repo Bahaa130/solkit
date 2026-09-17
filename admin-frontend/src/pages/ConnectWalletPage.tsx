@@ -191,7 +191,10 @@ export default function ConnectWalletPage({ onWalletConnected }: ConnectWalletPa
       if (known) {
         // 🧪 عند أي خطأ تقني نُلحق نص الخطأ الخام من المحفظة لتشخيص السبب بدقة
         if ((msg === "sign_unknown" || msg === "sign_phantom_error") && err?.raw) {
-          toast.warning(`${known} (${String(err.raw).slice(0, 140)})`);
+          const raw = String(err.raw);
+          // خطأ معروف من Phantom نفسه (code -32603): نعرض إرشاداً مخصصاً
+          const guide = /unexpected error|32603|-32603/i.test(raw) ? t("connect.signPhantomBug") : known;
+          toast.warning(`${guide} (${raw.slice(0, 140)})`);
         } else toast.warning(known);
       }
       else if (typeof msg === "string" && msg && !isUserCancel(msg)) toast.warning(msg);

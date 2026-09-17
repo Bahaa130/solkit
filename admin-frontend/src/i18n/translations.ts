@@ -262,6 +262,7 @@ const ar: Dict = {
   "connect.openInWalletApp": "فتح داخل تطبيق المحفظة",
   "connect.signUnexpected": "تعذّر إكمال التوقيع بسبب خطأ تقني في المحفظة. أعد النقر على التوقيع وأبقِ نافذة المحفظة مفتوحة حتى الاكتمال.",
   "connect.signNoProvider": "تعذّر الوصول لمحفظة التوقيع — أعد فتح الموقع داخل تطبيق المحفظة (Phantom) ثم أعد المحاولة.",
+  "connect.signPhantomBug": "هذا خطأ معروف من إضافة Phantom نفسها (Unexpected error -32603). حدّث/أعد تحميل إضافة Phantom من إعدادات المتصفح ثم حدّث الصفحة، أو افتح الموقع داخل تطبيق المحفظة.",
 
   // ─── السحب ───
 
@@ -893,6 +894,7 @@ const en: Dict = {
   "connect.openInWalletApp": "Open inside the wallet app",
   "connect.signUnexpected": "Signing failed due to a technical wallet error. Tap sign again and keep the wallet window open until it completes.",
   "connect.signNoProvider": "Couldn't reach the signing wallet — reopen the site inside the wallet app (Phantom) and try again.",
+  "connect.signPhantomBug": "This is a known Phantom extension glitch (Unexpected error -32603). Update/reload the Phantom extension from your browser settings and refresh, or open the site inside the wallet app.",
 
 
   "referral.earnings": "Referral earnings",
@@ -1518,6 +1520,7 @@ const fr: Dict = {
   "connect.openInWalletApp": "Ouvrir dans l'application de portefeuille",
   "connect.signUnexpected": "La signature a échoué en raison d'une erreur technique du portefeuille. Signez à nouveau en gardant la fenêtre du portefeuille ouverte jusqu'à la fin.",
   "connect.signNoProvider": "Impossible d'accéder au portefeuille de signature — rouvrez le site dans l'application de portefeuille (Phantom) puis réessayez.",
+  "connect.signPhantomBug": "Il s'agit d'un bug connu de l'extension Phantom (Unexpected error -32603). Mettez à jour/rechargez l'extension Phantom dans les paramètres du navigateur et actualisez, ou ouvrez le site dans l'application de portefeuille.",
 
 
   "referral.earnings": "Gains de parrainage",
@@ -2142,6 +2145,7 @@ const es: Dict = {
   "connect.openInWalletApp": "Abrir dentro de la aplicación de la billetera",
   "connect.signUnexpected": "La firma falló por un error técnico de la billetera. Vuelve a firmar manteniendo la ventana de la billetera abierta hasta terminar.",
   "connect.signNoProvider": "No se pudo acceder a la billetera de firma — abre el sitio dentro de la aplicación de la billetera (Phantom) e inténtalo de nuevo.",
+  "connect.signPhantomBug": "Es un fallo conocido de la extensión de Phantom (Unexpected error -32603). Actualiza/recarga la extensión de Phantom desde la configuración del navegador y actualiza la página, o abre el sitio dentro de la aplicación de la billetera.",
 
 
   "referral.earnings": "Ganancias por referidos",
@@ -2748,6 +2752,7 @@ const tr: Dict = {
   "connect.openInWalletApp": "Cüzdan uygulaması içinde aç",
   "connect.signUnexpected": "Cüzdandaki teknik bir hata nedeniyle imzalama başarısız oldu. Cüzdan penceresini tamamlanana kadar açık tutarak tekrar imzalayın.",
   "connect.signNoProvider": "İmza cüzdanına erişilemedi — siteyi cüzdan uygulaması (Phantom) içinde yeniden açın ve tekrar deneyin.",
+  "connect.signPhantomBug": "Bu, Phantom uzantısının kendisinden kaynaklanan bilinen bir hatadır (Unexpected error -32603). Tarayıcı ayarlarından Phantom uzantısını güncelleyin/yeniden yükleyin ve sayfayı yenileyin ya da siteyi cüzdan uygulaması içinde açın.",
 
   "referral.earnings": "Referans kazancı",
   "referral.totalInvited": "Toplam davet",

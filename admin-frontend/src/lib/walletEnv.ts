@@ -21,8 +21,13 @@ declare global {
 }
 
 // 🔎 إرجاع مزوّد المحفظة المحقون إن وُجد (داخل Phantom/Solflare In-App Browser)
+// ⚠️ نفضّل window.phantom.solana (كائن Phantom الصريح) على window.solana العام،
+// لأنه إذا كانت هناك إضافات محافظ أخرى في المتصفح فقد تحقن window.solana
+// بدلاً من Phantom فيعطي أخطاء توقيع غامضة مثل "Unexpected error" (code -32603).
 export const getInjectedProvider = (): InjectedProvider | null => {
   if (typeof window === "undefined") return null;
+  const phantom = (window as any).phantom?.solana;
+  if (phantom && (phantom.isPhantom || typeof phantom.connect === "function")) return phantom;
   const p = window.solana;
   if (p && (p.isPhantom || p.isSolflare || typeof p.connect === "function")) return p;
   if (window.solflare) return window.solflare;
