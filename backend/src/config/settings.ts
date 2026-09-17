@@ -51,7 +51,8 @@ export interface IcoSettings {
   description: string;     // 📄 الوصف الكامل
   priceSOL: number;        // 💵 سعر التوكن الواحد بالـ SOL
   minSOL: number;          // 🪙 الحد الأدنى للمشاركة بالـ SOL
-  maxSOL: number;          // 📈 الحد الأقصى للمشاركة (لكل محفظة) بالـ SOL
+  maxSOL: number;          // 📈 الحد الأقصى للمشاركة في المعاملة الواحدة بالـ SOL
+  maxPerWalletSOL: number; // 👛 الحد الأقصى التراكمي لكل محفظة (لا تشتري بأكثر منه إجمالاً) بالـ SOL
   totalAllocation: number; // 🎯 إجمالي التوكنات المخصصة للاكتتاب
   startDate: number;       // ⏰ بداية الاكتتاب (timestamp بالملي ثانية، 0 = فوراً)
   endDate: number;         // 🏁 نهاية الاكتتاب (timestamp بالملي ثانية، 0 = مفتوح)
@@ -215,6 +216,7 @@ export const DEFAULTS: SiteSettings = {
     priceSOL: 0.001,
     minSOL: 0.05,
     maxSOL: 10,
+    maxPerWalletSOL: 10,
     totalAllocation: 100000,
     startDate: 0,
     endDate: 0,

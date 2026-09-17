@@ -20,6 +20,7 @@ interface IcoForm {
   priceSOL: string;
   minSOL: string;
   maxSOL: string;
+  maxPerWalletSOL: string;
   totalAllocation: string;
   softCapSOL: string;
   hardCapSOL: string;
@@ -55,6 +56,7 @@ const emptyForm = (): IcoForm => ({
   priceSOL: "0.001",
   minSOL: "0.05",
   maxSOL: "10",
+  maxPerWalletSOL: "10",
   totalAllocation: "100000",
   softCapSOL: "20",
   hardCapSOL: "100",
@@ -102,6 +104,7 @@ export default function IcoAdminPanel({ token }: Props) {
           priceSOL: String(ico.priceSOL ?? "0.001"),
           minSOL: String(ico.minSOL ?? "0.05"),
           maxSOL: String(ico.maxSOL ?? "10"),
+          maxPerWalletSOL: String(ico.maxPerWalletSOL ?? "10"),
           totalAllocation: String(ico.totalAllocation ?? "100000"),
           softCapSOL: String(ico.softCapSOL ?? "20"),
           hardCapSOL: String(ico.hardCapSOL ?? "100"),
@@ -161,6 +164,7 @@ export default function IcoAdminPanel({ token }: Props) {
       priceSOL: price,
       minSOL: num(form.minSOL, 0.05, 0, 100000),
       maxSOL: num(form.maxSOL, 10, 0, 1000000),
+      maxPerWalletSOL: num(form.maxPerWalletSOL, 10, 0, 1000000),
       totalAllocation: num(form.totalAllocation, 100000, 0, 10_000_000_000),
       softCapSOL: num(form.softCapSOL, 20, 0, 10_000_000),
       hardCapSOL: num(form.hardCapSOL, 100, 0, 10_000_000),
@@ -245,8 +249,12 @@ export default function IcoAdminPanel({ token }: Props) {
               <input className="input" type="number" step="0.01" value={form.minSOL} onChange={(e) => set("minSOL", e.target.value)} style={styles.input} />
             </label>
             <label style={styles.field}>
-              <span style={styles.fieldLabel}>الحد الأقصى (SOL)</span>
+              <span style={styles.fieldLabel}>الحد الأقصى للعملية (SOL)</span>
               <input className="input" type="number" step="0.01" value={form.maxSOL} onChange={(e) => set("maxSOL", e.target.value)} style={styles.input} />
+            </label>
+            <label style={styles.field}>
+              <span style={styles.fieldLabel}>👛 الحد الأقصى لكل محفظة (SOL)</span>
+              <input className="input" type="number" step="0.01" value={form.maxPerWalletSOL} onChange={(e) => set("maxPerWalletSOL", e.target.value)} style={styles.input} />
             </label>
             <label style={styles.field}>
               <span style={styles.fieldLabel}>إجمالي المخصص (توكن)</span>

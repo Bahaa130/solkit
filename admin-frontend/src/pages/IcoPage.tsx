@@ -26,6 +26,7 @@ interface IcoConfig {
   priceSOL: number;
   minSOL: number;
   maxSOL: number;
+  maxPerWalletSOL: number;
   totalAllocation: number;
   startDate: number;
   endDate: number;
@@ -188,6 +189,11 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   const amountNum = Number(amountStr);
   const previewTokens = Number.isFinite(amountNum) && amountNum > 0 ? amountNum / priceSOL : 0;
 
+  // 👛 حد المحفظة التراكمي: مشترياتي الحالية + الدفعة الجديدة ≤ maxPerWalletSOL
+  const perWalletCap = config?.maxPerWalletSOL ?? 10;
+  const myRaised = purchases.reduce((sum, p) => sum + Number(p.solAmount || 0), 0);
+  const walletRemaining = Math.max(0, perWalletCap - myRaised);
+
   // 🛒 إتمام المشاركة: دفع SOL للخزانة ثم اعتماد السيرفر بلوكشينياً
   const purchase = async () => {
     if (!config) return;
@@ -199,6 +205,9 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
     }
     if (amountNum > config.maxSOL) {
       return setStatus({ type: "error", text: `الحد الأقصى للمشاركة ${config.maxSOL} SOL` });
+    }
+    if (myRaised + amountNum > perWalletCap + 1e-9) {
+      return setStatus({ type: "error", text: `الحد الأقصى لكل محفظة هو ${perWalletCap} SOL — أنفقت ${myRaised.toFixed(2)} SOL والباقي المتبقي ${walletRemaining.toFixed(2)} SOL` });
     }
     if (previewTokens > remainingTokens) {
       return setStatus({ type: "error", text: `المتبقي من مخصصات الاكتتاب ${fmt(remainingTokens)} توكن فقط` });
@@ -350,7 +359,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
               <span style={{ fontWeight: 900, color: C.text, fontSize: 16 }}>{fmt(config.totalAllocation)}</span>
             </div>
             <div className="pill" style={{ ...styles.miniStat, textAlign: "center", display: "block" }}>
-              <span style={{ display: "block", fontSize: 11, color: C.muted }}>حُدّ الأدنى/الأقصى</span>
+              <span style={{ display: "block", fontSize: 11, color: C.muted }}>حدَّي عملية الشراء</span>
               <span style={{ fontWeight: 900, color: C.text, fontSize: 16 }}>{config.minSOL} – {config.maxSOL} SOL</span>
             </div>
             <div className="pill" style={{ ...styles.miniStat, textAlign: "center", display: "block" }}>
@@ -382,6 +391,10 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, fontSize: 11.5, color: C.muted }}>
             <span>🛡️ الهدف الأدنى: {fmt(config.softCapSOL, 2)} SOL</span>
             <span>🚀 {config.tgePercent}% يُفرج فور الإدراج (TGE)</span>
+          </div>
+          <div className="pill" style={{ marginTop: 10, padding: "8px 12px", border: "1px solid rgba(255,176,32,0.3)", color: "#ffb020", background: "rgba(255,176,32,0.06)", fontSize: 11.5, textAlign: "center" }}>
+            👛 حد المحفظة الكلي: {fmt(perWalletCap, 2)} SOL — لا يمكن لمحفظة واحدة الشراء بأكثر من ذلك إجمالاً
+            {purchases.length > 0 && <span style={{ display: "block", marginTop: 3, color: C.text }}>→ أنفقت {fmt(myRaised, 2)} SOL · المتبقي {fmt(walletRemaining, 2)} SOL</span>}
           </div>
         </div>
       </div>
@@ -503,6 +516,10 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12, color: C.muted }}>
               <span>ستحصل على:</span>
               <span style={{ fontWeight: 900, color: C.text }}>{previewTokens > 0 ? fmt(previewTokens, 2) : "—"} توكن</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12, color: C.muted }}>
+              <span>👛 حد محفظتك التراكمي:</span>
+              <span style={{ fontWeight: 900, color: C.amber }}>{fmt(myRaised, 2)} / {fmt(perWalletCap, 2)} SOL <span style={{ color: C.muted, fontWeight: 600 }}>(متبقي {fmt(walletRemaining, 2)})</span></span>
             </div>
 
             <div style={{ marginTop: 14, fontSize: 11.5, color: C.muted, lineHeight: 1.8 }}>

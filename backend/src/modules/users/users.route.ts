@@ -1541,6 +1541,7 @@ const settingsSchema = z.object({
     priceSOL: z.number().min(0.000000001).max(1000).optional(),
     minSOL: z.number().min(0).max(100000).optional(),
     maxSOL: z.number().min(0).max(1000000).optional(),
+    maxPerWalletSOL: z.number().min(0).max(1000000).optional(),
     totalAllocation: z.number().min(0).max(10_000_000_000).optional(),
     startDate: z.number().min(0).max(4102444800000).optional(),
     endDate: z.number().min(0).max(4102444800000).optional(),
@@ -1674,6 +1675,21 @@ router.post("/ico/purchase", authenticateJWT, async (req: AuthenticatedRequest, 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ message: "الحساب غير موجود" });
     if (!user.walletAddress) return res.status(400).json({ message: "اربط محفظتك أولاً" });
+
+    // 👛 الحد الأقصى التراكمي لكل محفظة: مجموع مشتريات هذا الحساب + الدفعة الجديدة
+    // يجب ألا يتجاوز maxPerWalletSOL (مثال: لا تشتري محفظة بأكثر من 10 SOL إجمالاً).
+    const maxPerWallet = ico.maxPerWalletSOL ?? 10;
+    const walletAgg = await (prisma as any).icoPurchase.aggregate({
+      where: { userId, status: "purchased" },
+      _sum: { solAmount: true },
+    });
+    const walletRaised = Number(walletAgg._sum.solAmount || 0);
+    if (walletRaised + amount > maxPerWallet + 1e-9) {
+      const remaining = Math.max(0, maxPerWallet - walletRaised);
+      return res.status(400).json({
+        message: `الحد الأقصى لكل محفظة هو ${maxPerWallet} SOL — مشترياتك الحالية ${walletRaised.toFixed(2)} SOL والباقي المتبقي ${remaining.toFixed(2)} SOL`,
+      });
+    }
 
     const priceSOL = ico.priceSOL || 0.001;
     const tokenAmount = amount / priceSOL;
