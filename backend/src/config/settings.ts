@@ -40,7 +40,33 @@ export interface SiteSettings {
   wheel: WheelSettings;               // 🎰 إعدادات عجلة الحظ (الشرائح والأوزان والسقوف)
   tokenomics: TokenomicsSplit[];      // 💼 اقتصاديات التوكن — نسب توزيع العرض الكلي (تتحكم بها الإدارة)
   cards?: CardDef[];                  // 📇 بطاقات الدخل القابلة للترقية (نموذج هامستر)
+  ico?: IcoSettings;                  // 🏗️ صفحة الاكتتاب (ICO/pre-sale) — المحتوى تتحكم به الإدارة بالكامل
 }
+
+// 🏗️ إعدادات صفحة الاكتتاب (ICO/pre-sale) — يُدار المحتوى من لوحة المدير
+export interface IcoSettings {
+  enabled: boolean;        // 🔛 تفعيل صفحة الاكتتاب ومشاركة المستخدمين
+  title: string;           // 🏷️ عنوان الصفحة
+  subtitle: string;        // 📝 وصف فرعي قصير
+  description: string;     // 📄 الوصف الكامل
+  priceSOL: number;        // 💵 سعر التوكن الواحد بالـ SOL
+  minSOL: number;          // 🪙 الحد الأدنى للمشاركة بالـ SOL
+  maxSOL: number;          // 📈 الحد الأقصى للمشاركة (لكل محفظة) بالـ SOL
+  totalAllocation: number; // 🎯 إجمالي التوكنات المخصصة للاكتتاب
+  startDate: number;       // ⏰ بداية الاكتتاب (timestamp بالملي ثانية، 0 = فوراً)
+  endDate: number;         // 🏁 نهاية الاكتتاب (timestamp بالملي ثانية، 0 = مفتوح)
+  softCapSOL: number;      // 🎖️ الهدف الأدنى (ناعم) بالـ SOL
+  hardCapSOL: number;      // 💰 الهدف الأقصى (صلب) بالـ SOL
+  tgePercent: number;      // 🚀 نسبة التوكنات المتاحة فور الإدراج (TGE) — الباقي وفق جدول الاستحقاق
+  perks: IcoPerk[];        // 🎁 مزايا المشاركة (بطاقات)
+  faq: IcoFaq[];           // ❓ أسئلة شائعة
+  vesting: IcoVesting[];   // 📅 جدول الإفراج/الاستحقاق
+  terms: string;           // 📜 الشروط والأحكام
+}
+
+export interface IcoPerk { icon: string; title: string; desc: string }
+export interface IcoFaq { q: string; a: string }
+export interface IcoVesting { label: string; pct: number; when: string }
 
 // 💼 شريحة واحدة في اقتصاديات التوكن (توزيع العرض الكلي)
 export interface TokenomicsSplit {
@@ -104,7 +130,7 @@ export const DEFAULT_ACTIVITY_XP = {
   xpBonus: 15,
 };
 
-const DEFAULTS: SiteSettings = {
+export const DEFAULTS: SiteSettings = {
   maintenanceMode: false,
   maintenanceMessage: "نحن نجري صيانة مجدولة. سنعود قريباً! 🔧",
   tgeTarget: 0,
@@ -179,6 +205,40 @@ const DEFAULTS: SiteSettings = {
     { key: "ads_coupons", icon: "🎟️", label: "كوبونات خصم", color: "#f59e0b", baseCost: 1800, costGrowth: 1.28, reward: 0.64, maxLevel: 8, duration: 3 },
     { key: "ads_tv", icon: "📺", label: "إعلان تلفزيوني", color: "#ef4444", baseCost: 4500, costGrowth: 1.3, reward: 1.2, maxLevel: 6, duration: 4 },
   ],
+  // 🏗️ الإعدادات الافتراضية لصفحة الاكتتاب (يضبطها المدير دائماً من لوحة التحكم)
+  ico: {
+    enabled: false,
+    title: "اكتتاب مشاركة مبكرة 🚀",
+    subtitle: "اشترِ توكن {token} بسعر ما قبل الطرح وكن أول المستثمرين في المنصة.",
+    description:
+      "رحلة المشاركة المبكرة في توكن {token}: اطلب توكناتك قبل إدراجها في البورصات، وادفع بالـ SOL مباشرة من محفظتك، واحصل على مخصصاتك وفق جدول الاستحقاق.",
+    priceSOL: 0.001,
+    minSOL: 0.05,
+    maxSOL: 10,
+    totalAllocation: 100000,
+    startDate: 0,
+    endDate: 0,
+    softCapSOL: 20,
+    hardCapSOL: 100,
+    tgePercent: 25,
+    perks: [
+      { icon: "💎", title: "سعر تفضيلي", desc: "سعر أقل من سعر الإدراج المتوقّع في البورصات." },
+      { icon: "🛡️", title: "أولوية الحجز", desc: "مخصصاتك تُحجز باسمك فور التأكيد على السلسلة." },
+      { icon: "🎁", title: "مكافآت إحالة", desc: "شارك رابطك واحصل على علاوات إضافية." },
+    ],
+    faq: [
+      { q: "متى أستلم توكناتي؟", a: "تُسجَّل مخصصاتك فور تأكيد الدفع على البلوكشين، وتُفرج وفق جدول الاستحقاق بعد الإدراج." },
+      { q: "هل يُسترد المبلغ إذا لم تكتمل اللوحة؟", a: "إذا لم يصل الاكتتاب إلى الهدف الأدنى، تُعاد العمليات بعد الإغلاق دون رسوم." },
+    ],
+    vesting: [
+      { label: "عند الإدراج (TGE)", pct: 25, when: "فوراً" },
+      { label: "الدفعة الثانية", pct: 25, when: "بعد 3 أشهر" },
+      { label: "الدفعة الثالثة", pct: 25, when: "بعد 6 أشهر" },
+      { label: "الدفعة النهائية", pct: 25, when: "بعد 12 شهراً" },
+    ],
+    terms:
+      "دفعات الاكتتاب تُرسل إلى محفظة الخزانة على البلوكشين وتُوثَّق تلقائياً بين التطبيق والخادم. التوكنات الرقمية قد ترتفع أو تنخفض قيمتها ولا نضمن أداءً خاصاً. تفحص الأهلية والقوانين في بلدك قبل المشاركة.",
+  },
 };
 
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)

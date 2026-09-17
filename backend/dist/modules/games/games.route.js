@@ -113,7 +113,7 @@ router.get("/status", authenticateJWT, async (req, res) => {
             totalEarned: Number(progress.totalEarned || 0),
             playsCount: progress.playsCount || 0,
             balance: Number(user.balance),
-            eligible: user.activationStatus === "active",
+            eligible: user.activationStatus === "active" || req.user.role === "admin",
             todayEarned: { ...todayEarned, total: todayEarned.wheel + todayEarned.xo + todayEarned.catch },
             dailyCaps: {
                 wheel: wheel.dailyCap,
@@ -135,7 +135,7 @@ router.post("/wheel/spin", authenticateJWT, async (req, res) => {
     try {
         const userId = req.user.id;
         const user = await prisma.user.findUnique({ where: { id: userId } });
-        if (!user || user.activationStatus !== "active")
+        if (!user || (user.activationStatus !== "active" && req.user.role !== "admin"))
             return res.status(403).json({ message: "الحساب غير مفعّل" });
         // 🎰 اختيار شريحة مرجّح حصرياً على السيرفر
         const segment = pickWheelSegment();
@@ -158,7 +158,7 @@ router.post("/result", authenticateJWT, async (req, res) => {
             return res.status(400).json({ message: "بيانات الجولة غير صالحة" });
         const { game, score, segment, spinToken } = parsed.data;
         const user = await prisma.user.findUnique({ where: { id: userId } });
-        if (!user || user.activationStatus !== "active")
+        if (!user || (user.activationStatus !== "active" && req.user.role !== "admin"))
             return res.status(403).json({ message: "الحساب غير مفعّل" });
         const cfg = GAME_CONFIG[game];
         // 🎰 العجلة: تحقق من التوكن الموقّع ومطابقة النتيجة

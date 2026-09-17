@@ -596,6 +596,7 @@ const ar: Dict = {
   "adminTasks.actionFailed": "فشلت العملية",
   // ─── المستويات (نظام النشاط 9 مستويات) ───
   "nav.levels": "المستويات",
+  "nav.ico": "الاكتتاب",
   "levels.yourLevel": "مستواك الحالي",
   "levels.xp": "نقاط النشاط",
   "levels.toNext": "للوصول إلى",
@@ -1203,6 +1204,7 @@ const en: Dict = {
   "adminTasks.actionFailed": "Action failed",
   // ─── Levels (9-level activity system) ───
   "nav.levels": "Levels",
+  "nav.ico": "ICO",
   "levels.yourLevel": "Your current level",
   "levels.xp": "Activity points",
   "levels.toNext": "To reach",
@@ -1808,6 +1810,7 @@ const fr: Dict = {
   "adminTasks.actionFailed": "Échec de l'action",
   // ─── Niveaux (système d'activité à 9 niveaux) ───
   "nav.levels": "Niveaux",
+  "nav.ico": "ICO",
   "levels.yourLevel": "Votre niveau actuel",
   "levels.xp": "Points d'activité",
   "levels.toNext": "Pour atteindre",
@@ -2413,6 +2416,7 @@ const es: Dict = {
   "adminTasks.actionFailed": "La acción falló",
   // ─── Niveles (sistema de actividad de 9 niveles) ───
   "nav.levels": "Niveles",
+  "nav.ico": "ICO",
   "levels.yourLevel": "Tu nivel actual",
   "levels.xp": "Puntos de actividad",
   "levels.toNext": "Para alcanzar",
@@ -2999,6 +3003,7 @@ const tr: Dict = {
   "adminTasks.actionFailed": "İşlem başarısız",
   // ─── Seviyeler (9 seviyeli aktivite sistemi) ───
   "nav.levels": "Seviyeler",
+  "nav.ico": "ICO",
   "levels.yourLevel": "Mevcut seviyen",
   "levels.xp": "Aktivite puanı",
   "levels.toNext": "Ulaşmak için",

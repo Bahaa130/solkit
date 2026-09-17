@@ -15,7 +15,7 @@ export const DEFAULT_ACTIVITY_XP = {
     xpMine: 30,
     xpBonus: 15,
 };
-const DEFAULTS = {
+export const DEFAULTS = {
     maintenanceMode: false,
     maintenanceMessage: "نحن نجري صيانة مجدولة. سنعود قريباً! 🔧",
     tgeTarget: 0,
@@ -51,6 +51,7 @@ const DEFAULTS = {
     xpRef: 50,
     xpMine: 30,
     xpBonus: 15,
+    miningDuration: 24,
     roadmap: [
         { icon: "⚙️", label: "بناء النظام الأساسي", status: "done" },
         { icon: "🔐", label: "تفعيل أمني + اختبار", status: "done" },
@@ -89,17 +90,63 @@ const DEFAULTS = {
         { key: "ads_coupons", icon: "🎟️", label: "كوبونات خصم", color: "#f59e0b", baseCost: 1800, costGrowth: 1.28, reward: 0.64, maxLevel: 8, duration: 3 },
         { key: "ads_tv", icon: "📺", label: "إعلان تلفزيوني", color: "#ef4444", baseCost: 4500, costGrowth: 1.3, reward: 1.2, maxLevel: 6, duration: 4 },
     ],
+    // 🏗️ الإعدادات الافتراضية لصفحة الاكتتاب (يضبطها المدير دائماً من لوحة التحكم)
+    ico: {
+        enabled: false,
+        title: "اكتتاب مشاركة مبكرة 🚀",
+        subtitle: "اشترِ توكن {token} بسعر ما قبل الطرح وكن أول المستثمرين في المنصة.",
+        description: "رحلة المشاركة المبكرة في توكن {token}: اطلب توكناتك قبل إدراجها في البورصات، وادفع بالـ SOL مباشرة من محفظتك، واحصل على مخصصاتك وفق جدول الاستحقاق.",
+        priceSOL: 0.001,
+        minSOL: 0.05,
+        maxSOL: 10,
+        totalAllocation: 100000,
+        startDate: 0,
+        endDate: 0,
+        softCapSOL: 20,
+        hardCapSOL: 100,
+        tgePercent: 25,
+        perks: [
+            { icon: "💎", title: "سعر تفضيلي", desc: "سعر أقل من سعر الإدراج المتوقّع في البورصات." },
+            { icon: "🛡️", title: "أولوية الحجز", desc: "مخصصاتك تُحجز باسمك فور التأكيد على السلسلة." },
+            { icon: "🎁", title: "مكافآت إحالة", desc: "شارك رابطك واحصل على علاوات إضافية." },
+        ],
+        faq: [
+            { q: "متى أستلم توكناتي؟", a: "تُسجَّل مخصصاتك فور تأكيد الدفع على البلوكشين، وتُفرج وفق جدول الاستحقاق بعد الإدراج." },
+            { q: "هل يُسترد المبلغ إذا لم تكتمل اللوحة؟", a: "إذا لم يصل الاكتتاب إلى الهدف الأدنى، تُعاد العمليات بعد الإغلاق دون رسوم." },
+        ],
+        vesting: [
+            { label: "عند الإدراج (TGE)", pct: 25, when: "فوراً" },
+            { label: "الدفعة الثانية", pct: 25, when: "بعد 3 أشهر" },
+            { label: "الدفعة الثالثة", pct: 25, when: "بعد 6 أشهر" },
+            { label: "الدفعة النهائية", pct: 25, when: "بعد 12 شهراً" },
+        ],
+        terms: "دفعات الاكتتاب تُرسل إلى محفظة الخزانة على البلوكشين وتُوثَّق تلقائياً بين التطبيق والخادم. التوكنات الرقمية قد ترتفع أو تنخفض قيمتها ولا نضمن أداءً خاصاً. تفحص الأهلية والقوانين في بلدك قبل المشاركة.",
+    },
 };
 // 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)
+let cachedSettings = null;
+let cacheTime = 0;
+const CACHE_TTL_MS = 5000;
 export function getSettings() {
+    const now = Date.now();
+    if (cachedSettings && now - cacheTime < CACHE_TTL_MS) {
+        return cachedSettings;
+    }
     try {
         if (fs.existsSync(SETTINGS_FILE)) {
             const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
-            return { ...DEFAULTS, ...JSON.parse(raw) };
+            cachedSettings = { ...DEFAULTS, ...JSON.parse(raw) };
+        }
+        else {
+            cachedSettings = { ...DEFAULTS };
         }
     }
     catch { /* تجاهل أي خطأ قراءة */ }
-    return { ...DEFAULTS };
+    if (!cachedSettings) {
+        cachedSettings = { ...DEFAULTS };
+    }
+    cacheTime = now;
+    return cachedSettings;
 }
 // ✏️ تحديث الإعدادات وحفظها على القرص
 export function updateSettings(partial) {
@@ -107,6 +154,8 @@ export function updateSettings(partial) {
     const updated = { ...current, ...partial };
     try {
         fs.writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2), "utf-8");
+        cachedSettings = updated;
+        cacheTime = Date.now();
     }
     catch (err) {
         console.error("Failed to save settings:", err);

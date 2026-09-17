@@ -7,6 +7,7 @@ import TokenSetupPanel from "../components/TokenSetupPanel";
 import BrandingPanel from "../components/BrandingPanel";
 import RulesPanel from "../components/RulesPanel";
 import CardsAdminPanel from "../components/CardsAdminPanel";
+import IcoAdminPanel from "../components/IcoAdminPanel";
 import ProjectAnalytics from "../components/ProjectAnalytics";
 import { useToast } from "../components/Toast";
 import { useLang } from "../i18n/index.tsx";
@@ -26,7 +27,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
   const { branding } = useBranding();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [adminTab, setAdminTab] = useState<"general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules" | "roadmap" | "wheel" | "cards">("general");
+  const [adminTab, setAdminTab] = useState<AdminTabKey>("general");
   const [levelPlan, setLevelPlan] = useState<LevelRow[]>([]);
   // 🎯 المستوى المحدد لتحرير نقاط نشاطه (لكل مستوى نقاطه الخاصة)
   const [selLevel, setSelLevel] = useState<number>(1);
@@ -302,7 +303,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
   ];
 
   // 📑 كل أقسام لوحة المدير — تُعرض كقائمة جانبية كاملة (لا يختفي أي قسم خارج الشاشة)
-  type AdminTabKey = "general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules" | "roadmap" | "wheel" | "cards";
+  type AdminTabKey = "general" | "distribution" | "tasks" | "token" | "branding" | "maintenance" | "airdrop" | "levels" | "rules" | "roadmap" | "wheel" | "cards" | "ico";
   const ADMIN_TABS: { key: AdminTabKey; icon: string; label: string }[] = [
     { key: "general", icon: "📊", label: t("admin.statsTitle") },
     { key: "distribution", icon: "💸", label: t("admin.distTitle") },
@@ -316,6 +317,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
     { key: "roadmap", icon: "🗺️", label: t("admin.roadmapTitle") },
     { key: "wheel", icon: "🎰", label: t("admin.wheelTitle") },
     { key: "cards", icon: "🎴", label: t("admin.cardsTitle") },
+    { key: "ico", icon: "🚀", label: t("nav.ico") },
   ];
 
   return (
@@ -706,6 +708,8 @@ export default function AdminPanelPage({ token }: { token: string }) {
         </div>
       ) : adminTab === "cards" ? (
         <CardsAdminPanel token={token} />
+      ) : adminTab === "ico" ? (
+        <IcoAdminPanel token={token} />
       ) : (
         <>
         <div className="admin-stats-grid">

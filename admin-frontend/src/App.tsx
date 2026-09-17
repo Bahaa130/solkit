@@ -10,6 +10,7 @@ import AdminPanelPage from "./pages/AdminPanelPage";
 import AirdropPage from "./pages/AirdropPage";
 import LevelsPage from "./pages/LevelsPage";
 import CardsPage from "./pages/CardsPage";
+import IcoPage from "./pages/IcoPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import MaintenancePage from "./pages/MaintenancePage";
 import { Connection, PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
@@ -105,7 +106,7 @@ export default function App() {
   const { address: walletAddressHook, connectWallet, sendTransaction } = useSolanaWallet();
   const [session, setSession] = useState<Session | null>(null);
   // 🗺️ قائمة التبويبات المعروفة (تُستخدم لفلترة المسارات غير الصالحة → 404)
-  const KNOWN_TABS = ["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels", "cards"];
+  const KNOWN_TABS = ["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels", "cards", "ico"];
   // 🔗 قراءة التبويب من معامل ?tab= في الرابط عند التحميل (قيمة غير معروفة → "404")
   const [activeTab, setActiveTab] = useState<string>(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
@@ -633,6 +634,7 @@ export default function App() {
     { key: "referral", icon: "https://api.iconify.design/mdi/link.svg", adminOnly: false },
     { key: "tasks", icon: "https://api.iconify.design/mdi/gift.svg", adminOnly: false },
     { key: "bonus", icon: "https://api.iconify.design/mdi/calendar.svg", adminOnly: false },
+    { key: "ico", icon: "https://api.iconify.design/mdi/rocket-launch.svg", adminOnly: false },
     { key: "admin", icon: "https://api.iconify.design/mdi/crown.svg", adminOnly: true },
   ].filter((tb) => !tb.adminOnly || session.role === "admin" || session.walletAddress === ADMIN_WALLET);
 
@@ -760,6 +762,7 @@ export default function App() {
               {activeTab === "bonus" && <BonusPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "levels" && <LevelsPage userId={session.userId} token={session.jwtToken || ""} />}
               {activeTab === "cards" && <CardsPage userId={session.userId} token={session.jwtToken || ""} />}
+              {activeTab === "ico" && <IcoPage userId={session.userId} token={session.jwtToken || ""} walletAddress={session.walletAddress} />}
               {/* 👑 تبويب المدير: لا يُتاح إلا لصاحب محفظة المدير حصراً — أي مستخدم آخر يفتح ?tab=admin يُوجَّه فوراً لصفحة 404 */}
               {activeTab === "admin" && (
                 (session.role === "admin" || session.walletAddress === ADMIN_WALLET)
@@ -768,7 +771,7 @@ export default function App() {
               )}
               
               {/* 🚫 تبويب غير معروف → صفحة 404 آمنة */}
-              {!["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels", "cards"].includes(activeTab) && (
+              {!["home", "airdrop", "referral", "tasks", "bonus", "admin", "levels", "cards", "ico"].includes(activeTab) && (
                 <NotFoundPage onNavigateTab={navigateTab} />
               )}
             </div>

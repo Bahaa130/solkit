@@ -12,7 +12,7 @@ import bs58 from "bs58"; // 🔐 فك ترميز عنوان المحفظة (base
 import { ed25519 } from "@noble/curves/ed25519"; // ✍️ التحقق من توقيع ed25519
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
-import { getSettings, updateSettings, type SiteSettings, type CardDef } from "../../config/settings.js";
+import { getSettings, updateSettings, DEFAULTS, type SiteSettings, type CardDef, type IcoSettings } from "../../config/settings.js";
 import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; // 🎯 نظام المستويات حسب النشاط
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 
@@ -1434,6 +1434,7 @@ router.get("/settings", async (_req: Request, res: Response) => {
       xpBonus: s.xpBonus ?? 15,
       miningDuration: s.miningDuration ?? 24,
       cards: s.cards || [],
+      ico: s.ico ? { ...s.ico } : null,
     });
   } catch (error: any) {
     console.error("GET /settings error:", error);
@@ -1531,6 +1532,37 @@ const settingsSchema = z.object({
     maxLevel: z.number().int().min(1).max(1000),
     duration: z.number().min(0).max(8760).optional(),
   })).max(50).optional(),
+  // 🏗️ صفحة الاكتتاب (ICO) — المحتوى يتحكم به المدير بالكامل
+  ico: z.object({
+    enabled: z.boolean().optional(),
+    title: z.string().min(1).max(120).optional(),
+    subtitle: z.string().min(1).max(300).optional(),
+    description: z.string().min(1).max(3000).optional(),
+    priceSOL: z.number().min(0.000000001).max(1000).optional(),
+    minSOL: z.number().min(0).max(100000).optional(),
+    maxSOL: z.number().min(0).max(1000000).optional(),
+    totalAllocation: z.number().min(0).max(10_000_000_000).optional(),
+    startDate: z.number().min(0).max(4102444800000).optional(),
+    endDate: z.number().min(0).max(4102444800000).optional(),
+    softCapSOL: z.number().min(0).max(10_000_000).optional(),
+    hardCapSOL: z.number().min(0).max(10_000_000).optional(),
+    tgePercent: z.number().min(0).max(100).optional(),
+    perks: z.array(z.object({
+      icon: z.string().min(1).max(8),
+      title: z.string().min(1).max(120),
+      desc: z.string().min(1).max(500),
+    })).max(24).optional(),
+    faq: z.array(z.object({
+      q: z.string().min(1).max(400),
+      a: z.string().min(1).max(2000),
+    })).max(24).optional(),
+    vesting: z.array(z.object({
+      label: z.string().min(1).max(120),
+      pct: z.number().min(0).max(100),
+      when: z.string().min(1).max(120),
+    })).max(24).optional(),
+    terms: z.string().max(6000).optional(),
+  }).optional(),
 });
 
 router.post("/admin/settings", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
@@ -1539,7 +1571,11 @@ router.post("/admin/settings", authenticateJWT, async (req: AuthenticatedRequest
     const parsed = settingsSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "صيغة الإعدادات غير صالحة" });
 
-    const updated = updateSettings(parsed.data);
+    // 🏗️ الاكتتاب: نملأ الحقل كاملاً من الافتراضيات + ما أرسله المدير (لا يتم حفظ جزء ناقص أبداً)
+    const icoPayload: IcoSettings | undefined = parsed.data.ico
+      ? ({ ...DEFAULTS.ico, ...(parsed.data.ico as Partial<IcoSettings>) } as IcoSettings)
+      : undefined;
+    const updated = updateSettings({ ...parsed.data, ico: icoPayload });
     const cfg = getTokenConfig();
     return res.json({
       message: "تم حفظ الإعدادات بنجاح ✅",
@@ -1573,10 +1609,184 @@ router.post("/admin/settings", authenticateJWT, async (req: AuthenticatedRequest
       xpBonus: updated.xpBonus ?? 15,
       miningDuration: updated.miningDuration ?? 24,
       cards: updated.cards || [],
+      ico: updated.ico ? { ...updated.ico } : null,
     });
   } catch (error: any) {
     console.error("Update settings error:", error);
     return res.status(500).json({ message: "فشل حفظ الإعدادات" });
+  }
+});
+
+// ==========================================
+// 🏗️ 8. مسارات الاكتتاب (ICO / pre-sale)
+// ==========================================
+
+// 📡 بيانات الاكتتاب العامة: التكوين من المدير + إحصائيات حية من قاعدة البيانات
+router.get("/ico/public", async (_req: Request, res: Response) => {
+  try {
+    const s: SiteSettings = getSettings();
+    const ico = s.ico || null;
+    let stats = { raisedSOL: 0, soldTokens: 0, participants: 0 };
+    if (ico && ico.enabled) {
+      const agg = await (prisma as any).icoPurchase.aggregate({
+        _sum: { solAmount: true, tokenAmount: true },
+        _count: { id: true },
+      });
+      stats = {
+        raisedSOL: Number(agg._sum.solAmount || 0),
+        soldTokens: Number(agg._sum.tokenAmount || 0),
+        participants: agg._count.id || 0,
+      };
+    }
+    return res.json({ config: ico, stats });
+  } catch (error: any) {
+    console.error("GET / ico/public error:", error);
+    return res.status(500).json({ message: "خطأ في جلب بيانات الاكتتاب" });
+  }
+});
+
+// 🛒 شراء من الاكتتاب: يتحقق من المعاملة على السلسلة ثم يعتمد المخصصات
+// الطلب: { txHash, solAmount } — solAmount بالوحدات العادية (مثلاً 0.05 = 5 سنتات SOL)
+router.post("/ico/purchase", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: "غير مصرّح" });
+
+    const s: SiteSettings = getSettings();
+    const ico = s.ico;
+    if (!ico || !ico.enabled) return res.status(400).json({ message: "الاكتتاب غير متاح حالياً" });
+
+    const now = Date.now();
+    if (ico.startDate && now < ico.startDate) return res.status(400).json({ message: "الاكتتاب لم يبدأ بعد" });
+    if (ico.endDate && now > ico.endDate) return res.status(400).json({ message: "انتهى الاكتتاب" });
+
+    const { txHash, solAmount } = req.body || {};
+    if (typeof txHash !== "string" || txHash.length < 8 || txHash.length > 200) {
+      return res.status(400).json({ message: "مفتاح المعاملة غير صالح" });
+    }
+    const amount = Number(solAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ message: "المبلغ غير صالح" });
+    }
+    if (amount < ico.minSOL) return res.status(400).json({ message: `الحد الأدنى للمشاركة ${ico.minSOL} SOL` });
+    if (amount > ico.maxSOL) return res.status(400).json({ message: `الحد الأقصى للمشاركة ${ico.maxSOL} SOL` });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ message: "الحساب غير موجود" });
+    if (!user.walletAddress) return res.status(400).json({ message: "اربط محفظتك أولاً" });
+
+    const priceSOL = ico.priceSOL || 0.001;
+    const tokenAmount = amount / priceSOL;
+
+    // 🧮 التحقق من السقف: لا نبيع أكثر من المخصص الكلي ولا نتجاوز الهدف الصلب
+    const soldAgg = await (prisma as any).icoPurchase.aggregate({ _sum: { tokenAmount: true, solAmount: true } });
+    const soldTokens = Number(soldAgg._sum.tokenAmount || 0);
+    const raisedSOL = Number(soldAgg._sum.solAmount || 0);
+    if (soldTokens + tokenAmount > ico.totalAllocation + 1e-9) {
+      return res.status(400).json({ message: "اكتمل بيع مخصصات الاكتتاب" });
+    }
+    if (ico.hardCapSOL && raisedSOL + amount > ico.hardCapSOL + 1e-9) {
+      return res.status(400).json({ message: "اكتمل الهدف الأقصى للاكتتاب" });
+    }
+
+    // ✅ فحص تكرار المعاملة (منع إعادة الاعتماد لنفس التوقيع)
+    const existing = await (prisma as any).icoPurchase.findUnique({ where: { txHash } });
+    if (existing) return res.status(400).json({ message: "تم اعتماد هذه المعاملة مسبقاً" });
+
+    // 🔗 التحقق على السلسلة: يجب أن المبلغ يصل لمحفظة الخزانة وأن المرسل هو محفظة المستخدم
+    const connection = new Connection(getRpcUrl(), "confirmed");
+    const txInfo = await fetchTransactionWithRetry(connection, txHash);
+    if (!txInfo || !txInfo.meta || txInfo.meta.err) {
+      return res.status(400).json({ message: "تعذّر تأكيد المعاملة على السلسلة" });
+    }
+    const keys = txInfo.transaction.message.getAccountKeys();
+    const treasury = getTokenConfig().treasury;
+    let fromIdx = -1;
+    let treasuryIdx = -1;
+    for (let i = 0; i < keys.length; i++) {
+      const addr = keys.get(i)?.toString();
+      if (addr === user.walletAddress) fromIdx = i;
+      if (addr === treasury) treasuryIdx = i;
+    }
+    const pre = txInfo.meta.preBalances || [];
+    const post = txInfo.meta.postBalances || [];
+    const requiredLamports = Math.round(amount * 1e9);
+    let treasuryReceived = 0;
+    if (treasuryIdx >= 0 && post[treasuryIdx] !== undefined) {
+      const preBal = pre[treasuryIdx] ?? 0;
+      const postBal = post[treasuryIdx] ?? 0;
+      treasuryReceived = postBal - preBal;
+    }
+    const directionOk =
+      fromIdx >= 0 &&
+      treasuryReceived >= requiredLamports * 0.9999 &&
+      (post[fromIdx] ?? 0) <= (pre[fromIdx] ?? 0);
+    if (!directionOk) {
+      return res.status(400).json({ message: "لم نجد الدفع المؤكد لمحفظة الخزانة" });
+    }
+
+    // 💾 اعتماد الشراء: سجل + رصيد + مكافأة (في معاملة واحدة ذرّية)
+    const created = await prisma.$transaction([
+      (prisma as any).icoPurchase.create({
+        data: { userId, solAmount: amount, tokenAmount, status: "purchased", txHash },
+      }),
+      prisma.user.update({ where: { id: userId }, data: { balance: { increment: tokenAmount } } }),
+      prisma.reward.create({
+        data: { userId, type: "ico_purchase", amount: tokenAmount },
+      }),
+    ]);
+
+    return res.status(201).json({
+      message: `تم تأكيد المشاركة ✅ خصّصنا لك ${tokenAmount.toLocaleString()} توكن`,
+      purchase: created[0],
+      tokenAmount,
+    });
+  } catch (error: any) {
+    console.error("POST / ico/purchase error:", error);
+    return res.status(500).json({ message: "فشل إتمام المشاركة في الاكتتاب" });
+  }
+});
+
+// 📄 مشترياتي من الاكتتاب
+router.get("/ico/my-purchases", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: "غير مصرّح" });
+    const rows = await (prisma as any).icoPurchase.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    return res.json({ purchases: rows });
+  } catch (error: any) {
+    console.error("GET / ico/my-purchases error:", error);
+    return res.status(500).json({ message: "خطأ في جلب مشترياتك" });
+  }
+});
+
+// 📊 سجل مشتريات الاكتتاب — للمدير فقط (آخر 500 عملية + الإجماليات)
+router.get("/admin/ico/purchases", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const [rows, totals] = await Promise.all([
+      (prisma as any).icoPurchase.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        include: { user: { select: { email: true, walletAddress: true, name: true } } },
+      }),
+      (prisma as any).icoPurchase.aggregate({ _sum: { solAmount: true, tokenAmount: true }, _count: { id: true } }),
+    ]);
+    return res.json({
+      purchases: rows,
+      totals: {
+        raisedSOL: Number(totals._sum.solAmount || 0),
+        soldTokens: Number(totals._sum.tokenAmount || 0),
+        count: totals._count.id || 0,
+      },
+    });
+  } catch (error: any) {
+    console.error("GET / admin/ico/purchases error:", error);
+    return res.status(500).json({ message: "خطأ في جلب سجل الاكتتاب" });
   }
 });
 
