@@ -32,15 +32,12 @@ import {
   restorePhantomSession,
   resetPhantomSession,
 } from "./phantomDeeplink";
+import { getNetworkConfig, rpcUrlFor } from "./network";
 
 // 🔑 معرّف مشروع WalletConnect (Reown Cloud) — ضروري لربط المحفظة على الموبايل.
 // احصل عليه مجاناً من https://cloud.reown.com ثم ضعه في ملف .env.prduction:
 //   VITE_WC_PROJECT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 const WC_PROJECT_ID = (import.meta.env.VITE_WC_PROJECT_ID as string | undefined) || "";
-
-const RPC_URL =
-  (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) ||
-  "https://api.devnet.solana.com";
 
 // 🔡 تحويل Uint8Array → Base64 (متوافق مع السيرفر الذي يوقّع رسالة الدخول)
 function base64FromUint8(bytes: Uint8Array): string {
@@ -88,7 +85,9 @@ interface SolanaWalletContextValue {
 
 const SolanaWalletContext = createContext<SolanaWalletContextValue | null>(null);
 
-function buildAdapters() {
+type NetworkOption = WalletAdapterNetwork.Mainnet | WalletAdapterNetwork.Devnet;
+
+function buildAdapters(network: NetworkOption) {
   const mobile = isMobile();
   const adapters: any[] = [];
 
@@ -105,7 +104,7 @@ function buildAdapters() {
     try {
       adapters.push(
         new WalletConnectWalletAdapter({
-          network: WalletAdapterNetwork.Devnet,
+          network,
           options: {
             projectId: WC_PROJECT_ID,
             metadata: {
@@ -325,9 +324,28 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
 }
 
 export function SolanaWalletProvider({ children }: { children: ReactNode }) {
-  const adapters = useMemo(() => buildAdapters(), []);
+  // 🌐 الشبكة (devnet/mainnet-beta) تُقرأ من إعدادات الخادم ثم يُعاد بناء
+  // المحوّلات ونقطة RPC — لتوقيع المعاملات على نفس شبكة محفظة المستخدم.
+  const [endpoint, setEndpoint] = useState<string>(() => rpcUrlFor("devnet"));
+  const [network, setNetwork] = useState<NetworkOption>(WalletAdapterNetwork.Devnet);
+  const adapters = useMemo(() => buildAdapters(network), [network]);
+
+  useEffect(() => {
+    let alive = true;
+    getNetworkConfig()
+      .then((cfg) => {
+        if (!alive) return;
+        setNetwork(cfg.network === "mainnet-beta" ? WalletAdapterNetwork.Mainnet : WalletAdapterNetwork.Devnet);
+        setEndpoint(cfg.rpc);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
-    <ConnectionProvider endpoint={RPC_URL}>
+    <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={adapters} autoConnect={false}>
         <WalletContextBridge>{children}</WalletContextBridge>
       </WalletProvider>

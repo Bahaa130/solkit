@@ -10,15 +10,29 @@ import { openWalletIntent } from "./walletLauncher";
 import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { Connection } from "@solana/web3.js";
+import { getNetworkConfig, rpcUrlFor } from "./network";
 
 const SCHEME = "app.solkit.mobile";
 const PHANTOM_BASE = "https://phantom.app/ul/v1";
 const APP_URL = "app.solkit.mobile://";
-const CLUSTER = "devnet";
 const SESSION_KEY = "solkit_phantom_session";
-const RPC_URL =
-  (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) ||
-  "https://api.devnet.solana.com";
+
+// 🌐 الشبكة تُقرأ من إعدادات الخادم (تبديل devnet/mainnet-beta) ليتطابق الربط
+// مع شبكة محفظة المستخدم — وإلا فشل التوقيع بخطأ عام "Unexpected error".
+let cluster = "devnet";
+let rpcUrl = rpcUrlFor("devnet");
+let netInit: Promise<void> | null = null;
+function ensureNetwork(): Promise<void> {
+  if (!netInit) {
+    netInit = getNetworkConfig()
+      .then((cfg) => {
+        cluster = cfg.network;
+        rpcUrl = cfg.rpc;
+      })
+      .catch(() => {});
+  }
+  return netInit;
+}
 
 // 🔑 جلسة Phantom المشفّرة (تُنشأ عند الاتصال وتُعاد استخدامها للتوقيع)
 interface PhantomSession {
@@ -150,13 +164,14 @@ function assertError(params: URLSearchParams) {
 
 // 🔌 اتصال: يفتح Phantom ويعرض نافذة الربط، يُرجع عنوان المحفظة ويخزّن الجلسة
 export async function connectPhantomMobile(): Promise<string> {
+  await ensureNetwork();
   const dappKeyPair = nacl.box.keyPair();
   const dappEncPubB58 = bs58.encode(dappKeyPair.publicKey);
 
   const resp = await openPhantomAndAwait("connect", {
     dapp_encryption_public_key: dappEncPubB58,
     app_url: APP_URL,
-    cluster: CLUSTER,
+    cluster,
   });
   assertError(resp);
 
@@ -259,7 +274,8 @@ export async function sendTransactionPhantomMobile(
 
 // 📡 بثّ معاملة موقّعة عبر البروكسي (fetch مباشر — لا يعتمد على web3.js)
 async function broadcastRawTransaction(signedTxBytes: Uint8Array): Promise<string> {
-  const res = await fetch(RPC_URL, {
+  await ensureNetwork();
+  const res = await fetch(rpcUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

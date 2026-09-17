@@ -14,6 +14,7 @@ import { C } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useSolanaWallet } from "../lib/walletProvider";
 import { restorePhantomSession } from "../lib/phantomDeeplink";
+import { getNetworkConfig, rpcUrlFor } from "../lib/network";
 import { Capacitor } from "@capacitor/core";
 
 interface Props { token: string }
@@ -53,8 +54,17 @@ export default function IcoDistributionPanel({ token }: Props) {
   const [status, setStatus] = useState<{ type: string; text: string } | null>(null);
 
   const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
-  const rpc = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
+  // 🌐 الشبكة تُقرأ من إعدادات الخادم لتطابق شبكة محفظة التوزيع (المدير)
+  const [rpc, setRpc] = useState<string>(() => rpcUrlFor("devnet"));
   const [warmBlockhash, setWarmBlockhash] = useState<{ blockhash: string; lastValidBlockHeight: number } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getNetworkConfig()
+      .then((cfg) => { if (alive) setRpc(cfg.rpc); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     const conn = new Connection(rpc, "confirmed");

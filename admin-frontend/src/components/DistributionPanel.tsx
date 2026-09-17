@@ -10,6 +10,7 @@ import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useSolanaWallet } from "../lib/walletProvider";
 import { restorePhantomSession } from "../lib/phantomDeeplink";
+import { getNetworkConfig, rpcUrlFor } from "../lib/network";
 import { Capacitor } from "@capacitor/core";
 
 interface DistributionPanelProps {
@@ -48,8 +49,17 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
   const { t } = useLang();
   const { address: connectedAddress, connectWallet, sendTransaction } = useSolanaWallet();
 
-  const rpc = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
+  // 🌐 الشبكة تُقرأ من إعدادات الخادم لتطابق شبكة محفظة التوزيع (المدير)
+  const [rpc, setRpc] = useState<string>(() => rpcUrlFor("devnet"));
   const [warmBlockhash, setWarmBlockhash] = useState<{ blockhash: string; lastValidBlockHeight: number } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getNetworkConfig()
+      .then((cfg) => { if (alive) setRpc(cfg.rpc); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // 🔥 إحماء مسبق لبروكسي RPC فور فتح اللوحة (بلا إزعاج): نقرأ أحدث بلوكهاش في الخلفية
   // حتى يكون جاهزاً لحظة الضغط على «توزيع» — فيفتح توقيع الدفع فوراً دون انتظار إيقاظ الخادم.

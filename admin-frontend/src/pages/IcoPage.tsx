@@ -9,6 +9,7 @@ import { useLang } from "../i18n/index.tsx";
 import { useBranding } from "../branding";
 import { useSolanaWallet } from "../lib/walletProvider";
 import { restorePhantomSession } from "../lib/phantomDeeplink";
+import { getNetworkConfig, rpcUrlFor } from "../lib/network";
 import { Capacitor } from "@capacitor/core";
 
 interface IcoPageProps {
@@ -87,8 +88,23 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const rpc = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
+  // 🌐 الشبكة (devnet/mainnet-beta) تُقرأ من إعدادات الخادم وليس مجمّدة — كي تطابق
+  // شبكة محفظة المستخدم (خلاف ذلك يرفض التوقيع بخطأ "Unexpected error").
+  const [rpc, setRpc] = useState<string>(() => rpcUrlFor("devnet"));
+  const [network, setNetwork] = useState<string>("devnet");
   const [warmBlockhash, setWarmBlockhash] = useState<{ blockhash: string; lastValidBlockHeight: number } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getNetworkConfig()
+      .then((cfg) => {
+        if (!alive) return;
+        setNetwork(cfg.network);
+        setRpc(cfg.rpc);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // 🔥 إحماء مسبق لبروكسي RPC حتى يكون التوقيع فورياً عند الضغط (نمط لوحة التوزيع)
   useEffect(() => {
@@ -491,6 +507,9 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
             <div style={{ marginTop: 14, fontSize: 11.5, color: C.muted, lineHeight: 1.8 }}>
               تُرسل دفعتك إلى <strong style={{ color: C.text }}>{treasury ? `${treasury.slice(0, 6)}…${treasury.slice(-4)}` : "محفظة الخزانة"}</strong> عن طريق محفظتك مباشرة — لا نحتفظ بأموالك في أي وقت.
+            </div>
+            <div className="pill" style={{ marginTop: 10, padding: "6px 10px", border: "1px solid rgba(0,255,204,0.25)", color: C.teal, background: "rgba(0,255,204,0.06)", fontSize: 11.5, textAlign: "center" }}>
+              🌐 الشبكة: {network === "mainnet-beta" ? "الشبكة الحقيقية (Mainnet)" : "شبكة التطوير (Devnet)"} — تأكد أن محفظتك على نفس الشبكة قبل الدفع.
             </div>
 
             {status && (

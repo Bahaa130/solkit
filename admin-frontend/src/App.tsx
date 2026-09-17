@@ -20,9 +20,9 @@ import { useLang } from "./i18n/index.tsx";
 import { useBranding } from "./branding";
 import CoinIcon from "./components/CoinIcon";
 import { useSolanaWallet } from "./lib/walletProvider";
+import { getNetworkConfig } from "./lib/network";
 
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
-const SOLANA_RPC_URL = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) || "https://api.devnet.solana.com";
 
 // 🔁 جلب آخر blockhash مع إعادة محاولة تلقائية لتجاوز أوقات الازدحام/بطء الشبكة.
 // المسار الأول عبر web3.js Connection، والثاني عبر fetch مباشر (نفس آلية apiFetch
@@ -30,6 +30,7 @@ const SOLANA_RPC_URL = (import.meta.env.VITE_SOLANA_RPC_URL as string | undefine
 async function fetchBlockhashWithRetry(
   connection: Connection,
   report: (label: string, err: unknown) => void,
+  rpcUrl: string,
 ): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   let lastErr: unknown = null;
@@ -49,7 +50,7 @@ async function fetchBlockhashWithRetry(
   // 2️⃣ عبر fetch مباشر (يُرسل نفس طلب JSON-RPC للبروكسي)
   for (let i = 0; i < 3; i++) {
     try {
-      const res = await fetch(SOLANA_RPC_URL, {
+      const res = await fetch(rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -436,7 +437,11 @@ export default function App() {
         return;
       }
 
-      const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+      // 🌐 الشبكة تُقرأ من إعدادات الخادم — الدفع يحدث على نفس شبكة محفظة المستخدم
+      const netCfg = await getNetworkConfig();
+      const rpc = netCfg.rpc;
+
+      const connection = new Connection(rpc, "confirmed");
       const siteAdminPublicKey = new PublicKey(ADMIN_WALLET);
       const userPublicKey = new PublicKey(signerAddress);
 
@@ -500,13 +505,15 @@ export default function App() {
       transaction.feePayer = userPublicKey;
       let latestBlockHashInfo: { blockhash: string; lastValidBlockHeight: number } | null = null;
       try {
-        latestBlockHashInfo = await fetchBlockhashWithRetry(connection, (label, err) =>
-          console.warn("[blockhash]", label, err),
+        latestBlockHashInfo = await fetchBlockhashWithRetry(
+          connection,
+          (label, err) => console.warn("[blockhash]", label, err),
+          rpc,
         );
       } catch (err) {
         const detail =
           err instanceof Error ? err.message.replace(/^RPC unreachable :: /, "") : "network";
-        setPayStatus({ type: "error", text: `${t("app.payRpcFailed")} [${SOLANA_RPC_URL}] (${detail})` });
+        setPayStatus({ type: "error", text: `${t("app.payRpcFailed")} [${rpc}] (${detail})` });
         return;
       }
       transaction.recentBlockhash = latestBlockHashInfo.blockhash;

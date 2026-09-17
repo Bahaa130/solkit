@@ -75,6 +75,8 @@ export default function IcoAdminPanel({ token }: Props) {
   const [form, setForm] = useState<IcoForm>(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [network, setNetwork] = useState<string>("devnet");
+  const [platformInfo, setPlatformInfo] = useState<{ tokenMint: string; tokenDecimals: number; treasuryWallet: string }>({ tokenMint: "", tokenDecimals: 9, treasuryWallet: "" });
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [totals, setTotals] = useState({ raisedSOL: 0, soldTokens: 0, count: 0 });
 
@@ -82,6 +84,14 @@ export default function IcoAdminPanel({ token }: Props) {
     try {
       const res = await apiFetch("/api/users/settings");
       const d = await res.json();
+      if (res.ok) {
+        if (d.solanaNetwork === "devnet" || d.solanaNetwork === "mainnet-beta") setNetwork(d.solanaNetwork);
+        setPlatformInfo({
+          tokenMint: d.tokenMint || "",
+          tokenDecimals: Number(d.tokenDecimals) || 9,
+          treasuryWallet: d.treasuryWallet || "",
+        });
+      }
       if (res.ok && d.ico) {
         const ico = d.ico;
         setForm({
@@ -165,7 +175,7 @@ export default function IcoAdminPanel({ token }: Props) {
     try {
       setSaving(true);
       const res = await apiFetch("/api/users/admin/settings", {
-        method: "POST", headers, body: JSON.stringify({ ico }),
+        method: "POST", headers, body: JSON.stringify({ ico, solanaNetwork: network }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -267,6 +277,23 @@ export default function IcoAdminPanel({ token }: Props) {
             <label style={styles.field}>
               <span style={styles.fieldLabel}>البداية (فارغة = فوراً)</span>
               <input type="datetime-local" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} style={styles.input} />
+            </label>
+          </div>
+
+          {/* 🌐 الشبكة التي يُدفع/يوقَّع عليها الاكتتاب */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+            <label style={styles.field}>
+              <span style={styles.fieldLabel}>شبكة الدفع (يجب أن تطابق محفظة المشارك)</span>
+              <select className="input" value={network} onChange={(e) => setNetwork(e.target.value)} style={styles.input}>
+                <option value="devnet">شبكة التطوير (Devnet)</option>
+                <option value="mainnet-beta">الشبكة الحقيقية (Mainnet)</option>
+              </select>
+            </label>
+            <label style={styles.field}>
+              <span style={styles.fieldLabel}>{platformInfo.tokenMint ? "إيصال التوكن المرتبط" : "خزانة الاكتتاب (تصل SOL إليها)"}</span>
+              <div className="pill" style={{ ...styles.input, display: "flex", alignItems: "center", gap: 6, direction: "ltr", color: platformInfo.tokenMint ? C.teal : C.amber, fontSize: 11, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {platformInfo.tokenMint ? `TOKEN ● ${platformInfo.tokenMint.slice(0, 10)}… (${platformInfo.tokenDecimals})` : `🏦 ${platformInfo.treasuryWallet ? platformInfo.treasuryWallet.slice(0, 12) + "…" : "غير مُضبط"}`}
+              </div>
             </label>
           </div>
 
