@@ -5,6 +5,8 @@
 
 const API_BASE = ((import.meta.env?.VITE_API_URL as string | undefined) ?? "").replace(/\/+$/, "");
 
+export { API_BASE };
+
 /** نفس توقيع fetch لكن مع بادئة الخادم عند تعيينها. */
 export const apiFetch = (path: string, opts?: RequestInit): Promise<Response> =>
   fetch(`${API_BASE}${path}`, opts);

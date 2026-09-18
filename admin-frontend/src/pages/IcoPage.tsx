@@ -9,7 +9,7 @@ import { useLang } from "../i18n/index.tsx";
 import { useBranding } from "../branding";
 import { useSolanaWallet } from "../lib/walletProvider";
 import { restorePhantomSession } from "../lib/phantomDeeplink";
-import { getNetworkConfig, rpcUrlFor } from "../lib/network";
+import { getNetworkConfig, rpcUrlFor, rpcDirectUrl } from "../lib/network";
 import { Capacitor } from "@capacitor/core";
 
 interface IcoPageProps {
@@ -256,21 +256,44 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       const connection = new Connection(rpc, "confirmed");
       const lamports = Math.round(amountNum * 1e9);
 
-      // 🔄 إيقاظ الخادم (إن كان نائماً) للحصول على blockhash حديث قبل فتح التوقيع
+      // 🔄 إيقاظ الخادم وحشو blockhash قبل فتح التوقيع:
+      // نجرّب بروكسي خادمنا أولاً (يوقظ Render النائم) ثم نقطة سولانا العمومية
+      // كاحتياط أخير — فالعقدة العامة أحياناً تبطئ/تفشل في اللحظة نفسها.
       let blockhash = warmBlockhash;
       if (!blockhash) {
-        for (let attempt = 1; attempt <= 6 && !blockhash; attempt++) {
+        const tryConn = async (url: string): Promise<boolean> => {
           try {
-            if (attempt > 1) setStatus({ type: "loading", text: `إيقاظ الخادم (المحاولة ${attempt}/6) — لحظات...` });
-            blockhash = await connection.getLatestBlockhash("confirmed");
-            setWarmBlockhash(blockhash);
-          } catch (e) {
-            if (attempt >= 6) throw e;
-            await new Promise((r) => setTimeout(r, 3000));
+            const bh = await new Connection(url, "confirmed").getLatestBlockhash("confirmed");
+            if (bh) {
+              blockhash = bh;
+              setWarmBlockhash(bh);
+            }
+            return !!bh;
+          } catch {
+            return false;
+          }
+        };
+        for (let attempt = 1; attempt <= 6 && !blockhash; attempt++) {
+          if (attempt > 1) {
+            setStatus({
+              type: "loading",
+              text: attempt === 2
+                ? "إيقاظ الخادم — أول دفع قد يستغرق دقيقة (الخادم نائم أحياناً) وحين يستيقظ يَفتح المحفظة للتأكيد..."
+                : `إيقاظ الخادم (المحاولة ${attempt}/6) — لحظات...`,
+            });
+          }
+          if (await tryConn(rpc)) break;
+          await new Promise((r) => setTimeout(r, 2500));
+        }
+        if (!blockhash) {
+          const direct = rpcDirectUrl(network);
+          for (let a = 1; a <= 2 && !blockhash; a++) {
+            if (await tryConn(direct)) break;
+            if (a < 2) await new Promise((r) => setTimeout(r, 2500));
           }
         }
       }
-      if (!blockhash) throw new Error("لا يمكن قراءة حالة الشبكة الآن — أعد المحاولة.");
+      if (!blockhash) throw new Error("لا يمكن قراءة حالة الشبكة الآن — أعد المحاولة بعد قليل.");
 
       setStatus({ type: "loading", text: "افتح محفظتك لتأكيد وتوقيع دفع الاكتتاب..." });
       const tx = new Transaction().add(
