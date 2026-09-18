@@ -15,6 +15,7 @@ import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.mi
 import { getSettings, updateSettings, DEFAULTS, type SiteSettings, type CardDef, type IcoSettings } from "../../config/settings.js";
 import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; // 🎯 نظام المستويات حسب النشاط
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
+import { rpcRequest } from "../solana/solana.route.js"; // 🔧 طلب RPC مرن (نفس منطق إعادة محاولة البروكسي)
 
 const router = Router();
 // 🗺️ مسار المجلد الجاري (متوافق مع ESM في src/ و dist/ — مثل app.ts)
@@ -1085,6 +1086,75 @@ const fetchTransactionWithRetry = async (
   return null;
 };
 
+// 🔁 جلب معاملة الاكتتاب عبر طلب RPC المرن (يستخدم نفس الشبكة والشبكة التي ضبطها
+// المدير ويتحمّل تباطؤ العقدة العامة بدل فشل «تعذّر تأكيد المعاملة»).
+const fetchIcoTransaction = async (signature: string): Promise<any | null> => {
+  try {
+    return await rpcRequest("getTransaction", [
+      signature,
+      { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" },
+    ]);
+  } catch (err: any) {
+    console.warn(`fetchIcoTransaction (${signature.slice(0, 8)}…): ${err?.message || err}`);
+    return null;
+  }
+};
+
+// ✅ التحقق من اتجاه معاملة الاكتتاب: أرسلها المشترك فعلاً إلى الخزانة بالمبلغ المطلوب
+const verifyTreasuryTransfer = (tx: any, fromWallet: string, amountSol: number): boolean => {
+  if (!tx || !tx.meta || tx.meta.err) return false;
+  const keys: string[] = (tx.transaction?.message?.accountKeys || []).map((k: any) =>
+    typeof k === "string" ? k : k?.pubkey,
+  );
+  const treasury = getTokenConfig().treasury;
+  const fromIdx = keys.indexOf(fromWallet);
+  const treasuryIdx = keys.indexOf(treasury);
+  const pre = tx.meta.preBalances || [];
+  const post = tx.meta.postBalances || [];
+  const requiredLamports = Math.round(amountSol * 1e9);
+  let treasuryReceived = 0;
+  if (treasuryIdx >= 0 && post[treasuryIdx] !== undefined) {
+    treasuryReceived = (post[treasuryIdx] ?? 0) - (pre[treasuryIdx] ?? 0);
+  }
+  return (
+    fromIdx >= 0 &&
+    treasuryReceived >= requiredLamports * 0.9999 &&
+    (post[fromIdx] ?? 0) <= (pre[fromIdx] ?? 0)
+  );
+};
+
+// ⏳ إعادة محاولة تأكيد آلي لاحق (بخلفية) للمشاركة المعلّقة إن تعذّر التحقق الفوري؛
+// لا يرمي أبداً — التحقق الفشل يبقى بانتظار تأكيد المدير اليدوي.
+const scheduleIcoAutoConfirm = (
+  purchaseId: number,
+  txHash: string,
+  wallet: string,
+  amountSol: number,
+) => {
+  const delays = [25000, 90000, 300000]; // ~25ث، ~90ث، ~5د
+  let i = 0;
+  const attempt = async () => {
+    try {
+      const p: any = await (prisma as any).icoPurchase.findUnique({ where: { id: purchaseId } });
+      if (!p || p.status !== "pending") return; // تأكد/أُلغي يدوياً → نتوقف
+      const tx = await fetchIcoTransaction(txHash);
+      if (tx && verifyTreasuryTransfer(tx, wallet, amountSol)) {
+        await (prisma as any).icoPurchase.update({
+          where: { id: purchaseId },
+          data: { status: "purchased" },
+        });
+        console.log(`[ICO] auto-confirmed purchase #${purchaseId}`);
+        return;
+      }
+    } catch (err) {
+      console.warn(`[ICO] auto-confirm attempt #${purchaseId}:`, err);
+    }
+    i++;
+    if (i < delays.length) setTimeout(attempt, delays[i]);
+  };
+  setTimeout(attempt, delays[0]);
+};
+
 // أ. نظرة عامة على الأرصدة المجمعة وحالة التوكن
 router.get("/admin/distribution/overview", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -1707,11 +1777,11 @@ router.post("/ico/purchase", authenticateJWT, async (req: AuthenticatedRequest, 
     if (!user) return res.status(404).json({ message: "الحساب غير موجود" });
     if (!user.walletAddress) return res.status(400).json({ message: "اربط محفظتك أولاً" });
 
-    // 👛 الحد الأقصى التراكمي لكل محفظة: مجموع مشتريات هذا الحساب + الدفعة الجديدة
-    // يجب ألا يتجاوز maxPerWalletSOL (مثال: لا تشتري محفظة بأكثر من 10 SOL إجمالاً).
+    // 👛 الحد الأقصى التراكمي لكل محفظة: مجموع مشتريات هذا الحساب (المؤكّدة والمعلّقة
+    // على السواء — فالمبلغ دُفع فعلاً) + الدفعة الجديدة يجب ألا يتجاوز maxPerWalletSOL.
     const maxPerWallet = ico.maxPerWalletSOL ?? 10;
     const walletAgg = await (prisma as any).icoPurchase.aggregate({
-      where: { userId, status: "purchased" },
+      where: { userId, status: { in: ["purchased", "pending"] } },
       _sum: { solAmount: true },
     });
     const walletRaised = Number(walletAgg._sum.solAmount || 0);
@@ -1740,49 +1810,40 @@ router.post("/ico/purchase", authenticateJWT, async (req: AuthenticatedRequest, 
     const existing = await (prisma as any).icoPurchase.findUnique({ where: { txHash } });
     if (existing) return res.status(400).json({ message: "تم اعتماد هذه المعاملة مسبقاً" });
 
-    // 🔗 التحقق على السلسلة: يجب أن المبلغ يصل لمحفظة الخزانة وأن المرسل هو محفظة المستخدم
-    const connection = new Connection(getRpcUrl(), "confirmed");
-    const txInfo = await fetchTransactionWithRetry(connection, txHash);
-    if (!txInfo || !txInfo.meta || txInfo.meta.err) {
-      return res.status(400).json({ message: "تعذّر تأكيد المعاملة على السلسلة" });
-    }
-    const keys = txInfo.transaction.message.getAccountKeys();
-    const treasury = getTokenConfig().treasury;
-    let fromIdx = -1;
-    let treasuryIdx = -1;
-    for (let i = 0; i < keys.length; i++) {
-      const addr = keys.get(i)?.toString();
-      if (addr === user.walletAddress) fromIdx = i;
-      if (addr === treasury) treasuryIdx = i;
-    }
-    const pre = txInfo.meta.preBalances || [];
-    const post = txInfo.meta.postBalances || [];
-    const requiredLamports = Math.round(amount * 1e9);
-    let treasuryReceived = 0;
-    if (treasuryIdx >= 0 && post[treasuryIdx] !== undefined) {
-      const preBal = pre[treasuryIdx] ?? 0;
-      const postBal = post[treasuryIdx] ?? 0;
-      treasuryReceived = postBal - preBal;
-    }
-    const directionOk =
-      fromIdx >= 0 &&
-      treasuryReceived >= requiredLamports * 0.9999 &&
-      (post[fromIdx] ?? 0) <= (pre[fromIdx] ?? 0);
-    if (!directionOk) {
-      return res.status(400).json({ message: "لم نجد الدفع المؤكد لمحفظة الخزانة" });
-    }
-
-    // 💾 اعتماد الشراء: تسجيل الدفعة فقط — توزيع التوكن يتم يدوياً من لوحة المدير
-// («توزيعات الاكتتاب») بعد تجمع مشتريات مؤكدّة، ثم يوقّع المدير إرسال التوكن
-// لمحافظ المشترين وتُعلَّم الصفوف كمُسلَّمة لمنع التكرار.
+    // 💾 اعتماد الشراء فوراً بوصفه «غير مؤكَّد» (بانتظار تأكيد الإدارة يدوياً) حتى لا
+    // يُحرَم أي مشترك صادق من مشاركته إن تعذّر التحقق الآني (تباطؤ العقد العامة /
+    // نوم الخادم). ثم نحاول التحقق الآلي — إن نجح نرقّي العملية إلى «مؤكّدة» فعلاً.
+    // التوزيع والاعتماد النهائي يبقىان يدويين من لوحة المدير.
     const purchase = await (prisma as any).icoPurchase.create({
-      data: { userId, solAmount: amount, tokenAmount, status: "purchased", delivered: false, txHash },
+      data: { userId, solAmount: amount, tokenAmount, status: "pending", delivered: false, txHash },
     });
 
+    let autoConfirmed = false;
+    try {
+      const txInfo = await fetchIcoTransaction(txHash);
+      autoConfirmed = txInfo ? verifyTreasuryTransfer(txInfo, user.walletAddress, amount) : false;
+      if (autoConfirmed) {
+        await (prisma as any).icoPurchase.update({
+          where: { id: purchase.id },
+          data: { status: "purchased" },
+        });
+        purchase.status = "purchased";
+      } else {
+        // 🔁 جرّب لاحقاً في الخلفية (قد يكون التأكيد ما زال قيد فهرسة العقدة)
+        scheduleIcoAutoConfirm(purchase.id, txHash, user.walletAddress, amount);
+      }
+    } catch (err: any) {
+      console.error("[ICO] auto-verify failed (kept pending):", err?.message || err);
+      scheduleIcoAutoConfirm(purchase.id, txHash, user.walletAddress, amount);
+    }
+
     return res.status(201).json({
-      message: `تم تأكيد المشاركة ✅ خُصّص لك ${tokenAmount.toLocaleString()} توكن — تُسلَّم بعد موافقة التوزيع.`,
+      message: autoConfirmed
+        ? `تم تأكيد المشاركة ✅ خُصّص لك ${tokenAmount.toLocaleString()} توكن — تُسلَّم بعد موافقة التوزيع.`
+        : `سُجِّلت مشاركتك ✅ (${tokenAmount.toLocaleString()} توكن) — سيتأكدها المدير من لوحة الإدارة خلال وقت وجيز.`,
       purchase,
       tokenAmount,
+      status: purchase.status,
     });
   } catch (error: any) {
     console.error("POST / ico/purchase error:", error);
@@ -1830,6 +1891,83 @@ router.get("/admin/ico/purchases", authenticateJWT, async (req: AuthenticatedReq
   } catch (error: any) {
     console.error("GET / admin/ico/purchases error:", error);
     return res.status(500).json({ message: "خطأ في جلب سجل الاكتتاب" });
+  }
+});
+
+// ✅ تأكيد يدوي لمشاركة من المدير (بعد التحقق بنفسه من وصول الدفع):
+// يرفع الحالة من «غير مؤكّدة» (pending) إلى «مؤكّدة» (purchased) فتُشمَل في التوزيع.
+router.post("/admin/ico/confirm", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const id = Number(req.body?.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ message: "معرّف العملية غير صالح" });
+    const p = await (prisma as any).icoPurchase.findUnique({ where: { id } });
+    if (!p) return res.status(404).json({ message: "العملية غير موجودة" });
+    await (prisma as any).icoPurchase.update({ where: { id }, data: { status: "purchased" } });
+    console.log(`[ICO] admin confirmed purchase #${id} (${Number(p.tokenAmount)} tokens)`);
+    return res.json({ message: "تم تأكيد المشاركة يدوياً ✅ — ستُدرج في التوزيع." });
+  } catch (error: any) {
+    console.error("POST / admin/ico/confirm error:", error);
+    return res.status(500).json({ message: "فشل تأكيد المشاركة" });
+  }
+});
+
+// ↩️ إعادة اشتراك إلى حالة «غير مؤكّدة» (تراجع يدوي من المدير حال الشك في الدفع)
+router.post("/admin/ico/unconfirm", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const id = Number(req.body?.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ message: "معرّف العملية غير صالح" });
+    await (prisma as any).icoPurchase.update({
+      where: { id },
+      data: { status: "pending", delivered: false, deliveryTxHash: null },
+    });
+    return res.json({ message: "أُعيدت المشاركة إلى حالة «غير مؤكَّدة» — لن تُدرج في التوزيع." });
+  } catch (error: any) {
+    console.error("POST / admin/ico/unconfirm error:", error);
+    return res.status(500).json({ message: "فشل تحديث حالة المشاركة" });
+  }
+});
+
+// ➕ إضافة اشتراك يدوي من المدير (دفع خارجي/نقدي/تحويل لا يمر بالسلسلة):
+// يُسجَّل فوراً بحالة يحددها المدير (مؤكّدة أم بانتظار التأكيد).
+router.post("/admin/ico/add-purchase", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!isAdmin(req, res)) return;
+    const s: SiteSettings = getSettings();
+    const ico = s?.ico;
+    if (!ico) return res.status(400).json({ message: "إعدادات الاكتتاب غير موجودة" });
+
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const amount = Number(req.body?.solAmount);
+    const txHash = req.body?.txHash ? String(req.body.txHash).trim().slice(0, 200) : null;
+    const status = req.body?.status === "purchased" ? "purchased" : "pending";
+
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return res.status(400).json({ message: "أدخل بريداً صحيحاً" });
+    }
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(404).json({ message: "لا يوجد حساب بهذا البريد — تحقق من البريد المسجَّل بالمشترك" });
+    if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ message: "المبلغ غير صالح" });
+    if (amount < ico.minSOL) return res.status(400).json({ message: `الحد الأدنى للمشاركة ${ico.minSOL} SOL` });
+    if (amount > ico.maxSOL) return res.status(400).json({ message: `الحد الأقصى للمشاركة ${ico.maxSOL} SOL` });
+    if (txHash) {
+      const dup = await (prisma as any).icoPurchase.findUnique({ where: { txHash } });
+      if (dup) return res.status(400).json({ message: "هذا الإيصال مسجَّل مسبقاً" });
+    }
+
+    const priceSOL = ico.priceSOL || 0.001;
+    const tokenAmount = amount / priceSOL;
+    const purchase = await (prisma as any).icoPurchase.create({
+      data: { userId: user.id, solAmount: amount, tokenAmount, status, delivered: false, txHash },
+    });
+    return res.status(201).json({
+      message: `تم تسجيل الاشتراك ✅ (${tokenAmount.toLocaleString()} توكن) بحالة ${status === "purchased" ? "«مؤكَّدة»" : "«بانتظار التأكيد»"}.`,
+      purchase,
+    });
+  } catch (error: any) {
+    console.error("POST / admin/ico/add-purchase error:", error);
+    return res.status(500).json({ message: "فشل تسجيل الاشتراك اليدوي" });
   }
 });
 

@@ -51,6 +51,7 @@ interface PurchaseRow {
   tokenAmount: number;
   status: string;
   txHash: string | null;
+  delivered?: boolean;
   createdAt: string;
 }
 
@@ -177,6 +178,14 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
   const fmt = (n: number, d = 0) =>
     n.toLocaleString(undefined, { maximumFractionDigits: d });
+
+  // 🏷️ حالة عملية اكتتاب: مُسلَّمة 📦 / مؤكّدة ✅ / غير مؤكّدة (بانتظار تأكيد المدير) ⏳
+  const purchaseBadge = (p: PurchaseRow) => {
+    if (p.delivered) return { label: "مُسلَّمة 📦", color: "#7cf5c0", bg: "rgba(0,255,204,0.1)", border: "rgba(0,255,204,0.3)" };
+    if (p.status === "purchased") return { label: "مؤكّد ✅", color: "#7cf5c0", bg: "rgba(34,229,132,0.1)", border: "rgba(34,229,132,0.3)" };
+    if (p.status === "pending" || !p.status) return { label: "بانتظار تأكيد المدير ⏳", color: "#ffb020", bg: "rgba(255,176,32,0.1)", border: "rgba(255,176,32,0.3)" };
+    return { label: p.status, color: C.muted, bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.12)" };
+  };
 
   const copyAddress = (addr: string) => {
     try {
@@ -321,10 +330,10 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
         body: JSON.stringify({ txHash: sig, solAmount: amountNum }),
       });
       const data = await res.json();
-      if (!res.ok || !res.ok && !data.tokenAmount) {
+      if (!res.ok) {
         return setStatus({ type: "error", text: data.message || "فشل اعتماد المشاركة" });
       }
-      setStatus({ type: "success", text: data.message || "تم تأكيد المشاركة ✅" });
+      setStatus({ type: "success", text: data.message || "تم تسجيل المشاركة ✅" });
       setOpen(false);
       setAmountStr("");
       try { localStorage.removeItem("solkit_pending_ico_tx"); } catch { /* */ }
@@ -505,17 +514,17 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
                   {new Date(p.createdAt).toLocaleString()} · {fmt(p.solAmount, 4)} SOL
                 </div>
               </div>
-              <span className="pill" style={{ background: "rgba(34,229,132,0.1)", color: "#7cf5c0", border: "1px solid rgba(34,229,132,0.3)" }}>
-                {p.status === "purchased" ? "مؤكّد ✅" : p.status}
+              <span className="pill" style={{ flexShrink: 0, background: purchaseBadge(p).bg, color: purchaseBadge(p).color, border: `1px solid ${purchaseBadge(p).border}` }}>
+                {purchaseBadge(p).label}
               </span>
             </div>
           ))}
         </div>
       )}
 
-      {/* 🪙 رصيد بالتوكنات يفيدك: أبرز أن الارصدة تُضاف للحساب فور الاعتماد */}
+      {/* 🪙 رصيد بالتوكنات يفيدك: أبرز أن الارصدة تُضاف بعد تأكيد الإدارة */}
       <p style={{ ...T.hint, textAlign: "center", marginTop: 12, fontSize: 11.5 }}>
-        تُضاف التوكنات إلى رصيد حسابك فور تأكيد الدفع على السلسلة، وتُفرج حسب جدول الاستحقاق بعد الإدراج.
+        تُضاف التوكنات إلى رصيد حسابك بعد تأكيد الإدارة لمشاركتك، ثم تُفرج حسب جدول الاستحقاق بعد الإدراج.
       </p>
 
       {/* 🪟 نافذة المشاركة */}

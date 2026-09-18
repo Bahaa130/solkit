@@ -12,7 +12,7 @@ const router = Router();
 const ENV_RPC = process.env.SOLANA_RPC_URL;
 
 /** اختيار عنوان RPC: إعداد البيئة أولاً، وإلا الشبكة المضبوطة في إعدادات الموقع. */
-function rpcTarget(): string {
+export function rpcTarget(): string {
   if (ENV_RPC) return ENV_RPC;
   const s = getSettings();
   return s?.solanaNetwork === "mainnet-beta"
@@ -33,6 +33,57 @@ function isRpcLevelError(payload: any): boolean {
     code === 429 ||
     /unhealthy|rate|limit|too many/i.test(String(err?.message || ""))
   );
+}
+
+/**
+ * 🔧 طلب JSON-RPC مرن بنفس منطق إعادة المحاولة الذي يستخدمه البروكسي
+ * (يستخدمه الخادم داخلياً — مثل التحقق البلوكشيني من مشتريات الاكتتاب — ليتحمّل
+ * تباطؤ العقد العامة / إيقاظ Render بدل الفشل الفوري).
+ */
+export async function rpcRequest<T = any>(method: string, params: any[]): Promise<T> {
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
+  let lastErr: unknown = null;
+
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      const upstream = await fetch(rpcTarget(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "solkit-rpc-proxy",
+        },
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      const text = await upstream.text();
+      let payload: any = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = null;
+      }
+
+      if (upstream.ok && !isRpcLevelError(payload)) {
+        if (payload?.error) {
+          lastErr = new Error(`rpc_error_${payload.error.code ?? "?"}`);
+          break;
+        }
+        if (payload?.result !== undefined) return payload.result as T;
+      }
+      lastErr = new Error(`upstream_http_${upstream.status}_rpc_${payload?.error?.code ?? "?"}`);
+    } catch (e) {
+      lastErr = e;
+      if (attempt >= 5) break;
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+
+  throw new Error(`solana_rpc_failed_${(lastErr as Error)?.message ?? "?"}`);
 }
 
 router.post("/rpc", async (req: Request, res: Response) => {

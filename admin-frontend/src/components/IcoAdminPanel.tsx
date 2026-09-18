@@ -39,6 +39,7 @@ interface PurchaseRow {
   tokenAmount: number;
   status: string;
   txHash: string | null;
+  delivered?: boolean;
   createdAt: string;
   user?: { email?: string; walletAddress?: string | null; name?: string | null };
 }
@@ -138,6 +139,54 @@ export default function IcoAdminPanel({ token }: Props) {
     loadPurchases();
     /* eslint-disable-next-line */
   }, []);
+
+  // ✅ تأكيد يدوي لمشاركة (المدير يتأكد من وصول الدفع ثم يرقّيها)
+  const confirmPurchase = async (id: number) => {
+    try {
+      const res = await apiFetch("/api/users/admin/ico/confirm", {
+        method: "POST", headers, body: JSON.stringify({ id }),
+      });
+      const d = await res.json();
+      if (res.ok) { toast.success(d.message || "تم التأكيد ✅"); await loadPurchases(); }
+      else toast.error(d.message || "فشل التأكيد");
+    } catch { toast.error("فشل التأكيد — تحقق من الاتصال"); }
+  };
+
+  // ↩️ إعادة عملية إلى حالة «غير مؤكّدة» (تراجع يدوي)
+  const unconfirmPurchase = async (id: number) => {
+    try {
+      const res = await apiFetch("/api/users/admin/ico/unconfirm", {
+        method: "POST", headers, body: JSON.stringify({ id }),
+      });
+      const d = await res.json();
+      if (res.ok) { toast.success(d.message || "أُعيدت إلى غير مؤكَّدة"); await loadPurchases(); }
+      else toast.error(d.message || "فشلت العملية");
+    } catch { toast.error("فشلت العملية — تحقق من الاتصال"); }
+  };
+
+  // ➕ إضافة اشتراك يدوي (دفع خارجي/نقدي لا يمر بالسلسلة)
+  const [manual, setManual] = useState({ email: "", solAmount: "", status: "pending", txHash: "" });
+  const addManualPurchase = async () => {
+    if (!manual.email.trim() || !Number(manual.solAmount)) {
+      toast.error("أدخل بريد المشترك ومبلغ الاشتراك");
+      return;
+    }
+    try {
+      const res = await apiFetch("/api/users/admin/ico/add-purchase", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          email: manual.email.trim(),
+          solAmount: Number(manual.solAmount),
+          status: manual.status,
+          txHash: manual.txHash.trim() || undefined,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) { toast.success(d.message || "تم تسجيل الاشتراك ✅"); setManual({ email: "", solAmount: "", status: "pending", txHash: "" }); await loadPurchases(); }
+      else toast.error(d.message || "فشل تسجيل الاشتراك");
+    } catch { toast.error("فشل تسجيل الاشتراك — تحقق من الاتصال"); }
+  };
 
   const set = <K extends keyof IcoForm>(key: K, val: IcoForm[K]) => setForm((p) => ({ ...p, [key]: val }));
 
@@ -365,6 +414,10 @@ export default function IcoAdminPanel({ token }: Props) {
       {/* 📊 سجل المشتريات */}
       <div style={{ marginTop: 22, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 14 }}>
         <h4 style={{ ...styles.sectionTitle, fontSize: 14 }}>📊 سجل مشتريات المشاركين</h4>
+        <p style={{ ...styles.sub, margin: "4px 0 0", lineHeight: 1.7 }}>
+          التأكيد يدوي منك: المشاركات تصل «غير مؤكّدة» في الغالب (التحقق البلوكشيني تلقائي لكن قد يتأخر) —
+          راجعها أدناه واكبت زر «تأكيد» بعد التحقق من وصول الدفع لتدخل في التوزيع.
+        </p>
         <div style={styles.grid3}>
           <div style={styles.statBox}>
             <span style={{ fontSize: 11, color: C.muted }}>مجموع الـ SOL</span>
@@ -380,10 +433,29 @@ export default function IcoAdminPanel({ token }: Props) {
           </div>
         </div>
 
+        {/* ➕ إضافة اشتراك يدوي (دفع خارجي/نقدي لا يمر بالسلسلة) */}
+        <div style={{ ...styles.subRow, flexDirection: "column", alignItems: "stretch", gap: 8, marginTop: 12, borderColor: "rgba(124,92,255,0.35)", background: "rgba(124,92,255,0.06)" }}>
+          <span style={{ color: C.text, fontWeight: 900, fontSize: 12.5 }}>➕ إضافة اشتراك يدوي (دفع خارجي لا يمر بالسلسلة)</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 120px 1fr auto", gap: 8, alignItems: "center" }}>
+            <input className="input" value={manual.email} onChange={(e) => setManual({ ...manual, email: e.target.value })} placeholder="بريد المشترك المسجّل" style={{ ...styles.input, minWidth: 0 }} />
+            <input className="input" type="number" step="0.01" value={manual.solAmount} onChange={(e) => setManual({ ...manual, solAmount: e.target.value })} placeholder="المبلغ SOL" style={{ ...styles.input, minWidth: 0 }} />
+            <select className="input" value={manual.status} onChange={(e) => setManual({ ...manual, status: e.target.value })} style={styles.input}>
+              <option value="pending">غير مؤكّد</option>
+              <option value="purchased">مؤكّد مباشرة</option>
+            </select>
+            <input className="input" value={manual.txHash} onChange={(e) => setManual({ ...manual, txHash: e.target.value })} placeholder="إيصال التحويل (اختياري)" style={{ ...styles.input, minWidth: 0 }} dir="ltr" />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={addManualPurchase} className="btn" style={{ ...styles.addBtn, border: "1px solid rgba(124,92,255,0.5)" }}>
+              تسجيل الاشتراك
+            </button>
+          </div>
+        </div>
+
         {purchases.length === 0 ? (
           <p style={{ color: C.muted, fontSize: 12, marginTop: 10 }}>لا توجد مشتريات بعد — شارِك رابط الصفحة مع المستخدمين.</p>
         ) : (
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8, maxHeight: 300, overflowY: "auto" }}>
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" }}>
             {purchases.map((p) => (
               <div key={p.id} style={{ ...styles.subRow, background: "rgba(255,255,255,0.03)" }}>
                 <div style={{ minWidth: 0 }}>
@@ -391,14 +463,27 @@ export default function IcoAdminPanel({ token }: Props) {
                     {p.user?.email || p.user?.name || (p.user?.walletAddress ? `${p.user.walletAddress.slice(0, 6)}…${p.user.walletAddress.slice(-4)}` : "مستخدم")}
                   </div>
                   <div style={{ fontSize: 10.5, color: C.muted }}>{new Date(p.createdAt).toLocaleString()}</div>
+                  {p.user?.walletAddress && (
+                    <div style={{ fontSize: 9.5, color: C.muted, direction: "ltr", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
+                      👛 {p.user.walletAddress.slice(0, 12)}…{p.user.walletAddress.slice(-6)}
+                    </div>
+                  )}
                 </div>
                 <div style={{ flexShrink: 0, textAlign: "end" }}>
                   <div style={{ fontSize: 12, fontWeight: 900, color: C.teal }}>{p.tokenAmount.toLocaleString()} توكن</div>
                   <div style={{ fontSize: 10.5, color: C.amber }}>{p.solAmount} SOL</div>
                 </div>
-                <span className="pill" style={{ flexShrink: 0, background: "rgba(34,229,132,0.1)", color: "#7cf5c0", border: "1px solid rgba(34,229,132,0.3)", fontSize: 10.5 }}>
-                  {p.status === "purchased" ? "مؤكّد" : p.status}
+                <span className="pill" style={{ flexShrink: 0, fontSize: 10.5, background: p.delivered ? "rgba(0,255,204,0.1)" : p.status === "purchased" ? "rgba(34,229,132,0.1)" : "rgba(255,176,32,0.1)", color: p.delivered ? "#7cf5c0" : p.status === "purchased" ? "#7cf5c0" : "#ffb020", border: `1px solid ${p.delivered || p.status === "purchased" ? "rgba(34,229,132,0.35)" : "rgba(255,176,32,0.35)"}` }}>
+                  {p.delivered ? "مُسلَّمة 📦" : p.status === "purchased" ? "مؤكّد ✅" : p.status === "pending" ? "غير مؤكّد ⏳" : p.status}
                 </span>
+                <div style={{ flexShrink: 0, display: "flex", gap: 6 }}>
+                  {p.status === "pending" && !p.delivered && (
+                    <button onClick={() => confirmPurchase(p.id)} className="btn" style={{ ...styles.confirmBtn, whiteSpace: "nowrap" }}>تأكيد ✅</button>
+                  )}
+                  {p.status === "purchased" && !p.delivered && (
+                    <button onClick={() => unconfirmPurchase(p.id)} className="btn" style={{ ...styles.unconfirmBtn, whiteSpace: "nowrap" }}>غير مؤكّد</button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -427,6 +512,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   sectionTitle: { margin: 0, color: C.teal, fontWeight: 900, fontSize: 13.5 },
   addBtn: { background: "rgba(0,255,204,0.1)", border: "1px dashed rgba(0,255,204,0.4)", color: C.teal, padding: "7px 12px", fontWeight: 800, borderRadius: 10, fontSize: 12 },
   delBtn: { background: "rgba(255,92,122,0.12)", border: "1px solid rgba(255,92,122,0.35)", color: "#ff9cae", padding: "8px 12px", fontSize: 12, fontWeight: 800, borderRadius: 10, whiteSpace: "nowrap" },
+  confirmBtn: { background: "rgba(34,229,132,0.12)", border: "1px solid rgba(34,229,132,0.4)", color: "#7cf5c0", padding: "6px 12px", fontSize: 11, fontWeight: 800, borderRadius: 9 },
+  unconfirmBtn: { background: "rgba(255,176,32,0.12)", border: "1px solid rgba(255,176,32,0.4)", color: "#ffb020", padding: "6px 12px", fontSize: 11, fontWeight: 800, borderRadius: 9 },
   subRow: { display: "flex", alignItems: "center", gap: 8, border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "8px 10px", marginTop: 8, background: "rgba(255,255,255,0.02)" },
   actions: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 },
   saveBtn: { padding: "12px 26px", fontWeight: 900, borderRadius: 12, fontSize: 13.5 },
