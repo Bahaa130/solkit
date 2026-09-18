@@ -817,7 +817,7 @@ router.get("/admin/analytics", authenticateJWT, async (req, res) => {
             return;
         const day7 = new Date(Date.now() - 7 * 24 * 3600 * 1000);
         const day30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
-        const [totalUsers, activatedUsers, pendingUsers, inactiveUsers, new7, new30, wallets, miningActive, miningCompleted, miningTotal, minedAgg, playsTotal, playsAgg, wheelPlays, tapPlays, catchPlays, wheelAgg, tapAgg, catchAgg, bonusClaims, bonusAgg, referredUsers, referredActivated, tasksDone, tasksAgg, paymentsPaid, paymentsAgg, rewardsCount, rewardsAgg, balanceAgg, levelGroups,] = await Promise.all([
+        const [totalUsers, activatedUsers, pendingUsers, inactiveUsers, new7, new30, wallets, miningActive, miningCompleted, miningTotal, minedAgg, playsTotal, playsAgg, wheelPlays, tapPlays, catchPlays, wheelAgg, tapAgg, catchAgg, bonusClaims, bonusAgg, referredUsers, referredActivated, tasksDone, tasksAgg, paymentsPaid, paymentsAgg, rewardsCount, rewardsAgg, balanceAgg, levelGroups, icoPurchases, icoAgg, icoUndelivered, icoParticipants,] = await Promise.all([
             prisma.user.count(),
             prisma.user.count({ where: { activationStatus: "active" } }),
             prisma.user.count({ where: { activationStatus: "pending" } }),
@@ -849,6 +849,10 @@ router.get("/admin/analytics", authenticateJWT, async (req, res) => {
             prisma.reward.aggregate({ _sum: { amount: true } }),
             prisma.user.aggregate({ _sum: { balance: true } }),
             prisma.user.groupBy({ by: ["currentLevel"], _count: { _all: true } }),
+            prisma.icoPurchase.count(),
+            prisma.icoPurchase.aggregate({ _sum: { solAmount: true, tokenAmount: true } }),
+            prisma.icoPurchase.count({ where: { delivered: false } }),
+            prisma.icoPurchase.groupBy({ by: ["userId"], _count: { _all: true } }),
         ]);
         const sum = (agg, field) => Number(agg?._sum?.[field] || 0);
         return res.json({
@@ -883,6 +887,32 @@ router.get("/admin/analytics", authenticateJWT, async (req, res) => {
             rewards: { count: rewardsCount, amountTotal: sum(rewardsAgg, "amount") },
             balances: { total: sum(balanceAgg, "balance") },
             levels: levelGroups.map((g) => ({ level: g.currentLevel, users: g._count._all })),
+            // 🚀 الاكتتاب (ICO): المشتريات والتسليم والسقوف الحيّة
+            ico: {
+                purchases: icoPurchases,
+                raisedSOL: sum(icoAgg, "solAmount"),
+                tokenAmount: sum(icoAgg, "tokenAmount"),
+                undelivered: icoUndelivered,
+                participants: Array.isArray(icoParticipants) ? icoParticipants.length : 0,
+                config: (() => {
+                    const c = getSettings().ico;
+                    return c
+                        ? {
+                            enabled: c.enabled,
+                            priceSOL: c.priceSOL,
+                            minSOL: c.minSOL,
+                            maxSOL: c.maxSOL,
+                            maxPerWalletSOL: c.maxPerWalletSOL ?? 10,
+                            totalAllocation: c.totalAllocation,
+                            softCapSOL: c.softCapSOL,
+                            hardCapSOL: c.hardCapSOL,
+                            startDate: c.startDate,
+                            endDate: c.endDate,
+                            tgePercent: c.tgePercent,
+                        }
+                        : null;
+                })(),
+            },
         });
     }
     catch (error) {
@@ -1454,6 +1484,7 @@ const settingsSchema = z.object({
         priceSOL: z.number().min(0.000000001).max(1000).optional(),
         minSOL: z.number().min(0).max(100000).optional(),
         maxSOL: z.number().min(0).max(1000000).optional(),
+        maxPerWalletSOL: z.number().min(0).max(1000000).optional(),
         totalAllocation: z.number().min(0).max(10000000000).optional(),
         startDate: z.number().min(0).max(4102444800000).optional(),
         endDate: z.number().min(0).max(4102444800000).optional(),
@@ -1590,6 +1621,20 @@ router.post("/ico/purchase", authenticateJWT, async (req, res) => {
             return res.status(404).json({ message: "الحساب غير موجود" });
         if (!user.walletAddress)
             return res.status(400).json({ message: "اربط محفظتك أولاً" });
+        // 👛 الحد الأقصى التراكمي لكل محفظة: مجموع مشتريات هذا الحساب + الدفعة الجديدة
+        // يجب ألا يتجاوز maxPerWalletSOL (مثال: لا تشتري محفظة بأكثر من 10 SOL إجمالاً).
+        const maxPerWallet = ico.maxPerWalletSOL ?? 10;
+        const walletAgg = await prisma.icoPurchase.aggregate({
+            where: { userId, status: "purchased" },
+            _sum: { solAmount: true },
+        });
+        const walletRaised = Number(walletAgg._sum.solAmount || 0);
+        if (walletRaised + amount > maxPerWallet + 1e-9) {
+            const remaining = Math.max(0, maxPerWallet - walletRaised);
+            return res.status(400).json({
+                message: `الحد الأقصى لكل محفظة هو ${maxPerWallet} SOL — مشترياتك الحالية ${walletRaised.toFixed(2)} SOL والباقي المتبقي ${remaining.toFixed(2)} SOL`,
+            });
+        }
         const priceSOL = ico.priceSOL || 0.001;
         const tokenAmount = amount / priceSOL;
         // 🧮 التحقق من السقف: لا نبيع أكثر من المخصص الكلي ولا نتجاوز الهدف الصلب

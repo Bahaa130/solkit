@@ -1,12 +1,17 @@
 // backend/src/config/settings.ts
-// ⚙️ إعدادات الموقع العامة (الصيانة + عدّاد TGE) — محفوظة في ملف JSON على القرص
+// ⚙️ إعدادات الموقع العامة (الصيانة + عدّاد TGE) — محفوظة في قاعدة البيانات (MySQL)
+// مع نسخة على القرص احتياطياً. تخزين DB ضروري لأن نظام Render المجاني يمحو
+// ملفات القرص عند إعادة التشغيل، فالإعدادات المُغيّرة (مثل تفعيل الاكتتاب) كانت
+// تتراجع إلى الافتراضية تلقائياً.
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { prisma } from "./prisma.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SETTINGS_FILE = path.resolve(__dirname, "../../settings.json");
+const SETTINGS_KEY = "site";
 
 export interface SiteSettings {
   maintenanceMode: boolean;   // 🔧 وضع الصيانة (يُظهر صفحة الصيانة لجميع المستخدمين)
@@ -248,6 +253,15 @@ let cachedSettings: SiteSettings | null = null;
 let cacheTime = 0;
 const CACHE_TTL_MS = 5000;
 
+// وجهة تحميل الإعدادات (DB يغلب على الملف المحلي بينما بقية السلوك كما كان)
+let hydratePromise: Promise<boolean> | null = null;
+let dbChain: Promise<void> = Promise.resolve();
+
+function mergeParsed(parsed: Partial<SiteSettings>): SiteSettings {
+  const ico: IcoSettings = { ...DEFAULTS.ico, ...(parsed?.ico ?? {}) } as IcoSettings;
+  return { ...DEFAULTS, ...parsed, ico } as SiteSettings;
+}
+
 export function getSettings(): SiteSettings {
   const now = Date.now();
   if (cachedSettings && now - cacheTime < CACHE_TTL_MS) {
@@ -256,28 +270,70 @@ export function getSettings(): SiteSettings {
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
       const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
-      cachedSettings = { ...DEFAULTS, ...JSON.parse(raw) };
+      cachedSettings = mergeParsed(JSON.parse(raw));
     } else {
-      cachedSettings = { ...DEFAULTS };
+      cachedSettings = mergeParsed({});
     }
-  } catch { /* تجاهل أي خطأ قراءة */ }
+  } catch {
+    /* تجاهل أي خطأ قراءة */
+  }
   if (!cachedSettings) {
-    cachedSettings = { ...DEFAULTS };
+    cachedSettings = mergeParsed({});
   }
   cacheTime = now;
-  return cachedSettings;
+  return cachedSettings!;
 }
 
-// ✏️ تحديث الإعدادات وحفظها على القرص
+// 🗄️ تحميل الإعدادات من قاعدة البيانات عند إقلاع الخادم (يغلب على الملف المحلي):
+// يضمن بقاء ما حفظه المدير (تفعيل الاكتتاب وغيره) حتى بعد إعادة تشغيل Render.
+async function loadFromDb(): Promise<boolean> {
+  try {
+    const row = await prisma
+      .appSetting
+      .findUnique({ where: { key: SETTINGS_KEY } });
+    if (!row?.value) return false;
+    const parsed = JSON.parse(row.value) as Partial<SiteSettings>;
+    cachedSettings = mergeParsed(parsed);
+    cacheTime = Date.now();
+    return true;
+  } catch (err) {
+    console.error("Failed to load settings from DB:", err);
+    return false;
+  }
+}
+
+/** استدعاء واحد عند الإقلاع قبل فتح الخادم للطلبات. */
+export function hydrateSettingsFromDb(): Promise<boolean> {
+  if (!hydratePromise) hydratePromise = loadFromDb();
+  return hydratePromise;
+}
+
+/** 🔁 كتابة الإعدادات إلى قاعدة البيانات (موصولة بالتسلسل لتجنّب السباق بين الحفظات). */
+function persistToDb(updated: SiteSettings): void {
+  dbChain = dbChain.then(async () => {
+    try {
+      await prisma.appSetting.upsert({
+        where: { key: SETTINGS_KEY },
+        create: { key: SETTINGS_KEY, value: JSON.stringify(updated) },
+        update: { value: JSON.stringify(updated) },
+      });
+    } catch (err) {
+      console.error("Failed to persist settings to DB:", err);
+    }
+  });
+}
+
+// ✏️ تحديث الإعدادات وحفظها على القرص + قاعدة البيانات
 export function updateSettings(partial: Partial<SiteSettings>): SiteSettings {
   const current = getSettings();
-  const updated = { ...current, ...partial };
+  const updated = mergeParsed({ ...current, ...partial, ico: partial.ico ? { ...current.ico, ...partial.ico } : current.ico });
   try {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2), "utf-8");
-    cachedSettings = updated;
-    cacheTime = Date.now();
   } catch (err) {
-    console.error("Failed to save settings:", err);
+    console.error("Failed to save settings file:", err);
   }
+  cachedSettings = updated;
+  cacheTime = Date.now();
+  persistToDb(updated);
   return updated;
 }

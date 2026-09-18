@@ -309,3 +309,14 @@ model GamePlayRecord {
 
   @@index([userId, game, createdAt])
 }
+
+// ==========================================
+// ⚙️ إعدادات الموقع المُدارة من لوحة المدير (نص JSON كامل)
+// ==========================================
+model AppSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
+
