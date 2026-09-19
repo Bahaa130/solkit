@@ -9,34 +9,14 @@ import {
 import { C, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useSolanaWallet } from "../lib/walletProvider";
-import { restorePhantomSession } from "../lib/phantomDeeplink";
 import { getNetworkConfig, rpcUrlFor } from "../lib/network";
-import { Capacitor } from "@capacitor/core";
+import { fetchBlockhashWithRetry } from "../lib/blockhash";
 
 interface DistributionPanelProps {
   token: string;
 }
 
 const MAX_PER_TX = 20; // حد عدد المستلمين في المعاملة الواحدة (حد حجم البايتات)
-
-// 🔁 تأكيد "أفضل جهد" لا يرمي أبداً خطأ انتهاء الارتفاع (block height exceeded):
-// العقد العامة (كـ devnet) تتذبذب في رصد الحالات — مهما حدث نعود true ونُحيل
-// الحكم النهائي على السيرفر (إعادة محاولة getTransaction ثم فحص رصيد المستلم).
-const waitForConfirmation = async (connection: Connection, signature: string, maxWaitMs = 16000) => {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    try {
-      const { value } = await connection.getSignatureStatus(signature, { searchTransactionHistory: true });
-      if (value) {
-        if (value.err) return false; // بُثّت لكنها فشلت فعلاً على السلسلة
-        const cs = value.confirmationStatus;
-        if (cs === "confirmed" || cs === "finalized") return true;
-      }
-    } catch { /* خطأ عابر في RPC → أعد المحاولة */ }
-    await new Promise((r) => setTimeout(r, 1200));
-  }
-  return true; // انتهت المهلة دون رصد — لا نمنع المتابعة، السيرفر هو المرجع
-};
 
 export default function DistributionPanel({ token }: DistributionPanelProps) {
   const [overview, setOverview] = useState<any>(null);
@@ -127,24 +107,16 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
   const distributeNow = async () => {
     if (!preview || !preview.recipients?.length) return;
 
-    // 📱 على الموبايل: لا تُعرض شاشة «ربط المحفظة» من هنا إطلاقاً — جلسة التوقيع
-    // تُربط مرة واحدة أثناء تسجيل الدخول وتُحفظ محلياً وتُستعاد تلقائياً، فينتقل
-    // التوزيع مباشرةً إلى نافذة تأكيد/توقيع الدفع داخل Phantom.
+    // 🔌 التأكد من اتصال المحفظة — تماماً كدفع رسوم التسجيل: إن لم توجد جلسة
+    // نفتح نافذة الربط الحقيقية عبر connectWallet() (الموبايل: رابط Phantom
+    // الموحّد، الويب: امتداد Phantom) بدل الاكتفاء بجلسة مخزّنة قد تكون فُقدت.
     let sender = connectedAddress;
-    if (!sender && Capacitor.isNativePlatform()) {
-      sender = restorePhantomSession();
-    } else if (!sender) {
-      // 💻 الويب: نافذة اتصال Phantom المنبثقة (سلوك طبيعي على المتصفح)
-      setStatus({ type: "loading", text: "جاري ربط محفظة المدير (Phantom) — وافق من النافذة المنبثقة..." });
-      try { sender = await connectWallet(); } catch { sender = null; }
+    if (!sender) {
+      setStatus({ type: "loading", text: "جاري ربط محفظة المدير (Phantom) — وافق من النافذة..." });
+      try { sender = (await connectWallet()) || null; } catch { sender = null; }
     }
     if (!sender) {
-      return setStatus({
-        type: "error",
-        text: Capacitor.isNativePlatform()
-          ? "لا توجد جلسة توقيع محفظة محفوظة بعد على هذا الهاتف. سجّل الدخول بالمحفظة المدير مرة واحدة (تُربط المحفظة وتُحفظ الجلسة تلقائياً) ثم عد إلى «توزيع المجمع» — سيظهر توقيع الدفع مباشرةً دون أي شاشة ربط."
-          : "الرجاء ربط محفظة المدير (Phantom) أولاً!",
-      });
+      return setStatus({ type: "error", text: "الرجاء ربط محفظة المدير (Phantom) أولاً!" });
     }
     if (sender !== preview.treasuryWallet) {
       return setStatus({ type: "error", text: "المحفظة المتصلة ليست محفظة الخزانة (المدير)!" });
@@ -168,20 +140,20 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
 
       const results: { recipient: any; txSignature: string }[] = [];
 
-      // 🔄 خادم Render (الفترة المجانية) ينام بعد خمول وقد يرد 503/429 لحظة الإقلاع —
-      // نعيد محاولة قراءة أحدث بلوكهاش حتى يستيقظ ثم نكمل التوقيع مباشرةً.
-      // ونبدأ بالبلوكهاش المُحمّى مسبقاً (إن وُجد) لتجنّب أي انتظار عند التوزيع.
+      // 🔄 آخر blockhash عبر نفس آلية دفع رسوم التسجيل (fetchBlockhashWithRetry):
+      // web3 ثلاث مرات ثم fetch مباشر ثلاثاً — نبدأ بالبلوكهاش المُحمّى مسبقاً إن وُجد.
       let latestBlockhash = warmBlockhash;
       if (!latestBlockhash) {
-        for (let attempt = 1; attempt <= 6 && !latestBlockhash; attempt++) {
-          try {
-            if (attempt > 1) setStatus({ type: "loading", text: `إيقاظ الخادم (المحاولة ${attempt}/6) — يرجى الانتظار قليلاً...` });
-            latestBlockhash = await connection.getLatestBlockhash("confirmed");
-            setWarmBlockhash(latestBlockhash);
-          } catch (e) {
-            if (attempt >= 6) throw e;
-            await new Promise((r) => setTimeout(r, 3000));
-          }
+        try {
+          latestBlockhash = await fetchBlockhashWithRetry(
+            connection,
+            (label, err) => console.warn("[blockhash]", label, err),
+            rpc,
+          );
+          setWarmBlockhash(latestBlockhash);
+        } catch (err: any) {
+          const detail = err instanceof Error ? err.message.replace(/^RPC unreachable :: /, "") : "network";
+          throw new Error(`تعذّر قراءة حالة الشبكة (${detail}) — أعد المحاولة بعد قليل.`);
         }
       }
 
@@ -216,7 +188,20 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
         // 🔁 تأكيد محلي "أفضل جهد" — لا يُرمى خطأ انتهاء الارتفاع (block height exceeded):
         // العقد العامة تتذبذب في الرصد، والقراءة القاطعة تبقى في السيرفر
         // (إعادة محاولة getTransaction ثم فحص رصيد حساب المستلم الحالي).
-        await waitForConfirmation(connection, sig);
+        // 🔁 مثل رسوم التسجيل: تأكيد محلي "أفضل جهد" بمهلة 15 ثانية لا يرمي خطأ —
+        // التوثيق القاطع يتم على السيرفر (فحص المعاملة ورصيد المستلم عند التأكيد).
+        try {
+          await Promise.race([
+            connection.confirmTransaction({
+              signature: sig,
+              blockhash: latestBlockhash.blockhash,
+              lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+            }, "confirmed").then(() => true),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15000)),
+          ]);
+        } catch (confirmErr) {
+          console.warn("Local confirmation skipped (server will re-verify):", confirmErr);
+        }
         group.forEach((r) => results.push({ recipient: r, txSignature: sig }));
       }
 
