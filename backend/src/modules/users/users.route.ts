@@ -1823,7 +1823,6 @@ router.post("/ico/purchase", authenticateJWT, async (req: AuthenticatedRequest, 
     // 🔍 تحديد المبلغ والتوقيع الحقيقي: نفضّل المعاملة الممرَّرة، وإن نقص أيٌّ منهما
     // (أو تعذّر التحقق الآني) نبحث عن الدفعة المؤهلة بمسح محفظة الخزانة — نمط التفعيل.
     let signature = bodyTxHash;
-    let signerWallet = user.walletAddress;
     if (!signature || !Number.isFinite(amount) || amount <= 0) {
       const solanaRpcUrl =
         process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";

@@ -21,68 +21,10 @@ import { useBranding } from "./branding";
 import CoinIcon from "./components/CoinIcon";
 import { useSolanaWallet } from "./lib/walletProvider";
 import { getNetworkConfig } from "./lib/network";
+import { fetchBlockhashWithRetry } from "./lib/blockhash";
 import { TAB_ICONS } from "./lib/tabIcons";
 
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
-
-// 🔁 جلب آخر blockhash مع إعادة محاولة تلقائية لتجاوز أوقات الازدحام/بطء الشبكة.
-// المسار الأول عبر web3.js Connection، والثاني عبر fetch مباشر (نفس آلية apiFetch
-// التي تعمل لتسجيل الدخول داخل تطبيق الموبايل) — فيرمي خطأً يحوي تفاصيل آخر فشل.
-async function fetchBlockhashWithRetry(
-  connection: Connection,
-  report: (label: string, err: unknown) => void,
-  rpcUrl: string,
-): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
-  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-  let lastErr: unknown = null;
-
-  // 1️⃣ عبر web3.js Connection
-  for (let i = 0; i < 3; i++) {
-    try {
-      const info = await connection.getLatestBlockhash("confirmed");
-      return { blockhash: info.blockhash, lastValidBlockHeight: info.lastValidBlockHeight };
-    } catch (e) {
-      lastErr = e;
-      report(`web3 (${i + 1}/3)`, e);
-      await sleep(1000 * (i + 1));
-    }
-  }
-
-  // 2️⃣ عبر fetch مباشر (يُرسل نفس طلب JSON-RPC للبروكسي)
-  for (let i = 0; i < 3; i++) {
-    try {
-      const res = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "getLatestBlockhash",
-          params: [{ commitment: "confirmed" }],
-        }),
-      });
-      if (res.ok) {
-        const data: any = await res.json();
-        if (data?.result?.value?.blockhash) {
-          return {
-            blockhash: data.result.value.blockhash,
-            lastValidBlockHeight: data.result.value.lastValidBlockHeight,
-          };
-        }
-        lastErr = new Error(`http ${res.status}`);
-      } else {
-        lastErr = new Error(`http ${res.status}`);
-      }
-    } catch (e) {
-      lastErr = e;
-      report(`direct (${i + 1}/3)`, e);
-    }
-    await sleep(1000 * (i + 1));
-  }
-
-  const detail = lastErr instanceof Error ? lastErr.message : "network";
-  throw new Error(`RPC unreachable :: ${detail}`);
-}
 
 // 💰 مبالغ التفعيل تُقرأ من إعدادات المدير (تظهر وتُبنى ديناميكياً) — الافتراضي 0.015+0.015 = 0.03 SOL
 const DEFAULT_FEE = { fullLamports: 30000000, halfLamports: 15000000, siteShare: 0.015, referrerShare: 0.015 };

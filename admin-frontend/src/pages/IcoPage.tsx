@@ -8,9 +8,8 @@ import { C, styles as T, font } from "../theme";
 import { useLang } from "../i18n/index.tsx";
 import { useBranding } from "../branding";
 import { useSolanaWallet } from "../lib/walletProvider";
-import { restorePhantomSession } from "../lib/phantomDeeplink";
-import { getNetworkConfig, rpcUrlFor, rpcDirectUrl } from "../lib/network";
-import { Capacitor } from "@capacitor/core";
+import { getNetworkConfig, rpcUrlFor } from "../lib/network";
+import { fetchBlockhashWithRetry } from "../lib/blockhash";
 
 interface IcoPageProps {
   userId?: number;
@@ -55,23 +54,6 @@ interface PurchaseRow {
   createdAt: string;
 }
 
-// 🔁 تأكيد "أفضل جهد" — لا يرمي خطأ انتهاء الارتفاع؛ الحكم النهائي عند السيرفر
-const waitForConfirmation = async (connection: Connection, signature: string, maxWaitMs = 16000) => {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    try {
-      const { value } = await connection.getSignatureStatus(signature, { searchTransactionHistory: true });
-      if (value) {
-        if (value.err) return false;
-        const cs = value.confirmationStatus;
-        if (cs === "confirmed" || cs === "finalized") return true;
-      }
-    } catch { /* خطأ عابر → أعد المحاولة */ }
-    await new Promise((r) => setTimeout(r, 1200));
-  }
-  return true;
-};
-
 export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   const { dir } = useLang();
   const { branding } = useBranding();
@@ -89,6 +71,11 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   const [status, setStatus] = useState<{ type: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  // 💾 دفعة اكتتاب بُثّت ولم يكتمل تسجيلها — نعرض زر استرجاع مثل رسوم التسجيل
+  const [pendingTx, setPendingTx] = useState<string | null>(null);
+  useEffect(() => {
+    try { setPendingTx(localStorage.getItem("solkit_pending_ico_tx")); } catch { /* */ }
+  }, []);
 
   // 🌐 الشبكة (devnet/mainnet-beta) تُقرأ من إعدادات الخادم وليس مجمّدة — كي تطابق
   // شبكة محفظة المستخدم (خلاف ذلك يرفض التوقيع بخطأ "Unexpected error").
@@ -229,21 +216,16 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       setBusy(true);
       setStatus({ type: "loading", text: "جاري تجهيز الدفع..." });
 
-      // 📱 الموبايل: لا تُعرض شاشة ربط المحفظة — جلسة التوقيع مستعادة تلقائياً
+      // 🔌 التأكد من اتصال المحفظة — تماماً كدفع رسوم التسجيل: إن لم توجد جلسة
+      // نفتح نافذة الربط الحقيقية عبر connectWallet() (الموبايل: رابط Phantom
+      // الموحّد، الويب: امتداد Phantom) بدل الاكتفاء بجلسة مخزّنة قد تكون فُقدت.
       let sender = connectedAddress;
-      if (!sender && Capacitor.isNativePlatform()) {
-        sender = restorePhantomSession();
-      } else if (!sender) {
+      if (!sender) {
         setStatus({ type: "loading", text: "جاري ربط محفظتك (Phantom) — وافق من النافذة..." });
-        try { sender = await connectWallet(); } catch { sender = null; }
+        try { sender = (await connectWallet()) || null; } catch { sender = null; }
       }
       if (!sender) {
-        return setStatus({
-          type: "error",
-          text: Capacitor.isNativePlatform()
-            ? "لا توجد جلسة توقيع محفظة بعد على هذا الهاتف — سجّل الدخول بالمحفظة مرة واحدة ثم عد إلى الصفحة."
-            : "الرجاء ربط محفظتك (Phantom) أولاً!",
-        });
+        return setStatus({ type: "error", text: "الرجاء ربط محفظتك (Phantom) أولاً!" });
       }
       if (walletAddress && sender !== walletAddress) {
         return setStatus({ type: "error", text: "المحفظة المتصلة ليست المحفظة المرتبطة بحسابك — استخدم نفس المحفظة التي سجّلت بها الدخول." });
@@ -262,48 +244,30 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
         return setStatus({ type: "error", text: "لم تُضبط محفظة الخزانة بعد — تواصل مع الإدارة." });
       }
 
-      const connection = new Connection(rpc, "confirmed");
+      // 🌐 الشبكة تُقرأ من إعدادات الخادم — الدفع يحدث على نفس شبكة محفظة المستخدم
+      const netCfg = await getNetworkConfig();
+      const rpcUse = netCfg.rpc || rpc;
+      const connection = new Connection(rpcUse, "confirmed");
       const lamports = Math.round(amountNum * 1e9);
 
-      // 🔄 إيقاظ الخادم وحشو blockhash قبل فتح التوقيع:
-      // نجرّب بروكسي خادمنا أولاً (يوقظ Render النائم) ثم نقطة سولانا العمومية
-      // كاحتياط أخير — فالعقدة العامة أحياناً تبطئ/تفشل في اللحظة نفسها.
-      let blockhash = warmBlockhash;
-      if (!blockhash) {
-        const tryConn = async (url: string): Promise<boolean> => {
-          try {
-            const bh = await new Connection(url, "confirmed").getLatestBlockhash("confirmed");
-            if (bh) {
-              blockhash = bh;
-              setWarmBlockhash(bh);
-            }
-            return !!bh;
-          } catch {
-            return false;
-          }
-        };
-        for (let attempt = 1; attempt <= 6 && !blockhash; attempt++) {
-          if (attempt > 1) {
-            setStatus({
-              type: "loading",
-              text: attempt === 2
-                ? "إيقاظ الخادم — أول دفع قد يستغرق دقيقة (الخادم نائم أحياناً) وحين يستيقظ يَفتح المحفظة للتأكيد..."
-                : `إيقاظ الخادم (المحاولة ${attempt}/6) — لحظات...`,
-            });
-          }
-          if (await tryConn(rpc)) break;
-          await new Promise((r) => setTimeout(r, 2500));
-        }
-        if (!blockhash) {
-          const direct = rpcDirectUrl(network);
-          for (let a = 1; a <= 2 && !blockhash; a++) {
-            if (await tryConn(direct)) break;
-            if (a < 2) await new Promise((r) => setTimeout(r, 2500));
-          }
-        }
+      // 🔄 آخر blockhash عبر نفس آلية دفع رسوم التسجيل (fetchBlockhashWithRetry):
+      // web3 ثلاث مرات ثم fetch مباشر ثلاثاً — نستخدم الإحماء المسبق إن وُجد للسرعة.
+      let latestBlockHashInfo: { blockhash: string; lastValidBlockHeight: number } | null = null;
+      try {
+        latestBlockHashInfo = warmBlockhash
+          || (await fetchBlockhashWithRetry(
+            connection,
+            (label, err) => console.warn("[blockhash]", label, err),
+            rpcUse,
+          ));
+      } catch (err) {
+        const detail =
+          err instanceof Error ? err.message.replace(/^RPC unreachable :: /, "") : "network";
+        setStatus({ type: "error", text: `تعذّر قراءة حالة الشبكة [${rpcUse}] (${detail}) — أعد المحاولة بعد قليل.` });
+        return;
       }
-      if (!blockhash) throw new Error("لا يمكن قراءة حالة الشبكة الآن — أعد المحاولة بعد قليل.");
 
+      // 3. استدعاء المحفظة لتوقيع وبثّ المعاملة (نفس نداء دفع رسوم التسجيل)
       setStatus({ type: "loading", text: "افتح محفظتك لتأكيد وتوقيع دفع الاكتتاب..." });
       const tx = new Transaction().add(
         SystemProgram.transfer({
@@ -313,17 +277,34 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
         })
       );
       tx.feePayer = new PublicKey(sender);
-      tx.recentBlockhash = blockhash.blockhash;
+      tx.recentBlockhash = latestBlockHashInfo.blockhash;
 
       const sig = await sendTransaction(tx, connection);
       if (!sig) throw new Error("لم يُرجع Phantom توقيع المعاملة");
 
-      // 💾 تذكّر التوقيع محلياً: إن انقطع التطبيق قبل الاعتماد يمكن استرجاع الدفعة
-      try { localStorage.setItem("solkit_pending_ico_tx", sig); } catch { /* core jsdom */ }
+      // 💾 تذكّر التوقيع محلياً: إن انقطع التطبيق قبل التسجيل يمكن استرجاع الدفعة
+      // لاحقاً دون دفع مزدوج (السيرفر يمسح خزانة الاكتتاب ويجد الدفعة بنفسه).
+      try { localStorage.setItem("solkit_pending_ico_tx", sig); setPendingTx(sig); } catch { /* jsdom */ }
 
-      await waitForConfirmation(connection, sig);
+      // 🔁 مثل رسوم التسجيل تماماً: تأكيد محلي "أفضل جهد" بمهلة 15 ثانية لا يرمي
+      // خطأ انتهاء — تأكيد السيرفر عبر RPC هو المرجع الحقيقي بعد الدفع.
+      setStatus({ type: "confirming", text: "جاري تأكيد الدفعة على الشبكة..." });
+      try {
+        await Promise.race([
+          connection.confirmTransaction({
+            signature: sig,
+            blockhash: latestBlockHashInfo.blockhash,
+            lastValidBlockHeight: latestBlockHashInfo.lastValidBlockHeight,
+          }, "confirmed").then(() => true),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15000)),
+        ]);
+      } catch (confirmErr) {
+        console.warn("Local confirmation skipped (server will re-verify):", confirmErr);
+      }
 
-      setStatus({ type: "loading", text: "جاري تأكيد واعتماد المشاركة على الخادم..." });
+      // 4. إرسال التوقيع للسيرفر لتسجيل المشاركة (يعتمدها فوراً حتى لو تعذّر
+      // التحقق الآني — "سُجِّلت ✅ بانتظار تأكيد الإدارة" لا رسالة رفض أبداً)
+      setStatus({ type: "loading", text: "جاري تسجيل مشاركتك على الخادم..." });
       const res = await apiFetch("/api/users/ico/purchase", {
         method: "POST",
         headers,
@@ -331,20 +312,63 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        return setStatus({ type: "error", text: data.message || "فشل اعتماد المشاركة" });
+        return setStatus({ type: "error", text: data.message || "فشل اعتماد المشاركة — ستظهر زر الاسترجاع، جرّبه بعد قليل." });
       }
       setStatus({ type: "success", text: data.message || "تم تسجيل المشاركة ✅" });
       setOpen(false);
       setAmountStr("");
-      try { localStorage.removeItem("solkit_pending_ico_tx"); } catch { /* */ }
+      try { localStorage.removeItem("solkit_pending_ico_tx"); setPendingTx(null); } catch { /* */ }
       load();
     } catch (err: any) {
       console.error("ICO purchase error:", err);
       let msg = err?.message || "";
       if (/Failed to fetch|NetworkError|load failed|No data received|ERR_/i.test(msg)) {
-        msg = "شبكة ضعيفة أو الخادم يستيقظ الآن — تحقّق من ذلك بعد قليل وأعد المحاولة.";
+        msg = "شبكة ضعيفة أو الخادم يستيقظ الآن — جرّب زر «استرجاع المشاركة السابقة» بعد قليل.";
       }
       setStatus({ type: "error", text: msg });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 🔄 استرجاع مشاركة اكتتاب من دفعة سابقة — مثل «استرجاع التفعيل» تماماً:
+  // يُرسل بدون txHash والمبلغ، والسيرفر يمسح آخر تحويلات محفظة الخزانة بحثاً عن
+  // دفعتك الصادرة من محفظتك ويعتمدها فعلياً — فلا دفع مزدوج أبداً.
+  const resumePurchase = async () => {
+    if (!token) return;
+    try {
+      setBusy(true);
+      setStatus({ type: "loading", text: "جاري البحث عن دفعتك السابقة على خزانة الاكتتاب..." });
+      const res = await Promise.race([
+        apiFetch("/api/users/ico/purchase", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({}),
+        }),
+        new Promise<Response>((_, reject) =>
+          setTimeout(() => reject(new Error("انتهت مهلة الاتصال بالخادم — أعد المحاولة")), 25000),
+        ),
+      ]);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        try { localStorage.removeItem("solkit_pending_ico_tx"); } catch { /* */ }
+        setPendingTx(null);
+        setStatus({ type: "success", text: data.message || "تم تسجيل مشاركتك ✅" });
+        load();
+      } else {
+        // 🧾 لا دفعة مؤهلة؟ رسالة واضحة بدل الرفض الغامض
+        const msg: string = data?.message || "";
+        const noPayment = /TxHash|لم يتم العثور|مفتاح المعاملة/i.test(msg);
+        setStatus({
+          type: "error",
+          text: noPayment
+            ? "لم يجد السيرفر دفعة سابقة لم تُسجَّل — إن دفعت فعلاً فانتظر تأكيد الشبكة ثم أعد المحاولة."
+            : (msg || "فشل استرجاع المشاركة — أعد المحاولة"),
+        });
+      }
+    } catch (error: any) {
+      console.error("ICO resume error:", error);
+      setStatus({ type: "error", text: error?.message || "فشل استرجاع المشاركة — أعد المحاولة" });
     } finally {
       setBusy(false);
     }
@@ -440,6 +464,24 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       >
         {windowOpen ? "اشترك الآن في الاكتتاب 🚀" : "الاكتتاب غير متاح حالياً"}
       </button>
+
+      {/* 🔄 استرجاع دفعة سابقة لم تُسجَّل (مثل استرجاع رسوم التسجيل) */}
+      {token && pendingTx && (
+        <div className="glass" style={{ ...styles.card, marginTop: 12, borderColor: "rgba(255,176,32,0.45)" }}>
+          <h3 style={styles.cardTitle}>🔄 لديك دفعة اكتتاب لم تُسجَّل بعد</h3>
+          <p style={{ ...T.hint, marginTop: 6, fontSize: 12 }}>
+            بُثّت دفعتك السابقة على الشبكة لكن انقطع الاتصال قبل اكتمال التسجيل — استرجعها الآن دون دفع مزدوج.
+          </p>
+          <button
+            onClick={resumePurchase}
+            disabled={busy}
+            className="btn btn-purple btn-block"
+            style={{ marginTop: 10, padding: "12px", fontWeight: 900, fontSize: 13 }}
+          >
+            {busy ? "جاري البحث..." : "🔍 استرجاع المشاركة السابقة"}
+          </button>
+        </div>
+      )}
 
       {status && (
         <div style={{ ...styles.statusBox, textAlign: "center", marginTop: 12, ...(status.type === "error"

@@ -1026,24 +1026,73 @@ const fetchIcoTransaction = async (signature) => {
         return null;
     }
 };
-// ✅ التحقق من اتجاه معاملة الاكتتاب: أرسلها المشترك فعلاً إلى الخزانة بالمبلغ المطلوب
-const verifyTreasuryTransfer = (tx, fromWallet, amountSol) => {
+// 🧾 استخلاص دفع الاكتتاب من معاملة: من أرسل وبكم وصلت الخزانة فعلاً (باللامبرت)
+const extractTreasuryPayment = (tx) => {
     if (!tx || !tx.meta || tx.meta.err)
-        return false;
+        return null;
     const keys = (tx.transaction?.message?.accountKeys || []).map((k) => typeof k === "string" ? k : k?.pubkey);
     const treasury = getTokenConfig().treasury;
-    const fromIdx = keys.indexOf(fromWallet);
     const treasuryIdx = keys.indexOf(treasury);
     const pre = tx.meta.preBalances || [];
     const post = tx.meta.postBalances || [];
-    const requiredLamports = Math.round(amountSol * 1e9);
-    let treasuryReceived = 0;
-    if (treasuryIdx >= 0 && post[treasuryIdx] !== undefined) {
-        treasuryReceived = (post[treasuryIdx] ?? 0) - (pre[treasuryIdx] ?? 0);
+    if (treasuryIdx < 0 || post[treasuryIdx] === undefined)
+        return null;
+    const lamports = (post[treasuryIdx] ?? 0) - (pre[treasuryIdx] ?? 0);
+    if (lamports <= 0)
+        return null;
+    // المصدر: أول حساب انخفض رصيده (المرسل/الموقع)
+    let from = "";
+    for (let i = 0; i < keys.length; i++) {
+        if ((post[i] ?? 0) < (pre[i] ?? 0)) {
+            from = keys[i];
+            break;
+        }
     }
-    return (fromIdx >= 0 &&
-        treasuryReceived >= requiredLamports * 0.9999 &&
-        (post[fromIdx] ?? 0) <= (pre[fromIdx] ?? 0));
+    return from ? { from, lamports } : null;
+};
+// ✅ التحقق من اتجاه معاملة الاكتتاب: أرسلها المشترك فعلاً إلى الخزانة بالمبلغ المطلوب
+const verifyTreasuryTransfer = (tx, fromWallet, amountSol) => {
+    const p = extractTreasuryPayment(tx);
+    if (!p)
+        return false;
+    return p.from === fromWallet && p.lamports >= Math.round(amountSol * 1e9) * 0.9999;
+};
+// 🔍 استرجاع مشاركة اكتتاب من دفعة سابقة: مثل «استرجاع التفعيل» — يفحص آخر تحويلات
+// محفظة الخزانة بحثاً عن تحويل صادر من محفظة المستخدم لم يُعتمد بعد كـ txHash.
+// يُستخدم عند انقطاع التطبيق بعد بثّ الدفعة وقبل اكتمال التسجيل — لتفادي دفع مزدوج.
+const findEligibleIcoPayment = async (solanaRpcUrl, userWallet) => {
+    const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))]);
+    try {
+        const connection = new Connection(solanaRpcUrl, "confirmed");
+        const treasury = getTokenConfig().treasury;
+        const sigsResp = await withTimeout(connection.getSignaturesForAddress(new PublicKey(treasury), { limit: 30 }), 10000);
+        if (!sigsResp)
+            return null;
+        const signatures = sigsResp.filter((sg) => !sg.err);
+        const LIMIT = Math.min(signatures.length, 10);
+        const batch = signatures.slice(0, LIMIT);
+        const results = await Promise.all(batch.map(async (sg) => {
+            try {
+                const tx = await fetchIcoTransaction(sg.signature);
+                const p = tx ? extractTreasuryPayment(tx) : null;
+                if (!p || p.from !== userWallet)
+                    return null;
+                // لم يُعتمد هذا التوقيع كـ txHash من قبل (منع الاعتماد المزدوج)
+                const dup = await prisma.icoPurchase
+                    .findUnique({ where: { txHash: sg.signature } })
+                    .catch(() => null);
+                return dup ? null : { signature: sg.signature, lamports: p.lamports };
+            }
+            catch {
+                return null;
+            }
+        }));
+        return results.find((sig) => sig) || null;
+    }
+    catch (err) {
+        console.error("findEligibleIcoPayment error:", err);
+        return null;
+    }
 };
 // ⏳ إعادة محاولة تأكيد آلي لاحق (بخلفية) للمشاركة المعلّقة إن تعذّر التحقق الفوري؛
 // لا يرمي أبداً — التحقق الفشل يبقى بانتظار تأكيد المدير اليدوي.
@@ -1652,7 +1701,9 @@ router.get("/ico/public", async (_req, res) => {
     }
 });
 // 🛒 شراء من الاكتتاب: يتحقق من المعاملة على السلسلة ثم يعتمد المخصصات
-// الطلب: { txHash, solAmount } — solAmount بالوحدات العادية (مثلاً 0.05 = 5 سنتات SOL)
+// الطلب: { txHash?, solAmount? } — كلاهما اختياري تماماً كما في دفع رسوم التفعيل:
+// إن لم يُرسل txHash (أو انقطع التطبيق بعد بثّ الدفعة) يبحث السيرفر عن الدفعة المؤهلة
+// بمسح آخر تحويلات محفظة الخزانة ويعتمدها فعلياً — فلا يُحرم مشترك صادق من مشاركته.
 router.post("/ico/purchase", authenticateJWT, async (req, res) => {
     try {
         const userId = req.user?.id;
@@ -1668,27 +1719,51 @@ router.post("/ico/purchase", authenticateJWT, async (req, res) => {
         if (ico.endDate && now > ico.endDate)
             return res.status(400).json({ message: "انتهى الاكتتاب" });
         const { txHash, solAmount } = req.body || {};
-        if (typeof txHash !== "string" || txHash.length < 8 || txHash.length > 200) {
-            return res.status(400).json({ message: "مفتاح المعاملة غير صالح" });
-        }
-        const amount = Number(solAmount);
-        if (!Number.isFinite(amount) || amount <= 0) {
-            return res.status(400).json({ message: "المبلغ غير صالح" });
-        }
-        if (amount < ico.minSOL)
-            return res.status(400).json({ message: `الحد الأدنى للمشاركة ${ico.minSOL} SOL` });
-        if (amount > ico.maxSOL)
-            return res.status(400).json({ message: `الحد الأقصى للمشاركة ${ico.maxSOL} SOL` });
+        const bodyTxHash = typeof txHash === "string" && txHash.trim().length >= 8 ? txHash.trim() : "";
+        let amount = Number(solAmount);
         const user = await prisma.user.findUnique({ where: { id: userId } });
         if (!user)
             return res.status(404).json({ message: "الحساب غير موجود" });
         if (!user.walletAddress)
             return res.status(400).json({ message: "اربط محفظتك أولاً" });
-        // 👛 الحد الأقصى التراكمي لكل محفظة: مجموع مشتريات هذا الحساب + الدفعة الجديدة
-        // يجب ألا يتجاوز maxPerWalletSOL (مثال: لا تشتري محفظة بأكثر من 10 SOL إجمالاً).
+        // 🔍 تحديد المبلغ والتوقيع الحقيقي: نفضّل المعاملة الممرَّرة، وإن نقص أيٌّ منهما
+        // (أو تعذّر التحقق الآني) نبحث عن الدفعة المؤهلة بمسح محفظة الخزانة — نمط التفعيل.
+        let signature = bodyTxHash;
+        if (!signature || !Number.isFinite(amount) || amount <= 0) {
+            const solanaRpcUrl = process.env.SOLANA_RPC_URL || process.env.RPC_URL || "https://api.devnet.solana.com";
+            const recovered = await findEligibleIcoPayment(solanaRpcUrl, user.walletAddress);
+            if (recovered) {
+                signature = recovered.signature;
+                amount = recovered.lamports / 1e9;
+            }
+            else if (!signature) {
+                // 📄 بودّ مثل استرجاع التفعيل: لا توقيع ولا دفعة مؤهلة — نرشد المستخدم للاشتراك
+                return res.status(400).json({
+                    message: "لم يتم العثور على معاملة دفع سابقة لمشاركتك — اشترك الآن من زر «اشترك الآن في الاكتتاب» وسيُسجَّل دفعة تلقائياً.",
+                });
+            }
+        }
+        // عند ورود توقيع فقط بلا مبلغ (استرجاع): نستخلص المبلغ الفعلي من المعاملة نفسها
+        if (signature && (!Number.isFinite(amount) || amount <= 0)) {
+            const txInfo = await fetchIcoTransaction(signature);
+            const p = txInfo ? extractTreasuryPayment(txInfo) : null;
+            if (p)
+                amount = p.lamports / 1e9;
+        }
+        if (!signature)
+            return res.status(400).json({ message: "مفتاح المعاملة غير صالح" });
+        if (!Number.isFinite(amount) || amount <= 0) {
+            return res.status(400).json({ message: "لم نستطع تحديد مبلغ مشاركتك — أعد المحاولة بعد قليل" });
+        }
+        if (amount < ico.minSOL)
+            return res.status(400).json({ message: `الحد الأدنى للمشاركة ${ico.minSOL} SOL` });
+        if (amount > ico.maxSOL)
+            return res.status(400).json({ message: `الحد الأقصى للمشاركة ${ico.maxSOL} SOL` });
+        // 👛 الحد الأقصى التراكمي لكل محفظة: مجموع مشتريات هذا الحساب (المؤكّدة والمعلّقة
+        // على السواء — فالمبلغ دُفع فعلاً) + الدفعة الجديدة يجب ألا يتجاوز maxPerWalletSOL.
         const maxPerWallet = ico.maxPerWalletSOL ?? 10;
         const walletAgg = await prisma.icoPurchase.aggregate({
-            where: { userId, status: "purchased" },
+            where: { userId, status: { in: ["purchased", "pending"] } },
             _sum: { solAmount: true },
         });
         const walletRaised = Number(walletAgg._sum.solAmount || 0);
