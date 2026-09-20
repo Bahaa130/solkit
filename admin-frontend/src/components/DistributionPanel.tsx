@@ -16,8 +16,6 @@ interface DistributionPanelProps {
   token: string;
 }
 
-const MAX_PER_TX = 20; // حد عدد المستلمين في المعاملة الواحدة (حد حجم البايتات)
-
 export default function DistributionPanel({ token }: DistributionPanelProps) {
   const [overview, setOverview] = useState<any>(null);
   const [preparing, setPreparing] = useState(false);
@@ -133,16 +131,35 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       const providerPubkey = new PublicKey(sender);
 
       const decimals = preview.decimals;
-      // تقسيم المستلمين لدفعات ضمن حد حجم المعاملة
+
+      // 🧮 دفعات بحجم آمن لحد حجم معاملة سولانا (1232 بايت): التحويلات وحدها خفيفة،
+      // أما إنشاء حساب ATA فيضيف ~50 بايت لكل مستلم — لذا تُصغَّر الدفعات حين يحوي
+      // المستلمون حسابات ناقصة، وإلا فشلت المعاملة كلها بخطأ "Transaction too large".
+      const MAX_TRANSFERS = 15; // تحويلات فقط (~800 بايت)
+      const MAX_WITH_ATA = 5;   // مع إنشاء حسابات ATA
       const batches: any[][] = [];
-      const all = [...preview.recipients];
-      for (let i = 0; i < all.length; i += MAX_PER_TX) batches.push(all.slice(i, i + MAX_PER_TX));
+      let cur: any[] = [];
+      let curHasAtaCreation = false;
+      for (const r of preview.recipients) {
+        const limit = curHasAtaCreation || !r.hasAta ? MAX_WITH_ATA : MAX_TRANSFERS;
+        if (cur.length >= limit) {
+          batches.push(cur);
+          cur = [];
+          curHasAtaCreation = false;
+        }
+        cur.push(r);
+        if (!r.hasAta) curHasAtaCreation = true;
+      }
+      if (cur.length) batches.push(cur);
 
       const results: { recipient: any; txSignature: string }[] = [];
+      const failedBatches: number[] = [];
+      let firstError = "";
 
       // 🔄 آخر blockhash عبر نفس آلية دفع رسوم التسجيل (fetchBlockhashWithRetry):
       // web3 ثلاث مرات ثم fetch مباشر ثلاثاً — نبدأ بالبلوكهاش المُحمّى مسبقاً إن وُجد.
       let latestBlockhash = warmBlockhash;
+      let bhFetchedAt = latestBlockhash ? Date.now() : 0;
       if (!latestBlockhash) {
         try {
           latestBlockhash = await fetchBlockhashWithRetry(
@@ -151,6 +168,7 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
             rpc,
           );
           setWarmBlockhash(latestBlockhash);
+          bhFetchedAt = Date.now();
         } catch (err: any) {
           const detail = err instanceof Error ? err.message.replace(/^RPC unreachable :: /, "") : "network";
           throw new Error(`تعذّر قراءة حالة الشبكة (${detail}) — أعد المحاولة بعد قليل.`);
@@ -158,51 +176,73 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       }
 
       for (let b = 0; b < batches.length; b++) {
+        // ⏱️ صلاحية الـ blockhash ≈ 60-75 ثانية فقط — نجدّده قبل كل دفعة متأخرة
+        // وإلا فشلت كل الدفعات اللاحقة بخطأ "block height exceeded".
+        if (b > 0 && Date.now() - bhFetchedAt > 40_000) {
+          try {
+            latestBlockhash = await fetchBlockhashWithRetry(
+              connection,
+              (label, err) => console.warn("[blockhash]", label, err),
+              rpc,
+            );
+            setWarmBlockhash(latestBlockhash);
+            bhFetchedAt = Date.now();
+          } catch { /* نكمل بالبلوكهاش الحالي — قد يزال صالحاً */ }
+        }
         const group = batches[b];
-        const tx = new Transaction();
-        for (const r of group) {
-          const recipientPubkey = new PublicKey(r.walletAddress);
-          const ata = await getAssociatedTokenAddress(mint, recipientPubkey);
-          if (!r.hasAta) {
-            tx.add(createAssociatedTokenAccountInstruction(providerPubkey, ata, recipientPubkey, mint));
-          }
-          tx.add(
-            createTransferCheckedInstruction(
-              treasuryAta,
-              mint,
-              ata,
-              providerPubkey,
-              BigInt(Math.round(r.amount * 10 ** decimals)),
-              decimals
-            )
-          );
-        }
-        tx.feePayer = providerPubkey;
-        if (!latestBlockhash) throw new Error("Failed to fetch blockhash");
-        tx.recentBlockhash = latestBlockhash.blockhash;
-
-        setStatus({ type: "loading", text: `⏳ دفعة ${b + 1}/${batches.length} — افتح Phantom لتوقيع إرسال التوكن...` });
-        const sig = await sendTransaction(tx, connection);
-        if (!sig) throw new Error("لم يُرجع Phantom توقيع المعاملة");
-
-        // 🔁 تأكيد محلي "أفضل جهد" — لا يُرمى خطأ انتهاء الارتفاع (block height exceeded):
-        // العقد العامة تتذبذب في الرصد، والقراءة القاطعة تبقى في السيرفر
-        // (إعادة محاولة getTransaction ثم فحص رصيد حساب المستلم الحالي).
-        // 🔁 مثل رسوم التسجيل: تأكيد محلي "أفضل جهد" بمهلة 15 ثانية لا يرمي خطأ —
-        // التوثيق القاطع يتم على السيرفر (فحص المعاملة ورصيد المستلم عند التأكيد).
         try {
-          await Promise.race([
-            connection.confirmTransaction({
-              signature: sig,
-              blockhash: latestBlockhash.blockhash,
-              lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-            }, "confirmed").then(() => true),
-            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15000)),
-          ]);
-        } catch (confirmErr) {
-          console.warn("Local confirmation skipped (server will re-verify):", confirmErr);
+          const tx = new Transaction();
+          for (const r of group) {
+            const recipientPubkey = new PublicKey(r.walletAddress);
+            const ata = await getAssociatedTokenAddress(mint, recipientPubkey);
+            if (!r.hasAta) {
+              tx.add(createAssociatedTokenAccountInstruction(providerPubkey, ata, recipientPubkey, mint));
+            }
+            tx.add(
+              createTransferCheckedInstruction(
+                treasuryAta,
+                mint,
+                ata,
+                providerPubkey,
+                BigInt(Math.round(r.amount * 10 ** decimals)),
+                decimals
+              )
+            );
+          }
+          tx.feePayer = providerPubkey;
+          if (!latestBlockhash) throw new Error("Failed to fetch blockhash");
+          tx.recentBlockhash = latestBlockhash.blockhash;
+
+          setStatus({ type: "loading", text: `⏳ دفعة ${b + 1}/${batches.length} — افتح Phantom لتوقيع إرسال التوكن...` });
+          const sig = await sendTransaction(tx, connection);
+          if (!sig) throw new Error("لم يُرجع Phantom توقيع المعاملة");
+
+          // 🔁 مثل رسوم التسجيل: تأكيد محلي "أفضل جهد" بمهلة 15 ثانية لا يرمي خطأ —
+          // التوثيق القاطع يتم على السيرفر (فحص المعاملة ورصيد المستلم عند التأكيد).
+          try {
+            await Promise.race([
+              connection.confirmTransaction({
+                signature: sig,
+                blockhash: latestBlockhash.blockhash,
+                lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+              }, "confirmed").then(() => true),
+              new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 15000)),
+            ]);
+          } catch (confirmErr) {
+            console.warn("Local confirmation skipped (server will re-verify):", confirmErr);
+          }
+          group.forEach((r) => results.push({ recipient: r, txSignature: sig }));
+        } catch (batchErr: any) {
+          // 🛟 فشل دفعة لا يُجهض ما بعدها ولا يضيّع ما قبلها: نكمل البقية ونسجّل
+          // الناجح على الخادم — ويعيد المدير تجهيز المتبقي دون تكرار أي دفع.
+          console.error(`Distribution batch ${b + 1} failed:`, batchErr);
+          failedBatches.push(b + 1);
+          if (!firstError) firstError = batchErr?.message || "خطأ غير معروف";
         }
-        group.forEach((r) => results.push({ recipient: r, txSignature: sig }));
+      }
+
+      if (!results.length) {
+        throw new Error(firstError || "فشلت جميع دفعات التوزيع");
       }
 
       setStatus({ type: "loading", text: "جاري التحقق البلوكشيني وتسجيل التوزيع على السيرفر..." });
@@ -221,11 +261,14 @@ export default function DistributionPanel({ token }: DistributionPanelProps) {
       });
       const confirmData = await confirmRes.json();
       if (confirmRes.ok) {
-        setStatus({ type: "success", text: confirmData.message });
+        const partialNote = failedBatches.length
+          ? ` — ⚠️ فشلت ${failedBatches.length} دفعة (${firstError}) — أعد «تجهيز ثم توزيع» وسيوزَّع المتبقي فقط دون تكرار ما سُلّم.`
+          : "";
+        setStatus({ type: "success", text: `${confirmData.message}${partialNote}` });
         setPreview(null);
         fetchAll();
       } else {
-        setStatus({ type: "error", text: confirmData.message || "فشل تأكيد التوزيع" });
+        setStatus({ type: "error", text: confirmData.message || "فشل تأكيد التوزيع — حاول مجدداً" });
       }
 } catch (e: any) {
       console.error("Distribution error:", e);

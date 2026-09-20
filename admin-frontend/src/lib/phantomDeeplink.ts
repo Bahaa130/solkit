@@ -221,74 +221,67 @@ export async function signMessagePhantomMobile(message: string): Promise<string>
   return bytesToBase64(bs58.decode(decrypted.signature));
 }
 
-// 📤 توقيع وبثّ معاملة: يفضّل أن يبثّها Phantom بنفسه (signAndSendTransaction)،
-// وإن لم تدعم المحفظة الطريقة (This method is not supported) نوقّع عبر
-// signTransaction ثم نبثّ بأنفسنا عبر البروكسي (fetch مباشر يعمل داخل التطبيق).
+// 📤 توقيع وبثّ معاملة: مسار واحد حاسم — Phantom يوقّع فقط (شاشة توقيع واحدة)
+// ونحن نبثّ المعاملة بأنفسنا عبر البروكسي. سبب المسار الواحد: بعض إصدارات Phantom
+// على الموبايل لا تدعم signAndSendTransaction عبر الروابط المشفّرة فكانت المحفظة
+// تُفتح مرتين (شاشة خطأ ثم شاشة توقيع) — الآن فتح واحد لكل معاملة دائماً.
 export async function sendTransactionPhantomMobile(
   serialized: Uint8Array,
   connection?: Connection,
 ): Promise<string> {
+  void connection; // البثّ يتم دائماً عبر البروكسي المباشر — الاتصال محفوظ للتوافق مع الواجهة
   if (!session) throw new Error("not_connected");
   const txB58 = bs58.encode(serialized);
 
-  // 1️⃣ المحاولة الأولى: Phantom يوقّع ويبثّ بنفسه
-  try {
-    const { nonceB58, payloadB58 } = encryptJson(
-      { transaction: txB58, session: session.session },
-      session.sharedSecret,
-    );
-    const resp = await openPhantomAndAwait("signAndSendTransaction", {
-      dapp_encryption_public_key: bs58.encode(session.dappKeyPair.publicKey),
-      nonce: nonceB58,
-      payload: payloadB58,
-    });
-    assertError(resp);
-    const decrypted = decryptResponse(resp.get("data")!, resp.get("nonce")!, session.sharedSecret);
-    if (decrypted.signature) return decrypted.signature as string;
-    if (decrypted.transaction && connection) {
-      return await connection.sendRawTransaction(bs58.decode(decrypted.transaction), { maxRetries: 3 });
-    }
-    throw new Error("no_signature_in_response");
-  } catch (err: any) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // فقط إذا كانت الطريقة غير مدعومة ننتقل للاحتياطي؛ نرفض أي إلغاء/خطأ آخر كما هو
-    if (!/not supported/i.test(msg)) throw err;
-    console.warn("[send] signAndSendTransaction unsupported → signTransaction fallback");
-  }
-
-  // 2️⃣ الاحتياطي: Phantom يوقّع فقط، ونحن نبثّ عبر البروكسي
   const { nonceB58, payloadB58 } = encryptJson(
     { transaction: txB58, session: session.session },
     session.sharedSecret,
   );
-  const resp2 = await openPhantomAndAwait("signTransaction", {
+  const resp = await openPhantomAndAwait("signTransaction", {
     dapp_encryption_public_key: bs58.encode(session.dappKeyPair.publicKey),
     nonce: nonceB58,
     payload: payloadB58,
   });
-  assertError(resp2);
-  const decrypted2 = decryptResponse(resp2.get("data")!, resp2.get("nonce")!, session.sharedSecret);
-  if (!decrypted2.transaction) throw new Error("no_transaction_in_response");
-  return await broadcastRawTransaction(bs58.decode(decrypted2.transaction as string));
+  assertError(resp);
+  const decrypted = decryptResponse(resp.get("data")!, resp.get("nonce")!, session.sharedSecret);
+  if (!decrypted.transaction) throw new Error("no_transaction_in_response");
+  return await broadcastRawTransaction(bs58.decode(decrypted.transaction as string));
 }
 
 // 📡 بثّ معاملة موقّعة عبر البروكسي (fetch مباشر — لا يعتمد على web3.js)
+// 🔁 مع إعادة محاولة: خادم Render النائم قد يرد 503/429 لحظة الإيقاظ —
+// نعيد المحاولة حتى يُبثّ التوقيع فعلاً قبل انتهاء صلاحية الـ blockhash.
 async function broadcastRawTransaction(signedTxBytes: Uint8Array): Promise<string> {
   await ensureNetwork();
-  const res = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "sendTransaction",
-      params: [bs58.encode(signedTxBytes), { skipPreflight: true }],
-    }),
-  });
-  const data: any = await res.json().catch(() => null);
-  if (!res.ok || data?.error) {
-    throw new Error(data?.error?.message || `brodcast_http_${res.status}`);
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const res = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "sendTransaction",
+          params: [bs58.encode(signedTxBytes), { skipPreflight: false, maxRetries: 3 }],
+        }),
+      });
+      const data: any = await res.json().catch(() => null);
+      if (res.ok && data?.result) return data.result as string;
+      // خطأ RPC تشغيلي (blockhash منتهٍ/حساب مكرر) لا يُعاد عليه — البثّ لن ينجح
+      if (data?.error && !/unhealthy|rate|limit|too many|503|429/i.test(String(data.error?.message || ""))) {
+        throw new Error(data.error?.message || `brodcast_http_${res.status}`);
+      }
+      lastErr = new Error(data?.error?.message || `brodcast_http_${res.status}`);
+    } catch (e) {
+      lastErr = e;
+      // أخطاء غير الشبكة (blockhash منتهٍ مثلها) لا تُعاد — أرمِها فوراً
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/Failed to fetch|NetworkError|load failed|503|429|unhealthy|rate|limit|too many|brodcast_http/i.test(msg)) {
+        throw e;
+      }
+    }
+    await new Promise((r) => setTimeout(r, 2000));
   }
-  if (!data?.result) throw new Error("brodcast_no_signature");
-  return data.result as string;
+  throw new Error(`تعذّر بثّ المعاملة عبر الشبكة (${lastErr instanceof Error ? lastErr.message : lastErr}) — أعد المحاولة بعد قليل`);
 }

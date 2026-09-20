@@ -1452,30 +1452,58 @@ router.post("/admin/distribution/confirm", authenticateJWT, async (req: Authenti
     const connection = new Connection(getRpcUrl(), "confirmed");
     const mint = new PublicKey(cfg.mint);
 
-    // 1) تحقق بلوكشيني صارم: كل مستلم استلم مبلغه فعلاً في معاملته
+    // 0) 🚫 منع التأكيد المزدوج: أي توقيع سبق تسجيله في سجل التوزيع يُستبعد فوراً
+    // (حماية من خصم أرصدة المشتركين مرتين عند تكرار الضغط على التأكيد)
+    const allSigs = Array.from(new Set(recipients.map((r) => r.txSignature)));
+    const alreadyRecorded = new Set(
+      (
+        await (prisma as any).distributionRecord.findMany({
+          where: { txSignature: { in: allSigs } },
+          select: { txSignature: true },
+        })
+      ).map((x: any) => x.txSignature),
+    );
+
+    // 1) تحقق بلوكشيني لكل مستلم — نسجّل المتحقق منهم فقط ولا نُجهض الكل بسبب أحدهم:
+    // دفعة فشل التحقق فيها (لم تُفهرس بعد) لا تعني فقدان ما وُزّع فعلاً في بقية الدفعات.
+    const verified: typeof recipients = [];
+    const failed: { walletAddress: string; reason: string }[] = [];
     for (const r of recipients) {
+      if (alreadyRecorded.has(r.txSignature)) {
+        failed.push({ walletAddress: r.walletAddress, reason: "سُجّلت هذه المعاملة سابقاً — لا تكرار" });
+        continue;
+      }
       const ok = await verifyTokenReceipt(connection, r.txSignature, mint, r.walletAddress, r.amount);
-      if (!ok) {
-        return res.status(400).json({ message: `فشل التحقق البلوكشيني للمستلم ${r.walletAddress.substring(0, 6)}... — أعد التحقق من المعاملة` });
+      if (ok) {
+        verified.push(r);
+      } else {
+        failed.push({ walletAddress: r.walletAddress, reason: "لم يُرصد استلام المبلغ في المعاملة بعد — أعد التحقق خلال دقيقة" });
       }
     }
 
-    // 2) تسجيل الدفعة وسجلات الاستلام لكل مشترك
-    const totalTokens = recipients.reduce((s, r) => s + r.amount, 0);
+    if (!verified.length) {
+      return res.status(400).json({
+        message: `فشل التحقق البلوكشيني لجميع المستلمين — قد تكون المعاملات لم تُفهرس بعد، أعد المحاولة خلال دقيقة`,
+        failed,
+      });
+    }
+
+    // 2) تسجيل الدفعة وسجلات الاستلام للمستلمين المتحقق منهم فقط
+    const totalTokens = verified.reduce((s, r) => s + r.amount, 0);
     const plan = await getActivePlan();
-    const signatures = Array.from(new Set(recipients.map((r) => r.txSignature)));
+    const signatures = Array.from(new Set(verified.map((r) => r.txSignature)));
 
     const batch = await prisma.$transaction(async (tx) => {
       const b = await (tx as any).distributionBatch.create({
         data: {
           planId: plan.id,
           totalTokens,
-          recipientCount: recipients.length,
+          recipientCount: verified.length,
           txSignatures: signatures as any,
           status: "confirmed"
         }
       });
-      for (const r of recipients) {
+      for (const r of verified) {
         await (tx as any).distributionRecord.create({
           data: {
             batchId: b.id,
@@ -1496,11 +1524,14 @@ router.post("/admin/distribution/confirm", authenticateJWT, async (req: Authenti
       return b;
     });
 
+    const failedNote = failed.length
+      ? ` — ⚠️ لم يُسجَّل ${failed.length} مستلم (معاملاتهم غير مفهرسة بعد أو سبق تسجيلها) — أعد التأكيد لاحقاً وسيُسجَّل المتبقي فقط`
+      : "";
     return res.json({
-      message: "تم توزيع رصيد المجمع وتحديث الأرصدة بنجاح 🎉",
-      batchId: batch.id,
-      totalTokens,
-      recipientCount: recipients.length
+      message: `تم تسجيل توزيع ${totalTokens.toLocaleString()} توكن على ${verified.length} مشترك ✅${failedNote}`,
+      batch,
+      verifiedCount: verified.length,
+      failed,
     });
   } catch (error) {
     console.error("Distribution confirm error:", error);
