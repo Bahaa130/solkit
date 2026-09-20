@@ -1057,6 +1057,16 @@ const verifyTreasuryTransfer = (tx, fromWallet, amountSol) => {
         return false;
     return p.from === fromWallet && p.lamports >= Math.round(amountSol * 1e9) * 0.9999;
 };
+// 🧾 هل استُخدم هذا التوقيع في مكان آخر (رسوم التفعيل/الإحالة)؟ — منع «إعادة إنفاق»
+// نفس الدفعة مرتين: تفعيل الحساب ثم مشاركة اكتتاب بنفس المعاملة الواحدة.
+// جدول الدفعات يسجّل التواقيع بثلاث صيغ: الخام، _site، و _referrer.
+const isSignatureUsedElsewhere = async (signature) => {
+    const variants = [signature, `${signature}_site`, `${signature}_referrer`];
+    const used = await prisma.payment
+        .findFirst({ where: { txHash: { in: variants } } })
+        .catch(() => null);
+    return Boolean(used);
+};
 // 🔍 استرجاع مشاركة اكتتاب من دفعة سابقة: مثل «استرجاع التفعيل» — يفحص آخر تحويلات
 // محفظة الخزانة بحثاً عن تحويل صادر من محفظة المستخدم لم يُعتمد بعد كـ txHash.
 // يُستخدم عند انقطاع التطبيق بعد بثّ الدفعة وقبل اكتمال التسجيل — لتفادي دفع مزدوج.
@@ -1081,7 +1091,12 @@ const findEligibleIcoPayment = async (solanaRpcUrl, userWallet) => {
                 const dup = await prisma.icoPurchase
                     .findUnique({ where: { txHash: sg.signature } })
                     .catch(() => null);
-                return dup ? null : { signature: sg.signature, lamports: p.lamports };
+                if (dup)
+                    return null;
+                // 🧾 ولا يُحسب لرسوم تفعيل/إحالة سابقاً (جدول الدفعات) — دفعة واحدة لغرض واحد
+                if (await isSignatureUsedElsewhere(sg.signature))
+                    return null;
+                return { signature: sg.signature, lamports: p.lamports };
             }
             catch {
                 return null;
@@ -1743,12 +1758,38 @@ router.post("/ico/purchase", authenticateJWT, async (req, res) => {
                 });
             }
         }
-        // عند ورود توقيع فقط بلا مبلغ (استرجاع): نستخلص المبلغ الفعلي من المعاملة نفسها
-        if (signature && (!Number.isFinite(amount) || amount <= 0)) {
+        // 🧾 منع إعادة إنفاق دفعة رسوم التفعيل/الإحالة كمشاركة اكتتاب: تدقيق مزدوج على
+        // جدول الدفعات — الدفعة الواحدة تخدم غرضاً واحداً فقط مهما حدث.
+        if (signature && (await isSignatureUsedElsewhere(signature))) {
+            return res.status(400).json({
+                message: "تم استخدام هذه المعاملة سابقاً لرسوم التفعيل — لا يمكن اعتمادها للمشاركة مرتين.",
+            });
+        }
+        // ✅ فحص تكرار المعاملة في سجل الاكتتاب نفسه (منع إعادة الاعتماد لنفس التوقيع)
+        if (signature) {
+            const existing = await prisma.icoPurchase.findUnique({ where: { txHash: signature } });
+            if (existing)
+                return res.status(400).json({ message: "تم اعتماد هذه المعاملة مسبقاً" });
+        }
+        // 🧿 المبلغ الحقيقي من السلسلة عند رصد المعاملة: لا نثق بالمبلغ المُدّعى في
+        // الطلب إطلاقاً — دلتا الخزانة الفعلية الصادرة من محفظة المستخدم هي المرجع
+        // الوحيد. فإن ادّعى أكثر مما دفع نُسجّل الحقيقة، وإن ادّعى أقل فخسر الفرق فقط.
+        let onChainVerified = false;
+        if (signature) {
             const txInfo = await fetchIcoTransaction(signature);
             const p = txInfo ? extractTreasuryPayment(txInfo) : null;
-            if (p)
+            if (p) {
+                if (p.from !== user.walletAddress) {
+                    return res.status(400).json({
+                        message: "هذه المعاملة ليست صادرة من محفظتك — لا يمكن اعتمادها لمشاركتك.",
+                    });
+                }
                 amount = p.lamports / 1e9;
+                onChainVerified = true;
+            }
+            // إن لم تُرصد المعاملة بعد (تأخر فهرسة العقدة/نوم الخادم) نبقى على المبلغ
+            // المُعلن مؤقتاً كـ «غير مؤكد»، والتأكيد الآلي اللاحق لا يمر إلا إن وصل
+            // المبلغ المعلن فعلاً إلى الخزانة — وإلا يبقى قرار المدير اليدوي هو الفيصل.
         }
         if (!signature)
             return res.status(400).json({ message: "مفتاح المعاملة غير صالح" });
@@ -1785,36 +1826,56 @@ router.post("/ico/purchase", authenticateJWT, async (req, res) => {
         if (ico.hardCapSOL && raisedSOL + amount > ico.hardCapSOL + 1e-9) {
             return res.status(400).json({ message: "اكتمل الهدف الأقصى للاكتتاب" });
         }
-        // ✅ فحص تكرار المعاملة (منع إعادة الاعتماد لنفس التوقيع)
-        const existing = await prisma.icoPurchase.findUnique({ where: { txHash } });
-        if (existing)
-            return res.status(400).json({ message: "تم اعتماد هذه المعاملة مسبقاً" });
         // 💾 اعتماد الشراء فوراً بوصفه «غير مؤكَّد» (بانتظار تأكيد الإدارة يدوياً) حتى لا
         // يُحرَم أي مشترك صادق من مشاركته إن تعذّر التحقق الآني (تباطؤ العقد العامة /
         // نوم الخادم). ثم نحاول التحقق الآلي — إن نجح نرقّي العملية إلى «مؤكّدة» فعلاً.
-        // التوزيع والاعتماد النهائي يبقىان يدويين من لوحة المدير.
-        const purchase = await prisma.icoPurchase.create({
-            data: { userId, solAmount: amount, tokenAmount, status: "pending", delivered: false, txHash },
-        });
-        let autoConfirmed = false;
+        // التوزيع والاعتماد النهائي يبقيان يدويين من لوحة المدير.
+        // ⚠️ نستخدم `signature` المحسومة (لا `txHash` الخام من الطلب) — فهي المعامل
+        // الوحيد الصحيح في مسار الاسترجاع حين لا يرسل العميل توقيعاً أصلاً.
+        let purchase;
         try {
-            const txInfo = await fetchIcoTransaction(txHash);
-            autoConfirmed = txInfo ? verifyTreasuryTransfer(txInfo, user.walletAddress, amount) : false;
-            if (autoConfirmed) {
-                await prisma.icoPurchase.update({
-                    where: { id: purchase.id },
-                    data: { status: "purchased" },
-                });
-                purchase.status = "purchased";
-            }
-            else {
-                // 🔁 جرّب لاحقاً في الخلفية (قد يكون التأكيد ما زال قيد فهرسة العقدة)
-                scheduleIcoAutoConfirm(purchase.id, txHash, user.walletAddress, amount);
-            }
+            purchase = await prisma.icoPurchase.create({
+                data: { userId, solAmount: amount, tokenAmount, status: "pending", delivered: false, txHash: signature },
+            });
         }
-        catch (err) {
-            console.error("[ICO] auto-verify failed (kept pending):", err?.message || err);
-            scheduleIcoAutoConfirm(purchase.id, txHash, user.walletAddress, amount);
+        catch (e) {
+            // ⚔️ سباق تسجيل متزامن على نفس التوقيع: القيد الفريد هو خط الدفاع الأخير
+            if (e?.code === "P2002")
+                return res.status(400).json({ message: "تم اعتماد هذه المعاملة مسبقاً" });
+            throw e;
+        }
+        // ✅ الترقية الآلية إلى «مؤكّدة»: إن كنا قد تحققنا بلوكشينياً أعلاه (رصدنا
+        // المعاملة وبعث المبلغ الفعلي من محفظة المستخدم) نرقّي فوراً؛ وإلا نحاول
+        // مجدداً (تأخر الفهرسة) ثم نجدول محاولات خلفية لا تُرقّي إلا لوصول المبلغ.
+        let autoConfirmed = false;
+        if (onChainVerified) {
+            autoConfirmed = true;
+            await prisma.icoPurchase.update({
+                where: { id: purchase.id },
+                data: { status: "purchased" },
+            });
+            purchase.status = "purchased";
+        }
+        else {
+            try {
+                const txInfo = await fetchIcoTransaction(signature);
+                autoConfirmed = txInfo ? verifyTreasuryTransfer(txInfo, user.walletAddress, amount) : false;
+                if (autoConfirmed) {
+                    await prisma.icoPurchase.update({
+                        where: { id: purchase.id },
+                        data: { status: "purchased" },
+                    });
+                    purchase.status = "purchased";
+                }
+                else {
+                    // 🔁 جرّب لاحقاً في الخلفية (قد يكون التأكيد ما زال قيد فهرسة العقدة)
+                    scheduleIcoAutoConfirm(purchase.id, signature, user.walletAddress, amount);
+                }
+            }
+            catch (err) {
+                console.error("[ICO] auto-verify failed (kept pending):", err?.message || err);
+                scheduleIcoAutoConfirm(purchase.id, signature, user.walletAddress, amount);
+            }
         }
         return res.status(201).json({
             message: autoConfirmed
@@ -2115,7 +2176,16 @@ router.post("/admin/card-image/delete", authenticateJWT, async (req, res) => {
         const { url } = req.body || {};
         if (typeof url !== "string" || !url.startsWith("/uploads/cards/"))
             return res.status(400).json({ message: "رابط غير صالح" });
-        const file = path.resolve(__dirname, "../../../uploads", url.replace(/^\/+/, ""));
+        // 🛡️ منع اجتياز المسار: اسم ملف واحد صريح فقط (بلا فواصل ولا .. ولا مسارات فرعية)
+        const name = url.slice("/uploads/cards/".length);
+        if (!/^[A-Za-z0-9._-]+$/.test(name) || name.includes("..") || name.startsWith(".")) {
+            return res.status(400).json({ message: "رابط غير صالح" });
+        }
+        const file = path.resolve(CARDS_UPLOAD_DIR, name);
+        // 🛡️ تحقق قاطع: الملف المحسوم يجب أن يقع داخل مجلد الكروت حصراً
+        if (!file.startsWith(path.resolve(CARDS_UPLOAD_DIR) + path.sep)) {
+            return res.status(400).json({ message: "رابط غير صالح" });
+        }
         if (fs.existsSync(file))
             fs.unlinkSync(file);
         return res.json({ success: true });
