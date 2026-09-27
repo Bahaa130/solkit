@@ -18,7 +18,7 @@ import {
   WalletProvider,
   useWallet,
 } from "@solana/wallet-adapter-react";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { WalletConnectWalletAdapter } from "@solana/wallet-adapter-walletconnect";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 import { Connection, Transaction } from "@solana/web3.js";
