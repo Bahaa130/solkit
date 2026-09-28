@@ -13,6 +13,7 @@ import { ed25519 } from "@noble/curves/ed25519"; // ✍️ التحقق من ت�
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT } from "../../middlewares/auth.middleware.js";
 import { getSettings, updateSettings, DEFAULTS } from "../../config/settings.js";
+import { ECONOMY_SCENARIO } from "./economyScenario.js";
 import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; // 🎯 نظام المستويات حسب النشاط
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 import { rpcRequest } from "../solana/solana.route.js"; // 🔧 طلب RPC مرن (نفس منطق إعادة محاولة البروكسي)
@@ -1687,6 +1688,84 @@ const settingsSchema = z.object({
         })).max(24).optional(),
         terms: z.string().max(6000).optional(),
     }).optional(),
+});
+// 🎯 معاينة سيناريو الاقتصاد المحسوب (بدون حفظ) — للمدير فقط
+router.get("/admin/economy-scenario", authenticateJWT, async (req, res) => {
+    if (!isAdmin(req, res))
+        return;
+    const cur = getSettings();
+    return res.json({
+        scenario: { id: ECONOMY_SCENARIO.id, name: ECONOMY_SCENARIO.name, desc: ECONOMY_SCENARIO.desc, summary: ECONOMY_SCENARIO.summary },
+        current: {
+            tokenSupply: cur.tokenSupply,
+            miningRateL1: cur.levelPlan?.[0]?.miningRate ?? DEFAULTS.levelPlan?.[0]?.miningRate,
+            xpTask: cur.xpTask,
+            dailyRewards: cur.dailyRewards,
+            wheelDailyCap: cur.wheel?.dailyCap,
+            games: cur.games,
+        },
+        next: {
+            tokenSupply: ECONOMY_SCENARIO.payload.tokenSupply,
+            miningRateL1: ECONOMY_SCENARIO.payload.levelPlan[0].miningRate,
+            xpTask: ECONOMY_SCENARIO.payload.xpTask,
+            dailyRewards: ECONOMY_SCENARIO.payload.dailyRewards,
+            wheelDailyCap: ECONOMY_SCENARIO.payload.wheel.dailyCap,
+            games: ECONOMY_SCENARIO.payload.games,
+        },
+    });
+});
+// 🎯 تطبيق سيناريو الاقتصاد المحسوب (عرض + مستويات + بونص + عجلة + ألعاب + بطاقات + توكنوميكس)
+//    ثم إيقاف المهام (مكافأة 0 + إيقاف) حتى لا يُصدر أي توكن من المهام.
+//    بعد التطبيق تظل كل القيم قابلة للتعديل من /admin/settings كالمعتاد.
+router.post("/admin/economy-scenario", authenticateJWT, async (req, res) => {
+    try {
+        if (!isAdmin(req, res))
+            return;
+        // 🛡️ تأكيد إلزامي: يمنع أي تطبيق عرضي (GET للمعاينة أولاً)
+        if (req.body?.confirm !== true) {
+            return res.status(400).json({ message: "يتطلب التطبيق تأكيداً صريحاً: { confirm: true }" });
+        }
+        const stopTasks = req.body?.stopTasks !== false;
+        // 1️⃣ الإعدادات (نفس مسار الحفظ الرسمي حتى لا تُحفظ قيم ناقصة)
+        const parsed = settingsSchema.safeParse(ECONOMY_SCENARIO.payload);
+        if (!parsed.success)
+            return res.status(400).json({ message: "قيم السيناريو غير صالحة" });
+        const icoPayload = parsed.data.ico
+            ? { ...DEFAULTS.ico, ...parsed.data.ico }
+            : undefined;
+        const gamesPayload = parsed.data.games
+            ? { ...DEFAULTS.games, ...parsed.data.games }
+            : undefined;
+        const updated = updateSettings({ ...parsed.data, ico: icoPayload, games: gamesPayload });
+        // 2️⃣ المهام: تصفير المكافأة + إيقاف القنوات (لا حذف — بيانات المستخدم محفوظة)
+        let stoppedTasks = 0;
+        if (stopTasks) {
+            try {
+                const r = await prisma.socialChannel.updateMany({ data: { reward: 0, active: false } });
+                stoppedTasks = r.count;
+            }
+            catch (err) {
+                console.error("Failed to stop task channels:", err);
+            }
+        }
+        return res.json({
+            message: `تم تطبيق سيناريو «${ECONOMY_SCENARIO.name}» بنجاح ✅`,
+            scenarioId: ECONOMY_SCENARIO.id,
+            stoppedTasks,
+            tokenSupply: updated.tokenSupply,
+            levelCount: updated.levelPlan?.length ?? 0,
+            miningRateL1: updated.levelPlan?.[0]?.miningRate,
+            miningRateMax: updated.levelPlan?.[updated.levelPlan.length - 1]?.miningRate,
+            xpTask: updated.xpTask,
+            games: updated.games,
+            wheel: updated.wheel,
+            note: "كل هذه القيم ما زالت قابلة للتعديل من إعدادات الموقع.",
+        });
+    }
+    catch (error) {
+        console.error("Apply economy scenario error:", error);
+        return res.status(500).json({ message: "فشل تطبيق سيناريو الاقتصاد" });
+    }
 });
 router.post("/admin/settings", authenticateJWT, async (req, res) => {
     try {
