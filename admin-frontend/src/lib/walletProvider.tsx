@@ -255,22 +255,25 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
         return await sendTransactionPhantomMobile(serialized, connection);
       }
 
-      // 🪟 المتصفح (امتداد Phantom أو متصفح Phantom المدمج): نستخدم المزوّد المحقون مباشرةً.
-      // ⚠️ نمرّر الـ connection إلى signAndSendTransaction عمداً: المتصفح يستخدم اتصاله
-      // في محاكاة المعاملة وفحص الرصيد، فبدونه يحسب على شبكته الخاصة (غالباً mainnet)
-      // بينما الـ blockhash عندنا من شبكة الخادم — فيظهر «رصيد غير كافٍ» رغم توافر الرصيد.
+      // 🪟 المتصفح (امتداد Phantom أو متصفح Phantom المدمج): **نوقّع فقط ثم نبثّ بأنفسنا**.
+      // ⚠️ لماذا لا signAndSendTransaction؟ لأن Phantom Extensions لا يستقبل من الموقع أي
+      // شبكة (محوّله الرسمي يمرّر connect() فقط بلا cluster — تحقّقت من مصدره)، فيبقى على
+      // شبكته الخاصة (mainnet افتراضياً) ويُجري فحص الرصيد عليها فيرفض بـ «Insufficient SOL»
+      // بينما رصيد المستخدم موجود على devnet الذي بُنيت عليه المعاملة. أما التوقيع وحده
+      // فمستقل عن الشبكة، والبثّ عندنا يذهب لشبكة الموقع — فينجح الدفع على أي إعداد.
       if (isInsideWalletApp()) {
         const injected = getInjectedProvider();
+        if (typeof injected?.signTransaction === "function") {
+          const signed = await injected.signTransaction(transaction);
+          return await connection.sendRawTransaction(
+            (signed as any).serialize({ requireAllSignatures: false }),
+            { preflightCommitment: "confirmed" },
+          );
+        }
         if (injected?.signAndSendTransaction) {
           const res: any = await injected.signAndSendTransaction(transaction, connection);
           const sig = typeof res === "string" ? res : res?.signature;
           if (sig) return sig as string;
-        }
-        if (injected?.signTransaction) {
-          const signed = await injected.signTransaction(transaction);
-          return await connection.sendRawTransaction(
-            (signed as any).serialize({ requireAllSignatures: false }),
-          );
         }
         throw new Error("injected_send_unavailable");
       }

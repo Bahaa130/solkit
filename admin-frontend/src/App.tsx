@@ -702,10 +702,15 @@ export default function App() {
                 <span style={{ fontWeight: 800, color: C.text }}>{(referrerShareLamports / 1e9).toFixed(3)} SOL</span>
               </div>
               <p style={{ ...T2.hint, marginTop: 8 }}>{t("app.splitHint")}</p>
-              {/* 🌐 تنبيه الشبكة: السبب الأشيع لخطأ «رصيد غير كافٍ» في المتصفح */}
-              <p style={{ ...T2.hint, marginTop: 6, color: C.amber }}>
-                🌐 الشبكة: {networkLabel || "—"} — اجعل شبكة محفظتك مطابقة، وتُضاف رسوم شبكة صغيرة فوق المبلغ.
-              </p>
+              {/* 🌐 تنبيه الشبكة بارز: Phantom في المتصفح لا يقرأ شبكة الموقع، فإذا كانت
+                  محفظتك على شبكة أخرى تظهر رسالة «Insufficient SOL» رغم توافر رصيدك */}
+              <div style={{
+                marginTop: 10, padding: "10px 12px", borderRadius: 12, fontSize: 12, lineHeight: 1.8,
+                background: "rgba(255,176,32,0.08)", border: "1px solid rgba(255,176,32,0.3)", color: "#ffcf7a",
+              }}>
+                🌐 شبكة المنصة: <strong>{networkLabel || "…"}</strong> — لو رفضت Phantom قائلةً «رصيد غير كافٍ»،
+                فبدّل شبكة المحفظة إلى <strong>{networkLabel === "devnet" ? "Devnet" : "Mainnet"}</strong> من داخل Phantom.
+              </div>
             </div>
 
             {/*
