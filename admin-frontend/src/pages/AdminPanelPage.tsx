@@ -9,6 +9,7 @@ import RulesPanel from "../components/RulesPanel";
 import CardsAdminPanel from "../components/CardsAdminPanel";
 import IcoAdminPanel from "../components/IcoAdminPanel";
 import ProjectAnalytics from "../components/ProjectAnalytics";
+import EconomyPresetPanel from "../components/EconomyPresetPanel";
 import { useToast } from "../components/Toast";
 import { useLang } from "../i18n/index.tsx";
 import { useBranding } from "../branding";
@@ -806,6 +807,7 @@ export default function AdminPanelPage({ token }: { token: string }) {
           </div>
         ))}
       </div>
+      <EconomyPresetPanel token={token} />
       <ProjectAnalytics token={token} />
         </>
       )}
