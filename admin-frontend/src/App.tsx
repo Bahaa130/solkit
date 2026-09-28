@@ -21,6 +21,7 @@ import { useBranding } from "./branding";
 import CoinIcon from "./components/CoinIcon";
 import { useSolanaWallet } from "./lib/walletProvider";
 import { getNetworkConfig } from "./lib/network";
+import { openInWalletApp } from "./lib/walletEnv";
 import { fetchBlockhashWithRetry } from "./lib/blockhash";
 import { inspectSolBalance, insufficientSolMessage, estimateFeeLamports } from "./lib/solanaFees";
 import { TAB_ICONS } from "./lib/tabIcons";
@@ -709,7 +710,23 @@ export default function App() {
                 background: "rgba(255,176,32,0.08)", border: "1px solid rgba(255,176,32,0.3)", color: "#ffcf7a",
               }}>
                 🌐 شبكة المنصة: <strong>{networkLabel || "…"}</strong> — لو رفضت Phantom قائلةً «رصيد غير كافٍ»،
-                فبدّل شبكة المحفظة إلى <strong>{networkLabel === "devnet" ? "Devnet" : "Mainnet"}</strong> من داخل Phantom.
+                أو عرضت تحذير «غير آمن»، فذلك لأن محفظتك على شبكة أخرى: بدّلها إلى{" "}
+                <strong>{networkLabel === "devnet" ? "Devnet" : "Mainnet"}</strong> من داخل Phantom.
+                {!isNativeApp && (
+                  <>
+                    <br />
+                    <button
+                      onClick={() => openInWalletApp()}
+                      className="btn btn-block"
+                      style={{
+                        marginTop: 8, padding: "9px", fontSize: 12,
+                        background: "rgba(0,255,204,0.08)", color: C.teal, border: "1px solid rgba(0,255,204,0.28)",
+                      }}
+                    >
+                      🌐 افتح الموقع داخل Phantom (شبكة مطابقة بلا تحذيرات)
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
