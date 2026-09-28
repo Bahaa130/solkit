@@ -22,7 +22,7 @@ import CoinIcon from "./components/CoinIcon";
 import { useSolanaWallet } from "./lib/walletProvider";
 import { getNetworkConfig } from "./lib/network";
 import { fetchBlockhashWithRetry } from "./lib/blockhash";
-import { inspectSolBalance, insufficientSolMessage } from "./lib/solanaFees";
+import { inspectSolBalance, insufficientSolMessage, estimateFeeLamports } from "./lib/solanaFees";
 import { TAB_ICONS } from "./lib/tabIcons";
 
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
@@ -74,6 +74,8 @@ export default function App() {
   const [feeCfg, setFeeCfg] = useState(DEFAULT_FEE);
   // 🌐 شبكة المنصة المعلنة في إعدادات الخادم (تُعرض لمقارنة شبكة Phantom)
   const [networkLabel, setNetworkLabel] = useState("");
+  // ⚠️ تجاوز المستخدم لتحذير الرصيد: نعرض تنبيهاً مرة ثم نسمح بالمتابعة — Phantom المرجع
+  const [paySkipWarn, setPaySkipWarn] = useState(false);
   // 💫 شاشة التحميل الترحيبية:
   // - في تطبيق أندرويد (Capacitor): تُعرض في كل فتح للتطبيق لمدة 3 ثوانٍ (بداية تحميل المشروع)،
   //   حتى يبدو فتح التطبيق وكأنه تحميل حقيقي.
@@ -430,6 +432,9 @@ export default function App() {
       // فالمجموع يساوي دائماً السعر المعروض مهما كانت القيم اليدوية التي أدخلها المدير.
       const transaction = new Transaction();
       const payNetwork = netCfg.network || "mainnet-beta";
+      // 💵 مجموع ما يخرج من محفظة المستخدم — نجمعه من القيم التي بنيناها للتو
+      // (بلا فك ترميز تعليمات raw، فلا مجال لخطأ في قراءة الـ lamports)
+      let totalTransfer = feeCfg.fullLamports;
 
       if (referrerWalletAddress) {
         setPayStatus({ type: "loading", text: t("app.payWithRef") });
@@ -456,27 +461,12 @@ export default function App() {
             SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: referrerPublicKey, lamports: referrerShareLamports })
           );
         }
+        totalTransfer = siteShareLamports + referrerShareLamports;
       } else {
         setPayStatus({ type: "loading", text: t("app.payNoRef") });
         transaction.add(
           SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: feeCfg.fullLamports })
         );
-      }
-
-      // 💰 فحص الرصيد قبل فتح Phantom: يمنع رسالة «Insufficient SOL» الغامضة
-      // ويميّز بين نقص الرصيد الحقيقي واختلاف شبكة المحفظة عن شبكة الموقع.
-      const totalTransfer = transaction.instructions.reduce((sum, ix: any) => {
-        const lam = ix?.data ? Number(ix.data.readBigUInt64LE(0)) : 0;
-        return sum + (Number.isFinite(lam) ? lam : 0);
-      }, 0);
-      try {
-        const check = await inspectSolBalance(connection, userPublicKey, totalTransfer);
-        if (!check.ok) {
-          setPayStatus({ type: "error", text: insufficientSolMessage(check, payNetwork) });
-          return;
-        }
-      } catch {
-        /* تعذّر الفحص — نترك المحفظة تتولى التحقق بدل منع الدفع خطأً */
       }
 
       transaction.feePayer = userPublicKey;
@@ -494,6 +484,32 @@ export default function App() {
         return;
       }
       transaction.recentBlockhash = latestBlockHashInfo.blockhash;
+
+      // 💰 فحص الرصيد على شبكة الموقع بعد ضبط الـ blockhash (ليتسنّى تقدير الرسوم الفعلية):
+      // رسالة بأرقام دقيقة بدل «Insufficient SOL» الغامضة. ⚠️ تنبيه لا حظر: إن أخفقت
+      // القراءة أو اختلفت شبكة المحفظة نسمح بالمتابعة — Phantom هو المرجع النهائي،
+      // ولا نمنع مستخدماً بسبب قراءة شبكتنا (قد تكون أبطأ أو مقيّدة).
+      if (!paySkipWarn) {
+        try {
+          const fee = await estimateFeeLamports(connection, transaction);
+          const check = await inspectSolBalance(connection, userPublicKey, totalTransfer, fee);
+          if (check.readable && !check.ok) {
+            setPayStatus({ type: "error", text: insufficientSolMessage(check, payNetwork) });
+            setPaySkipWarn(true);
+            return;
+          }
+          if (check.readable && check.ok && check.cluster && !check.cluster.includes(payNetwork)) {
+            setPayStatus({
+              type: "error",
+              text: `تنبيه: شبكة الموقع ${check.cluster}، وقد تكون محفظتك على شبكة أخرى — تابع رغم ذلك أو بدّل شبكة Phantom لتطابق.`,
+            });
+            setPaySkipWarn(true);
+            return;
+          }
+        } catch {
+          /* تعذّر الفحص — نكمل بلا فحص */
+        }
+      }
 
       // 3. استدعاء المحفظة لتوقيع وبث المعاملة (Phantom على الويب / WalletConnect على الموبايل)
       setPayStatus({ type: "loading", text: t("app.payPhantomSign") });

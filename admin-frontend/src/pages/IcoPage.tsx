@@ -10,7 +10,7 @@ import { useBranding } from "../branding";
 import { useSolanaWallet } from "../lib/walletProvider";
 import { getNetworkConfig, rpcUrlFor } from "../lib/network";
 import { fetchBlockhashWithRetry } from "../lib/blockhash";
-import { inspectSolBalance, insufficientSolMessage, FEE_SAFETY_BUFFER_LAMPORTS, formatSol as fmtSol } from "../lib/solanaFees";
+import { inspectSolBalance, insufficientSolMessage, estimateFeeLamports, FEE_FALLBACK_LAMPORTS, formatSol as fmtSol } from "../lib/solanaFees";
 
 interface IcoPageProps {
   userId?: number;
@@ -72,6 +72,8 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   const [status, setStatus] = useState<{ type: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  // ⚠️ تجاوز تحذير الرصيد بعد عرضه مرة واحدة (Phantom هو المرجع النهائي)
+  const [skipWarn, setSkipWarn] = useState(false);
   // 💾 دفعة اكتتاب بُثّت ولم يكتمل تسجيلها — نعرض زر استرجاع مثل رسوم التسجيل
   const [pendingTx, setPendingTx] = useState<string | null>(null);
   useEffect(() => {
@@ -253,17 +255,6 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       const connection = new Connection(rpcUse, "confirmed");
       const lamports = Math.round(amountNum * 1e9);
 
-      // 💰 فحص الرصيد قبل فتح Phantom — يحوّل خطأ «Insufficient SOL» الغامض إلى
-      // رسالة بأرقام دقيقة، ويميّز بين نقص الرصيد واختلاف شبكة المحفظة.
-      try {
-        const check = await inspectSolBalance(connection, new PublicKey(sender), lamports);
-        if (!check.ok) {
-          return setStatus({ type: "error", text: insufficientSolMessage(check, network) });
-        }
-      } catch {
-        /* تعذّر الفحص — نكمل والمحفظة تتحقق بنفسها */
-      }
-
       // 🔄 آخر blockhash عبر نفس آلية دفع رسوم التسجيل (fetchBlockhashWithRetry):
       // web3 ثلاث مرات ثم fetch مباشر ثلاثاً — نستخدم الإحماء المسبق إن كان حديثاً.
       // ⚠️ الـ blockhash المُحمّى يصير منتهياً بعد ~60-90 ثانية، فنتجاهله إن مضى عليه وقت.
@@ -296,6 +287,30 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       );
       tx.feePayer = new PublicKey(sender);
       tx.recentBlockhash = latestBlockHashInfo.blockhash;
+
+      // 💰 فحص الرصيد على شبكة الموقع — رسالة بأرقام دقيقة بدل «Insufficient SOL» الغامض.
+      // ⚠️ تنبيه لا حظر: إن أخفقت قراءة الرصيد نكمل، و Phantom هو المرجع النهائي.
+      if (!skipWarn) {
+        try {
+          const fee = await estimateFeeLamports(connection, tx);
+          const check = await inspectSolBalance(connection, new PublicKey(sender), lamports, fee);
+          if (check.readable && !check.ok) {
+            setStatus({ type: "error", text: insufficientSolMessage(check, network) });
+            setSkipWarn(true);
+            return;
+          }
+          if (check.readable && check.ok && check.cluster && !check.cluster.includes(network)) {
+            setStatus({
+              type: "error",
+              text: `تنبيه: شبكة الموقع ${check.cluster}، وقد تكون محفظتك على شبكة أخرى — تابع رغم ذلك أو بدّل شبكة Phantom لتطابق.`,
+            });
+            setSkipWarn(true);
+            return;
+          }
+        } catch {
+          /* تعذّر الفحص — نكمل والمحفظة تتحقق بنفسها */
+        }
+      }
 
       const sig = await sendTransaction(tx, connection);
       if (!sig) throw new Error("لم يُرجع Phantom توقيع المعاملة");
@@ -599,7 +614,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
               dir="ltr"
               className="input"
               value={amountStr}
-              onChange={(e) => setAmountStr(e.target.value)}
+              onChange={(e) => { setAmountStr(e.target.value); setSkipWarn(false); }}
               placeholder={`مثال: ${config.minSOL}`}
               inputMode="decimal"
               style={{ textAlign: "center", fontWeight: 800, color: C.teal, marginTop: 6 }}
@@ -620,7 +635,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
               {/* 💸 صريح تماماً: ما تكتبه هو المحوَّل، ورسوم الشبكة تُضاف فوقه — حتى لا يظهر
                   خطأ «رصيد غير كافٍ» بسبب فرق ضئيل جداً بين رصيدك والمبلغ المطلوب */}
               <span style={{ color: C.amber }}>
-                يضاف فوق المبلغ رسم شبكة {fmtSol(FEE_SAFETY_BUFFER_LAMPORTS, 5)} SOL (فقط) — فاحرص أن يكون رصيدك أكبر من المبلغ بهامش يساوي هذا الرسم.
+                يضاف فوق المبلغ رسم شبكة {fmtSol(FEE_FALLBACK_LAMPORTS, 5)} SOL (فقط) — فاحرص أن يكون رصيدك أكبر من المبلغ بهامش يساوي هذا الرسم.
               </span>
             </div>
             <div className="pill" style={{ marginTop: 10, padding: "6px 10px", border: "1px solid rgba(0,255,204,0.25)", color: C.teal, background: "rgba(0,255,204,0.06)", fontSize: 11.5, textAlign: "center" }}>
