@@ -79,6 +79,17 @@ export const DEFAULTS = {
         cooldownSec: 3600,
         dailyCap: 50,
     },
+    // 🎮 اقتصاد ألعاب المهارة — يضبطه المدير (كان مثبّتاً في الكود فكان يصدر رصيداً خارج الميزانية)
+    games: {
+        xoWinReward: 0.30,
+        xoCooldownSec: 3600,
+        xoDailyCap: 2,
+        catchCoinReward: 0.05,
+        catchCooldownSec: 3600,
+        catchDailyCap: 1.5,
+        catchMaxScore: 80,
+        totalDailyCap: 6,
+    },
     // 💼 اقتصاديات التوكن الافتراضية: نسب توزيع العرض الكلي (تتحكم بها الإدارة من لوحة المدير)
     tokenomics: [
         { label: "التعدين", pct: 40, color: "#00ffcc" },

@@ -1529,6 +1529,7 @@ router.get("/settings", async (_req, res) => {
             tokenSupply: s.tokenSupply ?? 1000000,
             roadmap: s.roadmap || [],
             wheel: s.wheel || { segments: [], cooldownSec: 3600, dailyCap: 50 },
+            games: s.games || { xoWinReward: 0.3, xoCooldownSec: 3600, xoDailyCap: 2, catchCoinReward: 0.05, catchCooldownSec: 3600, catchDailyCap: 1.5, catchMaxScore: 80, totalDailyCap: 6 },
             tokenomics: s.tokenomics || [{ label: "التعدين", pct: 40, color: "#00ffcc" }, { label: "الألعاب", pct: 25, color: "#7c5cff" }, { label: "المجتمع", pct: 20, color: "#ffb020" }, { label: "الفريق", pct: 15, color: "#ff5c7a" }],
             levelPlan: getLevelPlan(),
             dailyRewards: s.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
@@ -1625,6 +1626,17 @@ const settingsSchema = z.object({
         cooldownSec: z.number().int().min(300).max(604800),
         dailyCap: z.number().int().min(1).max(1000000),
     }).optional(),
+    // 🎮 اقتصاد ألعاب المهارة (تحدّي النقر + اصطياد العملات) — يضبطه المدير ليحكم ميزانية الإصدار
+    games: z.object({
+        xoWinReward: z.number().min(0).max(1000).optional(),
+        xoCooldownSec: z.number().int().min(0).max(604800).optional(),
+        xoDailyCap: z.number().min(0).max(1000000).optional(),
+        catchCoinReward: z.number().min(0).max(1000).optional(),
+        catchCooldownSec: z.number().int().min(0).max(604800).optional(),
+        catchDailyCap: z.number().min(0).max(1000000).optional(),
+        catchMaxScore: z.number().int().min(1).max(100000).optional(),
+        totalDailyCap: z.number().min(0).max(1000000).optional(),
+    }).optional(),
     tokenomics: z.array(z.object({
         label: z.string().min(1).max(60),
         pct: z.number().min(0).max(100),
@@ -1699,7 +1711,11 @@ router.post("/admin/settings", authenticateJWT, async (req, res) => {
         const icoPayload = parsed.data.ico
             ? { ...DEFAULTS.ico, ...parsed.data.ico }
             : undefined;
-        const updated = updateSettings({ ...parsed.data, ico: icoPayload });
+        // 🎮 نفس المنطق لاقتصاد الألعاب: نجمع الحقل كاملاً فلا يُحفظ ناقصاً
+        const gamesPayload = parsed.data.games
+            ? { ...DEFAULTS.games, ...parsed.data.games }
+            : undefined;
+        const updated = updateSettings({ ...parsed.data, ico: icoPayload, games: gamesPayload });
         const cfg = getTokenConfig();
         return res.json({
             message: "تم حفظ الإعدادات بنجاح ✅",
@@ -1717,6 +1733,7 @@ router.post("/admin/settings", authenticateJWT, async (req, res) => {
             tokenSupply: updated.tokenSupply ?? 1000000,
             roadmap: updated.roadmap || [],
             wheel: updated.wheel || { segments: [], cooldownSec: 3600, dailyCap: 50 },
+            games: updated.games || { xoWinReward: 0.3, xoCooldownSec: 3600, xoDailyCap: 2, catchCoinReward: 0.05, catchCooldownSec: 3600, catchDailyCap: 1.5, catchMaxScore: 80, totalDailyCap: 6 },
             tokenomics: updated.tokenomics || [{ label: "التعدين", pct: 40, color: "#00ffcc" }, { label: "الألعاب", pct: 25, color: "#7c5cff" }, { label: "المجتمع", pct: 20, color: "#ffb020" }, { label: "الفريق", pct: 15, color: "#ff5c7a" }],
             levelPlan: getLevelPlan(),
             dailyRewards: updated.dailyRewards || [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
