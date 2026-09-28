@@ -207,7 +207,11 @@ router.post("/login-wallet", async (req, res) => {
 const findEligiblePayment = async (solanaRpcUrl, userWallet, hasReferrer) => {
     const connection = new Connection(solanaRpcUrl, "confirmed");
     const s = getSettings();
-    const minRequired = hasReferrer ? s.activationHalfLamports : s.activationFullLamports;
+    // 🔗 نفس منطق التحقق في /activate-account: حصة الموقع = half (أو full كاملاً إن
+    // كانت half = 0) مع وجود إحالة، والإجمالي المطلوب من المحفظة = full دائماً.
+    const minRequired = hasReferrer
+        ? Math.min(s.activationHalfLamports > 0 ? s.activationHalfLamports : s.activationFullLamports, s.activationFullLamports)
+        : s.activationFullLamports;
     // ⏱️ مهلة قصوى لكل طلب RPC حتى لا تتجمد الدعوة بانتظار الشبكة
     const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))]);
     try {
@@ -323,20 +327,28 @@ router.post("/activate-account", authenticateJWT, async (req, res) => {
                 const idx = findAccountIndex(address);
                 return idx === -1 ? 0 : postBalances[idx] - preBalances[idx];
             };
-            // ✅ التحقق من وصول حصة محفظة الموقع (نصف رسوم التفعيل مع وجود إحالة، أو المبلغ الكامل بدونها)
+            // ✅ التحقق من وصول حصة محفظة الموقع: الإجمالي كاملاً بدون إحالة، أو حصتها
+            // (activationHalfLamports) مع وجود إحالة. وحصة المحيل مشتقة دائماً كـ:
+            // activationFullLamports − activationHalfLamports، فالمجموع المدفوع يطابق
+            // السعر المعروض للمستخدم مهما تدخل المدير في القيم يدوياً.
             const adminReceived = receivedBy(ADMIN_WALLET);
             const feeCfg = getSettings();
-            const minimumRequiredAmount = user.referrerId ? feeCfg.activationHalfLamports : feeCfg.activationFullLamports;
-            if (adminReceived < minimumRequiredAmount) {
+            const siteShareRequired = user.referrerId
+                ? Math.min(feeCfg.activationHalfLamports > 0 ? feeCfg.activationHalfLamports : feeCfg.activationFullLamports, feeCfg.activationFullLamports)
+                : feeCfg.activationFullLamports;
+            if (adminReceived < siteShareRequired) {
                 return res.status(400).json({ message: "المبلغ المرسل غير كافٍ لتنشيط رسوم التفعيل" });
             }
-            // 🛡️ التحقق الصارم من وصول الحصة الأخرى لنصف رسوم التفعيل إلى محفظة صاحب الإحالة الفعلي على البلوكشين
+            // 🛡️ التحقق الصارم من وصول حصة صاحب الإحالة الفعلية على البلوكشين
             if (user.referrerId && user.referrer?.walletAddress) {
-                const referrerReceived = receivedBy(user.referrer.walletAddress);
-                if (referrerReceived < feeCfg.activationHalfLamports) {
-                    return res.status(400).json({
-                        message: "احتيال: لم تصل حصة صاحب الإحالة إلى محفظته على البلوكشين!"
-                    });
+                const referrerRequired = Math.max(0, feeCfg.activationFullLamports - siteShareRequired);
+                if (referrerRequired > 0) {
+                    const referrerReceived = receivedBy(user.referrer.walletAddress);
+                    if (referrerReceived < referrerRequired) {
+                        return res.status(400).json({
+                            message: "احتيال: لم تصل حصة صاحب الإحالة إلى محفظته على البلوكشين!"
+                        });
+                    }
                 }
             }
         }
@@ -1585,8 +1597,11 @@ const settingsSchema = z.object({
     })).optional(),
     dailyRewards: z.array(z.number().min(0).max(1000000)).min(1).max(31).optional(),
     dailyLevelMult: z.number().min(0).max(1).optional(),
+    // 💰 رسوم التفعيل: `activationFullLamports` هو الإجمالي الذي يدفعه المستخدم دائماً،
+    // و`activationHalfLamports` حصة محفظة الموقع عند وجود إحالة. نشترط ألّا تتجاوز
+    // الحصةُ الإجماليَ وإلا انقلب التقسيم إلى إفراط (المستخدم يدفع أكثر من المعروض).
     activationFullLamports: z.number().int().min(1000000).max(1000000000000).optional(),
-    activationHalfLamports: z.number().int().min(1000000).max(1000000000000).optional(),
+    activationHalfLamports: z.number().int().min(0).max(1000000000000).optional(),
     siteShare: z.number().min(0).max(1).optional(),
     referrerShare: z.number().min(0).max(1).optional(),
     xpLogin: z.number().int().min(0).max(100000).optional(),
@@ -1668,6 +1683,18 @@ router.post("/admin/settings", authenticateJWT, async (req, res) => {
         const parsed = settingsSchema.safeParse(req.body);
         if (!parsed.success)
             return res.status(400).json({ message: "صيغة الإعدادات غير صالحة" });
+        // 🛡️ حصة محفظة الموقع لا تتجاوز الإجمالي الكامل — وإلا دفع المستخدم أكثر مما
+        // هو معروض له على صفحة الدفع (أو أقل مما يتطلبه الخادم فيرفض التفعيل).
+        {
+            const cur = getSettings();
+            const nextFull = parsed.data.activationFullLamports ?? cur.activationFullLamports;
+            const nextHalf = parsed.data.activationHalfLamports ?? cur.activationHalfLamports;
+            if (nextHalf > nextFull) {
+                return res.status(400).json({
+                    message: `حصة محفظة الموقع (${nextHalf / 1e9} SOL) أكبر من إجمالي الرسوم (${nextFull / 1e9} SOL)`
+                });
+            }
+        }
         // 🏗️ الاكتتاب: نملأ الحقل كاملاً من الافتراضيات + ما أرسله المدير (لا يتم حفظ جزء ناقص أبداً)
         const icoPayload = parsed.data.ico
             ? { ...DEFAULTS.ico, ...parsed.data.ico }

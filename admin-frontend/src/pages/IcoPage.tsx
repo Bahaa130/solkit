@@ -10,6 +10,7 @@ import { useBranding } from "../branding";
 import { useSolanaWallet } from "../lib/walletProvider";
 import { getNetworkConfig, rpcUrlFor } from "../lib/network";
 import { fetchBlockhashWithRetry } from "../lib/blockhash";
+import { inspectSolBalance, insufficientSolMessage, FEE_SAFETY_BUFFER_LAMPORTS, formatSol as fmtSol } from "../lib/solanaFees";
 
 interface IcoPageProps {
   userId?: number;
@@ -81,7 +82,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   // شبكة محفظة المستخدم (خلاف ذلك يرفض التوقيع بخطأ "Unexpected error").
   const [rpc, setRpc] = useState<string>(() => rpcUrlFor("devnet"));
   const [network, setNetwork] = useState<string>("devnet");
-  const [warmBlockhash, setWarmBlockhash] = useState<{ blockhash: string; lastValidBlockHeight: number } | null>(null);
+  const [warmBlockhash, setWarmBlockhash] = useState<{ blockhash: string; lastValidBlockHeight: number; at: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -98,7 +99,9 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   // 🔥 إحماء مسبق لبروكسي RPC حتى يكون التوقيع فورياً عند الضغط (نمط لوحة التوزيع)
   useEffect(() => {
     const conn = new Connection(rpc, "confirmed");
-    conn.getLatestBlockhash("confirmed").then(setWarmBlockhash).catch(() => {});
+    conn.getLatestBlockhash("confirmed")
+      .then((bh) => setWarmBlockhash({ ...bh, at: Date.now() }))
+      .catch(() => {});
   }, [rpc]);
 
   const headers = useMemo(
@@ -250,12 +253,27 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       const connection = new Connection(rpcUse, "confirmed");
       const lamports = Math.round(amountNum * 1e9);
 
+      // 💰 فحص الرصيد قبل فتح Phantom — يحوّل خطأ «Insufficient SOL» الغامض إلى
+      // رسالة بأرقام دقيقة، ويميّز بين نقص الرصيد واختلاف شبكة المحفظة.
+      try {
+        const check = await inspectSolBalance(connection, new PublicKey(sender), lamports);
+        if (!check.ok) {
+          return setStatus({ type: "error", text: insufficientSolMessage(check, network) });
+        }
+      } catch {
+        /* تعذّر الفحص — نكمل والمحفظة تتحقق بنفسها */
+      }
+
       // 🔄 آخر blockhash عبر نفس آلية دفع رسوم التسجيل (fetchBlockhashWithRetry):
-      // web3 ثلاث مرات ثم fetch مباشر ثلاثاً — نستخدم الإحماء المسبق إن وُجد للسرعة.
+      // web3 ثلاث مرات ثم fetch مباشر ثلاثاً — نستخدم الإحماء المسبق إن كان حديثاً.
+      // ⚠️ الـ blockhash المُحمّى يصير منتهياً بعد ~60-90 ثانية، فنتجاهله إن مضى عليه وقت.
       let latestBlockHashInfo: { blockhash: string; lastValidBlockHeight: number } | null = null;
       try {
-        latestBlockHashInfo = warmBlockhash
-          || (await fetchBlockhashWithRetry(
+        const warmAge = warmBlockhash ? Date.now() - warmBlockhash.at : Infinity;
+        const warmFresh = !!warmBlockhash && warmAge < 30_000;
+        latestBlockHashInfo = warmFresh
+          ? warmBlockhash
+          : (await fetchBlockhashWithRetry(
             connection,
             (label, err) => console.warn("[blockhash]", label, err),
             rpcUse,
@@ -598,6 +616,12 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
             <div style={{ marginTop: 14, fontSize: 11.5, color: C.muted, lineHeight: 1.8 }}>
               تُرسل دفعتك إلى <strong style={{ color: C.text }}>{treasury ? `${treasury.slice(0, 6)}…${treasury.slice(-4)}` : "محفظة الخزانة"}</strong> عن طريق محفظتك مباشرة — لا نحتفظ بأموالك في أي وقت.
+              <br />
+              {/* 💸 صريح تماماً: ما تكتبه هو المحوَّل، ورسوم الشبكة تُضاف فوقه — حتى لا يظهر
+                  خطأ «رصيد غير كافٍ» بسبب فرق ضئيل جداً بين رصيدك والمبلغ المطلوب */}
+              <span style={{ color: C.amber }}>
+                يضاف فوق المبلغ رسم شبكة {fmtSol(FEE_SAFETY_BUFFER_LAMPORTS, 5)} SOL (فقط) — فاحرص أن يكون رصيدك أكبر من المبلغ بهامش يساوي هذا الرسم.
+              </span>
             </div>
             <div className="pill" style={{ marginTop: 10, padding: "6px 10px", border: "1px solid rgba(0,255,204,0.25)", color: C.teal, background: "rgba(0,255,204,0.06)", fontSize: 11.5, textAlign: "center" }}>
               🌐 الشبكة: {network === "mainnet-beta" ? "الشبكة الحقيقية (Mainnet)" : "شبكة التطوير (Devnet)"} — تأكد أن محفظتك على نفس الشبكة قبل الدفع.
@@ -636,7 +660,7 @@ const styles: any = {
   perkBox: { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: "14px 10px" },
   splitRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
   statusBox: { borderRadius: 12, padding: "11px 12px", fontSize: 12.5, border: "1px solid transparent", fontWeight: 700, lineHeight: 1.6 },
-  modalOverlay: { position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(5,8,18,0.7)", backdropFilter: "blur(4px)", paddingBottom: "24px" },
+  modalOverlay: { position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(5,8,18,0.7)", backdropFilter: "blur(4px)", padding: "16px" },
   modalCard: {
     width: "min(420px, 92vw)", maxHeight: "82vh", overflowY: "auto", borderRadius: 22,
     padding: "20px 18px", background: "#0c1122", border: "1px solid rgba(124,92,255,0.35)", boxShadow: "0 -10px 40px rgba(0,0,0,0.5)",

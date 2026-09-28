@@ -22,6 +22,7 @@ import CoinIcon from "./components/CoinIcon";
 import { useSolanaWallet } from "./lib/walletProvider";
 import { getNetworkConfig } from "./lib/network";
 import { fetchBlockhashWithRetry } from "./lib/blockhash";
+import { inspectSolBalance, insufficientSolMessage } from "./lib/solanaFees";
 import { TAB_ICONS } from "./lib/tabIcons";
 
 const ADMIN_WALLET = "4NC1c6ZUrpTibV1FuxomBstGbkjXWNYtJwYvbFezKuQo";
@@ -71,6 +72,8 @@ export default function App() {
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
   // 💰 رسوم التفعيل ومبالغ التقسيم يتحكم بها المدير — تُجلب من إعدادات الخادم
   const [feeCfg, setFeeCfg] = useState(DEFAULT_FEE);
+  // 🌐 شبكة المنصة المعلنة في إعدادات الخادم (تُعرض لمقارنة شبكة Phantom)
+  const [networkLabel, setNetworkLabel] = useState("");
   // 💫 شاشة التحميل الترحيبية:
   // - في تطبيق أندرويد (Capacitor): تُعرض في كل فتح للتطبيق لمدة 3 ثوانٍ (بداية تحميل المشروع)،
   //   حتى يبدو فتح التطبيق وكأنه تحميل حقيقي.
@@ -294,6 +297,9 @@ export default function App() {
               siteShare: Number(data.siteShare ?? DEFAULT_FEE.siteShare),
               referrerShare: Number(data.referrerShare ?? DEFAULT_FEE.referrerShare),
             });
+            // 🌐 اسم شبكة المنصة كما تعلنها إعدادات الخادم — نعرضه للمستخدم لمقارنته
+            // بشبكة Phantom، فهو السبب الأشيع لخطأ «رصيد غير كافٍ» في المتصفح
+            if (data.solanaNetwork) setNetworkLabel(String(data.solanaNetwork));
           }
         } else if (!cancelled) {
           setMaintenance({ enabled: false, message: "" });
@@ -419,8 +425,11 @@ export default function App() {
         appliedReferralCode = typedCode;
       }
 
-      // 2. بناء المعاملة الموحّدة: تقسيم 0.015 + 0.015 مع إحالة، أو 0.03 كاملة بدونها
+      // 2. بناء المعاملة الموحّدة: القسمة تحترم ما ضبطه المدير يدوياً —
+      // محفظة الموقع تأخذ حصةها (half) والباقي (full − half) يذهب لصاحب الإحالة،
+      // فالمجموع يساوي دائماً السعر المعروض مهما كانت القيم اليدوية التي أدخلها المدير.
       const transaction = new Transaction();
+      const payNetwork = netCfg.network || "mainnet-beta";
 
       if (referrerWalletAddress) {
         setPayStatus({ type: "loading", text: t("app.payWithRef") });
@@ -430,19 +439,44 @@ export default function App() {
           throw new Error(t("app.payReferrerSame"));
         }
 
-        // أ. 0.015 SOL لمحفظة الموقع
-        transaction.add(
-          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: feeCfg.halfLamports })
+        // حصة الموقع = half (أو full كاملاً إن تركها المدير 0)، والمتبقي للمحيل
+        const siteShareLamports = Math.min(
+          feeCfg.halfLamports > 0 ? feeCfg.halfLamports : feeCfg.fullLamports,
+          feeCfg.fullLamports,
         );
-        // ب. نصف رسوم التفعيل لصاحب الإحالة الحقيقي
+        const referrerShareLamports = Math.max(0, feeCfg.fullLamports - siteShareLamports);
+
+        // أ. حصة محفظة الموقع
         transaction.add(
-          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: referrerPublicKey, lamports: feeCfg.halfLamports })
+          SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: siteShareLamports })
         );
+        // ب. 나머ح إلى صاحب الإحالة الحقيقي (قد تكون صفراً فلا نضيف تحويلاً فارغاً)
+        if (referrerShareLamports > 0) {
+          transaction.add(
+            SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: referrerPublicKey, lamports: referrerShareLamports })
+          );
+        }
       } else {
         setPayStatus({ type: "loading", text: t("app.payNoRef") });
         transaction.add(
           SystemProgram.transfer({ fromPubkey: userPublicKey, toPubkey: siteAdminPublicKey, lamports: feeCfg.fullLamports })
         );
+      }
+
+      // 💰 فحص الرصيد قبل فتح Phantom: يمنع رسالة «Insufficient SOL» الغامضة
+      // ويميّز بين نقص الرصيد الحقيقي واختلاف شبكة المحفظة عن شبكة الموقع.
+      const totalTransfer = transaction.instructions.reduce((sum, ix: any) => {
+        const lam = ix?.data ? Number(ix.data.readBigUInt64LE(0)) : 0;
+        return sum + (Number.isFinite(lam) ? lam : 0);
+      }, 0);
+      try {
+        const check = await inspectSolBalance(connection, userPublicKey, totalTransfer);
+        if (!check.ok) {
+          setPayStatus({ type: "error", text: insufficientSolMessage(check, payNetwork) });
+          return;
+        }
+      } catch {
+        /* تعذّر الفحص — نترك المحفظة تتولى التحقق بدل منع الدفع خطأً */
       }
 
       transaction.feePayer = userPublicKey;
@@ -590,6 +624,14 @@ export default function App() {
 
   const textAlign = dir === "rtl" ? "right" : "left";
 
+  // 🧮 القسمة الفعلية عند وجود إحالة: الموقع يأخذ حصةه والباقي للمحيل — المجموع = full
+  // (تُحسب بنفس منطق handlePaymentActivation وواجهة الخادم للتحقق)
+  const siteShareLamports = Math.min(
+    feeCfg.halfLamports > 0 ? feeCfg.halfLamports : feeCfg.fullLamports,
+    feeCfg.fullLamports,
+  );
+  const referrerShareLamports = Math.max(0, feeCfg.fullLamports - siteShareLamports);
+
   return (
     <div className="app-shell" style={{ ...styles.app, direction: dir }}>
       <header className="app-header" style={styles.header}>
@@ -637,13 +679,17 @@ export default function App() {
             <div style={{ ...styles.splitBox, textAlign }}>
               <div style={styles.splitRow}>
                 <span className="pill" style={{ background: "rgba(0,255,204,0.1)", color: C.teal, border: "1px solid rgba(0,255,204,0.25)" }}>{t("app.siteWallet")}</span>
-                <span style={{ fontWeight: 800, color: C.text }}>{(feeCfg.halfLamports / 1e9).toFixed(3)} SOL</span>
+                <span style={{ fontWeight: 800, color: C.text }}>{(siteShareLamports / 1e9).toFixed(3)} SOL</span>
               </div>
               <div style={styles.splitRow}>
                 <span className="pill" style={{ background: "rgba(124,92,255,0.12)", color: "#b3a1ff", border: "1px solid rgba(124,92,255,0.3)" }}>{t("app.referrer")}</span>
-                <span style={{ fontWeight: 800, color: C.text }}>{(feeCfg.halfLamports / 1e9).toFixed(3)} SOL</span>
+                <span style={{ fontWeight: 800, color: C.text }}>{(referrerShareLamports / 1e9).toFixed(3)} SOL</span>
               </div>
               <p style={{ ...T2.hint, marginTop: 8 }}>{t("app.splitHint")}</p>
+              {/* 🌐 تنبيه الشبكة: السبب الأشيع لخطأ «رصيد غير كافٍ» في المتصفح */}
+              <p style={{ ...T2.hint, marginTop: 6, color: C.amber }}>
+                🌐 الشبكة: {networkLabel || "—"} — اجعل شبكة محفظتك مطابقة، وتُضاف رسوم شبكة صغيرة فوق المبلغ.
+              </p>
             </div>
 
             {/*

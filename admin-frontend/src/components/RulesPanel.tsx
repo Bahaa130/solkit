@@ -50,8 +50,14 @@ setSiteSharePct(String(Number((d.siteShare ?? 0.015) * 100).toFixed(2)));
     if (rewards.length < 1) { setStatus({ type: "error", text: "أضف قيمة واحدة على الأقل لمكافآت البونص" }); return; }
     const full = Number(fullSol);
     const half = Number(halfSol);
-    if (!Number.isFinite(full) || full <= 0 || !Number.isFinite(half) || half <= 0) {
+    if (!Number.isFinite(full) || full <= 0 || !Number.isFinite(half) || half < 0) {
       setStatus({ type: "error", text: "أدخل قيماً صحيحة لرسوم التفعيل (SOL)" }); return;
+    }
+    // 🛡️ حصة الموقع لا تتجاوز أبداً الإجمالي الكامل، وإلا انقلب التقسيم إلى إفراط
+    // (كان الرفض يصدر من الخادم بعد دفع المستخدم). الحصة = 0 تعني أن كل المبلغ للمحيل.
+    if (half > full) {
+      setStatus({ type: "error", text: `حصة الموقع (${half} SOL) أكبر من إجمالي الرسوم (${full} SOL) — صحّح القيمة أو اجعلها 0` });
+      return;
     }
     const hours = Number(miningHours);
     if (!Number.isFinite(hours) || hours < 1 || hours > 168) {
@@ -130,8 +136,8 @@ siteShare: (Number(siteSharePct) || 0) / 100,
             <input className="input" type="number" min="0.000000001" step="0.001" style={inputStyle} value={fullSol} onChange={(e) => setFullSol(e.target.value)} />
           </div>
           <div style={field()}>
-            <label style={labelStyle}>حصة كل محفظة (مع إحالة) — SOL</label>
-            <input className="input" type="number" min="0.000000001" step="0.001" style={inputStyle} value={halfSol} onChange={(e) => setHalfSol(e.target.value)} />
+            <label style={labelStyle}>حصة محفظة الموقع (مع إحالة) — SOL</label>
+            <input className="input" type="number" min="0" step="0.001" style={inputStyle} value={halfSol} onChange={(e) => setHalfSol(e.target.value)} />
           </div>
           <div style={field()}>
             <label style={labelStyle}>حصة الموقع (%)</label>
@@ -143,6 +149,34 @@ siteShare: (Number(siteSharePct) || 0) / 100,
           </div>
         </div>
 <p style={styles.hint}>الافتراضي: 0.03 كاملة / 0.015+0.015 مقسّمة / 1.5% + 1.5% عمولات. هذه المبالغ تُعرض للمستخدم على صفحة الدفع.</p>
+        {/* 🧮 معاينة حيّة: المجموع الذي يدفعه المستخدم يساوي دائماً «الرسوم كاملة» مهما
+            كانت القيم اليدوية — حصة المحيل تُشتق تلقائياً = الإجمالي − حصة الموقع */}
+        {(() => {
+          const f = Number(fullSol) || 0;
+          const h = Number(halfSol) || 0;
+          const site = Math.min(h > 0 ? h : f, f);
+          const ref = Math.max(0, f - site);
+          const bad = h > f;
+          return (
+            <div style={{
+              marginTop: 10, padding: "10px 12px", borderRadius: 12, fontSize: 12.5, lineHeight: 1.9,
+              background: bad ? "rgba(255,92,122,0.1)" : "rgba(0,255,204,0.06)",
+              border: `1px solid ${bad ? "rgba(255,92,122,0.3)" : "rgba(0,255,204,0.25)"}`,
+              color: bad ? "#ff9cae" : C.text,
+            }}>
+              {bad ? (
+                <>⚠️ حصة الموقع ({h} SOL) أكبر من الإجمالي ({f} SOL) — الإجمالي دائماً ما يدفعه المستخدم، ولا يجوز أن تتجاوزه حصة.</>
+              ) : (
+                <>
+                  💡 ما يدفعه المستخدم: <strong>{f.toFixed(6)} SOL</strong> + رسم شبكة 0.00002 SOL
+                  <br />↳ محفظة الموقع: <strong>{site.toFixed(6)} SOL</strong> — المحيل: <strong>{ref.toFixed(6)} SOL</strong>
+                  <br />↳ بدون إحالة: <strong>{f.toFixed(6)} SOL</strong> كاملة لمحفظة الموقع
+                  <br /><span style={{ color: C.muted }}>تُضاف رسوم الشبكة الصغيرة (0.00002 SOL) فوق المبلغ، فليكن رصيد المستخدم أكبر منه بهامش.</span>
+                </>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ⛏️ مدة التعدين */}

@@ -255,12 +255,16 @@ function WalletContextBridge({ children }: { children: ReactNode }) {
         return await sendTransactionPhantomMobile(serialized, connection);
       }
 
-      // 🪟 داخل متصفح المحفظة المدمج: نستخدم المزوّد المحقون مباشرةً
+      // 🪟 المتصفح (امتداد Phantom أو متصفح Phantom المدمج): نستخدم المزوّد المحقون مباشرةً.
+      // ⚠️ نمرّر الـ connection إلى signAndSendTransaction عمداً: المتصفح يستخدم اتصاله
+      // في محاكاة المعاملة وفحص الرصيد، فبدونه يحسب على شبكته الخاصة (غالباً mainnet)
+      // بينما الـ blockhash عندنا من شبكة الخادم — فيظهر «رصيد غير كافٍ» رغم توافر الرصيد.
       if (isInsideWalletApp()) {
         const injected = getInjectedProvider();
         if (injected?.signAndSendTransaction) {
-          const { signature } = await injected.signAndSendTransaction(transaction);
-          return signature as string;
+          const res: any = await injected.signAndSendTransaction(transaction, connection);
+          const sig = typeof res === "string" ? res : res?.signature;
+          if (sig) return sig as string;
         }
         if (injected?.signTransaction) {
           const signed = await injected.signTransaction(transaction);
