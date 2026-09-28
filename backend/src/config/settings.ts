@@ -43,6 +43,7 @@ export interface SiteSettings {
   miningDuration: number;             // ⏱️ مدة جلسة التعدين بالساعات — يضبطها المدير
   roadmap: RoadmapPhase[];            // 🗺️ مراحل خارطة الطريق (تُدار بالكامل من المدير)
   wheel: WheelSettings;               // 🎰 إعدادات عجلة الحظ (الشرائح والأوزان والسقوف)
+  games: GamesSettings;               // 🎮 اقتصاد ألعاب المهارة (تحدّي النقر + اصطياد العملات)
   tokenomics: TokenomicsSplit[];      // 💼 اقتصاديات التوكن — نسب توزيع العرض الكلي (تتحكم بها الإدارة)
   cards?: CardDef[];                  // 📇 بطاقات الدخل القابلة للترقية (نموذج هامستر)
   ico?: IcoSettings;                  // 🏗️ صفحة الاكتتاب (ICO/pre-sale) — المحتوى تتحكم به الإدارة بالكامل
@@ -101,6 +102,19 @@ export interface WheelSettings {
   segments: WheelSegment[];   // القيم + أوزانها (العدالة)
   cooldownSec: number;        // ثوانٍ بين جولتين
   dailyCap: number;           // سقف العجلة اليومي
+}
+
+// 🎮 اقتصاد الألعاب other than wheel — كان ثابتاً في الكود فكان يُصدر رصيداً
+// يتجاوز ميزانية الإصدار بالكامل (XO وحده: 60 توكن/يوم/مستخدم). صار يضبطه المدير.
+export interface GamesSettings {
+  xoWinReward: number;        // توكن لكل فوز في تحدّي النقر
+  xoCooldownSec: number;      // ثوانٍ بين جولتين
+  xoDailyCap: number;         // سقف أرباح XO اليومي (توكن)
+  catchCoinReward: number;    // توكن لكل عملة ملتقطة
+  catchCooldownSec: number;   // ثوانٍ بين جولتين
+  catchDailyCap: number;      // سقف أرباح الاصطياد اليومي (توكن)
+  catchMaxScore: number;      // أقصى عدد عملات في الجولة
+  totalDailyCap: number;      // السقف اليومي الإجمالي لكل الألعاب معاً
 }
 
 // 🗺️ مرحلة واحدة في خارطة الطريق
@@ -194,6 +208,17 @@ export const DEFAULTS: SiteSettings = {
     ],
     cooldownSec: 3600,
     dailyCap: 50,
+  },
+  // 🎮 اقتصاد ألعاب المهارة — يضبطه المدير (كان مثبّتاً في الكود فكان يصدر رصيداً خارج الميزانية)
+  games: {
+    xoWinReward: 0.30,
+    xoCooldownSec: 3600,
+    xoDailyCap: 2,
+    catchCoinReward: 0.05,
+    catchCooldownSec: 3600,
+    catchDailyCap: 1.5,
+    catchMaxScore: 80,
+    totalDailyCap: 6,
   },
   // 💼 اقتصاديات التوكن الافتراضية: نسب توزيع العرض الكلي (تتحكم بها الإدارة من لوحة المدير)
   tokenomics: [

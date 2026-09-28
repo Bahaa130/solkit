@@ -47,6 +47,17 @@ export default function AdminPanelPage({ token }: { token: string }) {
     cooldownSec: 3600,
     dailyCap: 50,
   });
+  // 🎮 اقتصاد ألعاب المهارة (تحدّي النقر + اصطياد العملات) — كان مثبّتاً في الكود
+  const [games, setGames] = useState({
+    xoWinReward: 0.3,
+    xoCooldownSec: 3600,
+    xoDailyCap: 2,
+    catchCoinReward: 0.05,
+    catchCooldownSec: 3600,
+    catchDailyCap: 1.5,
+    catchMaxScore: 80,
+    totalDailyCap: 6,
+  });
   // 💼 اقتصاديات التوكن (نسب توزيع العرض الكلي) — تُدار من تبويب الإيردروب
   const [tokenomics, setTokenomics] = useState<{ label: string; pct: number; color: string }[]>([]);
   const toast = useToast();
@@ -127,6 +138,20 @@ export default function AdminPanelPage({ token }: { token: string }) {
             pct: Math.max(0, Math.min(100, Number(s.pct) || 0)),
             color: String(s.color || "#00ffcc").slice(0, 12),
           })));
+        }
+        // 🎮 تحميل اقتصاد ألعاب المهارة (0 = إلغاء المكافأة كلياً)
+        if (data.games) {
+          const g: any = data.games;
+          setGames({
+            xoWinReward: Number.isFinite(Number(g.xoWinReward)) ? Number(g.xoWinReward) : 0.3,
+            xoCooldownSec: Number.isFinite(Number(g.xoCooldownSec)) ? Number(g.xoCooldownSec) : 3600,
+            xoDailyCap: Number.isFinite(Number(g.xoDailyCap)) ? Number(g.xoDailyCap) : 2,
+            catchCoinReward: Number.isFinite(Number(g.catchCoinReward)) ? Number(g.catchCoinReward) : 0.05,
+            catchCooldownSec: Number.isFinite(Number(g.catchCooldownSec)) ? Number(g.catchCooldownSec) : 3600,
+            catchDailyCap: Number.isFinite(Number(g.catchDailyCap)) ? Number(g.catchDailyCap) : 1.5,
+            catchMaxScore: Number.isFinite(Number(g.catchMaxScore)) ? Number(g.catchMaxScore) : 80,
+            totalDailyCap: Number.isFinite(Number(g.totalDailyCap)) ? Number(g.totalDailyCap) : 6,
+          });
         }
       }
     } catch { /* تجاهل */ }
@@ -223,6 +248,17 @@ export default function AdminPanelPage({ token }: { token: string }) {
           segments: wheel.segments.filter((s) => s.weight > 0),
           cooldownSec: Math.max(300, Math.round(Number(wheel.cooldownSec) || 3600)),
           dailyCap: Math.max(1, Math.round(Number(wheel.dailyCap) || 50)),
+        },
+        // 🎮 تُحفظ مع العجلة لأنها часть من ميزانية إصدار الألعاب
+        games: {
+          xoWinReward: Math.max(0, Number(games.xoWinReward) || 0),
+          xoCooldownSec: Math.max(0, Math.round(Number(games.xoCooldownSec) || 0)),
+          xoDailyCap: Math.max(0, Number(games.xoDailyCap) || 0),
+          catchCoinReward: Math.max(0, Number(games.catchCoinReward) || 0),
+          catchCooldownSec: Math.max(0, Math.round(Number(games.catchCooldownSec) || 0)),
+          catchDailyCap: Math.max(0, Number(games.catchDailyCap) || 0),
+          catchMaxScore: Math.max(1, Math.round(Number(games.catchMaxScore) || 1)),
+          totalDailyCap: Math.max(0, Number(games.totalDailyCap) || 0),
         },
       };
       const res = await apiFetch("/api/users/admin/settings", {
@@ -702,7 +738,54 @@ export default function AdminPanelPage({ token }: { token: string }) {
           <p style={{ color: C.muted, fontSize: 11.5, lineHeight: 1.6, margin: "0 0 12px" }}>
             {t("admin.wheelBalanceNote")}
           </p>
-          <button onClick={saveWheel} disabled={savingSettings} className="btn btn-purple btn-block" style={{ padding: "14px 16px", fontSize: 13, fontWeight: 800 }}>
+
+          {/* 🎮 اقتصاد ألعاب المهارة — يمنع تجاوز ميزانية إصدار التوكنات */}
+          <div style={{ marginTop: 18, padding: 14, borderRadius: 14, background: "rgba(255,176,32,0.05)", border: "1px solid rgba(255,176,32,0.22)" }}>
+            <div style={{ color: C.amber, fontWeight: 800, fontSize: 13, marginBottom: 4 }}>🎮 اقتصاد ألعاب المهارة (تحدّي النقر + اصطياد العملات)</div>
+            <p style={{ color: C.muted, fontSize: 11.5, lineHeight: 1.6, margin: "0 0 12px" }}>
+              هذه القيم تُحتسب ضمن ميزانية إصدار التوكنات. ضع <strong>0</strong> في المكافأة لإيقاف صرفها نهائياً.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ color: C.muted, fontSize: 11.5, fontWeight: 700, display: "block", marginBottom: 4 }}>👆 مكافأة الفوز (توكن)</label>
+                <input type="number" step="0.01" min={0} value={games.xoWinReward}
+                  onChange={(e) => setGames({ ...games, xoWinReward: Math.max(0, Number(e.target.value) || 0) })}
+                  style={styles.inputNum} />
+              </div>
+              <div>
+                <label style={{ color: C.muted, fontSize: 11.5, fontWeight: 700, display: "block", marginBottom: 4 }}>👆 سقف XO اليومي</label>
+                <input type="number" step="0.1" min={0} value={games.xoDailyCap}
+                  onChange={(e) => setGames({ ...games, xoDailyCap: Math.max(0, Number(e.target.value) || 0) })}
+                  style={styles.inputNum} />
+              </div>
+              <div>
+                <label style={{ color: C.muted, fontSize: 11.5, fontWeight: 700, display: "block", marginBottom: 4 }}>🪙 مكافأة العملة (توكن)</label>
+                <input type="number" step="0.01" min={0} value={games.catchCoinReward}
+                  onChange={(e) => setGames({ ...games, catchCoinReward: Math.max(0, Number(e.target.value) || 0) })}
+                  style={styles.inputNum} />
+              </div>
+              <div>
+                <label style={{ color: C.muted, fontSize: 11.5, fontWeight: 700, display: "block", marginBottom: 4 }}>🪙 سقف الاصطياد اليومي</label>
+                <input type="number" step="0.1" min={0} value={games.catchDailyCap}
+                  onChange={(e) => setGames({ ...games, catchDailyCap: Math.max(0, Number(e.target.value) || 0) })}
+                  style={styles.inputNum} />
+              </div>
+              <div>
+                <label style={{ color: C.muted, fontSize: 11.5, fontWeight: 700, display: "block", marginBottom: 4 }}>🪙 أقصى عملات بالجولة</label>
+                <input type="number" min={1} value={games.catchMaxScore}
+                  onChange={(e) => setGames({ ...games, catchMaxScore: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
+                  style={styles.inputNum} />
+              </div>
+              <div>
+                <label style={{ color: C.muted, fontSize: 11.5, fontWeight: 700, display: "block", marginBottom: 4 }}>⛔ سقف كل الألعاب/يوم</label>
+                <input type="number" step="0.1" min={0} value={games.totalDailyCap}
+                  onChange={(e) => setGames({ ...games, totalDailyCap: Math.max(0, Number(e.target.value) || 0) })}
+                  style={styles.inputNum} />
+              </div>
+            </div>
+          </div>
+
+          <button onClick={saveWheel} disabled={savingSettings} className="btn btn-purple btn-block" style={{ padding: "14px 16px", fontSize: 13, fontWeight: 800, marginTop: 14 }}>
             {t("admin.settingsSave")}
           </button>
         </div>

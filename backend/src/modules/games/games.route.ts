@@ -43,15 +43,38 @@ const pickWheelSegment = (): number => {
 };
 
 const XP_PER_PLAY = 10; // نقاط خبرة المستوى الموحد لكل جولة ممنوحة
-const TOTAL_DAILY_CAP = 230; // السقف الإجمالي اليومي لجميع الألعاب معاً
 
 type GameKey = "wheel" | "xo" | "catch";
 
-// cooldownSec: ثوانٍ بين جولتين (ساعة كاملة لزيارة مستمرة للموقع) • dailyCap: سقف يومي بالمبلغ الممنوح فعلياً • maxScore: حد أقصى معقول • factor: معامل تحويل النتيجة إلى رصيد
-const GAME_CONFIG: Record<GameKey, { cooldownSec: number; dailyCap: number; maxScore: number | null; factor: number }> = {
-  wheel: { cooldownSec: 3600, dailyCap: 50, maxScore: null, factor: 0 }, // العجلة تستخدم شريحة وليس score — تُقرأ من الإعدادات
-  xo: { cooldownSec: 3600, dailyCap: 60, maxScore: 1, factor: 5 }, // الفوز = 5 توكن
-  catch: { cooldownSec: 3600, dailyCap: 80, maxScore: 80, factor: 0.5 }, // كل عملة ملتقطة = 0.5 توكن
+// 🎮 اقتصاد ألعاب المهارة يُقرأ من إعدادات المدير (قابل للضبط) — والقيم الافتراضية
+// القديمة (XO: 5 توكن/فوز بسقف 60، الاصطياد: 0.5 بسقف 80) كانت وحدها تعادل 140 توكن
+// يومياً لكل مستخدم، أي أكثر من ميزانية الإصدار الكلية — لذلك صار Adjustment يدوياً.
+// cooldownSec: ثوانٍ بين جولتين • dailyCap: سقف يومي بالمبلغ الممنوح فعلياً
+// maxScore: حد أقصى معقول للنتيجة • factor: معامل تحويل النتيجة إلى رصيد
+const getGamesCfg = () => {
+  const g: any = getSettings().games || {};
+  const num = (v: any, d: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : d);
+  return {
+    xoCooldownSec: num(g.xoCooldownSec, 3600),
+    xoDailyCap: num(g.xoDailyCap, 2),
+    xoWinReward: num(g.xoWinReward, 0.3),
+    catchCooldownSec: num(g.catchCooldownSec, 3600),
+    catchDailyCap: num(g.catchDailyCap, 1.5),
+    catchCoinReward: num(g.catchCoinReward, 0.05),
+    catchMaxScore: num(g.catchMaxScore, 80),
+    totalDailyCap: num(g.totalDailyCap, 6),
+  };
+};
+
+// السقف الإجمالي اليومي لكل الألعاب معاً — من إعدادات المدير
+const TOTAL_DAILY_CAP = (): number => getGamesCfg().totalDailyCap;
+
+// config: cooldownSec • dailyCap • maxScore • factor
+const GAME_CONFIG = (game: GameKey): { cooldownSec: number; dailyCap: number; maxScore: number | null; factor: number } => {
+  const g = getGamesCfg();
+  if (game === "wheel") return { cooldownSec: 3600, dailyCap: 50, maxScore: null, factor: 0 }; // العجلة تُقرأ من getWheel()
+  if (game === "xo") return { cooldownSec: g.xoCooldownSec, dailyCap: g.xoDailyCap, maxScore: 1, factor: g.xoWinReward };
+  return { cooldownSec: g.catchCooldownSec, dailyCap: g.catchDailyCap, maxScore: g.catchMaxScore, factor: g.catchCoinReward };
 };
 
 // 🕐 تنسيق مدة القفل بالعربية (ساعة/دقيقة/ثانية)
@@ -113,7 +136,7 @@ router.get("/status", authenticateJWT, async (req: AuthenticatedRequest, res: Re
       todayEarned[g] = Number(agg._sum?.reward || 0);
       if (last) {
         const elapsed = (Date.now() - new Date(last.createdAt).getTime()) / 1000;
-        const cfgSec = g === "wheel" ? getWheel().cooldownSec : GAME_CONFIG[g].cooldownSec;
+        const cfgSec = g === "wheel" ? getWheel().cooldownSec : GAME_CONFIG(g).cooldownSec;
         cooldowns[g] = Math.max(0, Math.ceil(cfgSec - elapsed));
       }
     }
@@ -132,9 +155,9 @@ router.get("/status", authenticateJWT, async (req: AuthenticatedRequest, res: Re
       todayEarned: { ...todayEarned, total: todayEarned.wheel + todayEarned.xo + todayEarned.catch },
       dailyCaps: {
         wheel: wheel.dailyCap,
-        xo: GAME_CONFIG.xo.dailyCap,
-        catch: GAME_CONFIG.catch.dailyCap,
-        total: TOTAL_DAILY_CAP,
+        xo: GAME_CONFIG("xo").dailyCap,
+        catch: GAME_CONFIG("catch").dailyCap,
+        total: TOTAL_DAILY_CAP(),
       },
       cooldowns,
     });
@@ -175,7 +198,7 @@ router.post("/result", authenticateJWT, async (req: AuthenticatedRequest, res: R
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || (user.activationStatus !== "active" && req.user!.role !== "admin")) return res.status(403).json({ message: "الحساب غير مفعّل" });
 
-    const cfg = GAME_CONFIG[game];
+    const cfg = GAME_CONFIG(game);
 
     // 🎰 العجلة: تحقق من التوكن الموقّع ومطابقة النتيجة
     let base = 0;
@@ -228,7 +251,7 @@ router.post("/result", authenticateJWT, async (req: AuthenticatedRequest, res: R
     const dayTotal = Number(dayTotalAgg._sum?.reward || 0);
     const gameDailyCap = game === "wheel" ? getWheel().dailyCap : cfg.dailyCap;
     const roomGame = Math.max(0, gameDailyCap - dayByGame);
-    const roomTotal = Math.max(0, TOTAL_DAILY_CAP - dayTotal);
+    const roomTotal = Math.max(0, TOTAL_DAILY_CAP() - dayTotal);
     if (roomGame <= 0 || roomTotal <= 0) {
       return res.status(429).json({ message: "وصلت للحد الأقصى اليومي لأرباح الألعاب ⏳ عد غداً" });
     }

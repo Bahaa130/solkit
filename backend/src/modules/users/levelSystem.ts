@@ -58,13 +58,21 @@ export const awardActivity = async (userId: number, category: ActivityKey): Prom
 };
 
 // 🎯 نقاط نشاط فئة معيّنة لمستوى معيّن: قيمة المستوى ← القيمة العامة ← الافتراضي
+// ⚠️ القيمة 0 الصريحة تعني **معطّل** (لا يمنح أي نقاط) — هذا ما يتيح للمدير إزالة أي
+// نشاط من تقدّم المستويات (مثل المهام) دون تعديل الكود. كانت القيمة 0 تُهمَل سابقاً
+// فيسقط مُنطقياً إلى الافتراضي (25 نقطة) ولا تُلغى المهام فعلياً.
 export const xpForLevel = (level: number, category: ActivityKey): number => {
   const plan = getLevelPlan();
   const def = plan.find((d) => d.level === level);
-  const fromLevel = def ? Number(def[category]) : NaN;
-  if (Number.isFinite(fromLevel) && fromLevel > 0) return Math.round(fromLevel);
+  if (def && def[category] !== undefined && def[category] !== null) {
+    const v = Number(def[category]);
+    if (Number.isFinite(v) && v >= 0) return Math.round(v);
+  }
   const s = getSettings();
-  const fromGlobal = Number((s as any)[category]);
-  if (Number.isFinite(fromGlobal) && fromGlobal > 0) return Math.round(fromGlobal);
+  const fromGlobal = (s as any)[category];
+  if (fromGlobal !== undefined && fromGlobal !== null) {
+    const v = Number(fromGlobal);
+    if (Number.isFinite(v) && v >= 0) return Math.round(v);
+  }
   return DEFAULT_ACTIVITY_XP[category];
 };
