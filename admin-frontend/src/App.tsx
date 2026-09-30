@@ -73,8 +73,6 @@ export default function App() {
   const [maintenance, setMaintenance] = useState<{ enabled: boolean; message: string } | null>(null);
   // 💰 رسوم التفعيل ومبالغ التقسيم يتحكم بها المدير — تُجلب من إعدادات الخادم
   const [feeCfg, setFeeCfg] = useState(DEFAULT_FEE);
-  // 🌐 شبكة المنصة المعلنة في إعدادات الخادم (تُعرض لمقارنة شبكة Phantom)
-  const [networkLabel, setNetworkLabel] = useState("");
   // ⚠️ تجاوز المستخدم لتحذير الرصيد: نعرض تنبيهاً مرة ثم نسمح بالمتابعة — Phantom المرجع
   const [paySkipWarn, setPaySkipWarn] = useState(false);
   // 💫 شاشة التحميل الترحيبية:
@@ -300,9 +298,8 @@ export default function App() {
               siteShare: Number(data.siteShare ?? DEFAULT_FEE.siteShare),
               referrerShare: Number(data.referrerShare ?? DEFAULT_FEE.referrerShare),
             });
-            // 🌐 اسم شبكة المنصة كما تعلنها إعدادات الخادم — نعرضه للمستخدم لمقارنته
-            // بشبكة Phantom، فهو السبب الأشيع لخطأ «رصيد غير كافٍ» في المتصفح
-            if (data.solanaNetwork) setNetworkLabel(String(data.solanaNetwork));
+            // ℹ️ أزلنا عرض اسم الشبكة هنا عمداً: التنبيهYellow و«افتح داخل Phantom»
+            // يغطيان الحالة عملياً، واسم الشبكة كان يربك المستخدم بـ devnet/mainnet.
           }
         } else if (!cancelled) {
           setMaintenance({ enabled: false, message: "" });
@@ -686,7 +683,10 @@ export default function App() {
       {session.activationStatus !== "active" && session.role !== "admin" ? (
         <div style={styles.payWrap}>
           <div className="glass" style={styles.payCard}>
-            <div className="floaty" style={{ fontSize: 54, textAlign: "center" }}>🦊</div>
+            {/* 🪙 أيقونة العملة المعتمدة بدل إيموجي المحفظة */}
+            <div className="floaty" style={{ textAlign: "center", lineHeight: 0 }}>
+              <CoinIcon size={54} />
+            </div>
             <h2 style={styles.payTitle}>{t("app.payTitle")}</h2>
             <p style={styles.payDesc}>
               {t("app.payDesc")}{" "}
@@ -703,31 +703,27 @@ export default function App() {
                 <span style={{ fontWeight: 800, color: C.text }}>{(referrerShareLamports / 1e9).toFixed(3)} SOL</span>
               </div>
               <p style={{ ...T2.hint, marginTop: 8 }}>{t("app.splitHint")}</p>
-              {/* 🌐 تنبيه الشبكة بارز: Phantom في المتصفح لا يقرأ شبكة الموقع، فإذا كانت
-                  محفظتك على شبكة أخرى تظهر رسالة «Insufficient SOL» رغم توافر رصيدك */}
-              <div style={{
-                marginTop: 10, padding: "10px 12px", borderRadius: 12, fontSize: 12, lineHeight: 1.8,
-                background: "rgba(255,176,32,0.08)", border: "1px solid rgba(255,176,32,0.3)", color: "#ffcf7a",
-              }}>
-                🌐 شبكة المنصة: <strong>{networkLabel || "…"}</strong> — لو رفضت Phantom قائلةً «رصيد غير كافٍ»،
-                أو عرضت تحذير «غير آمن»، فذلك لأن محفظتك على شبكة أخرى: بدّلها إلى{" "}
-                <strong>{networkLabel === "devnet" ? "Devnet" : "Mainnet"}</strong> من داخل Phantom.
-                {!isNativeApp && (
-                  <>
-                    <br />
-                    <button
-                      onClick={() => openInWalletApp()}
-                      className="btn btn-block"
-                      style={{
-                        marginTop: 8, padding: "9px", fontSize: 12,
-                        background: "rgba(0,255,204,0.08)", color: C.teal, border: "1px solid rgba(0,255,204,0.28)",
-                      }}
-                    >
-                      🌐 افتح الموقع داخل Phantom (شبكة مطابقة بلا تحذيرات)
-                    </button>
-                  </>
-                )}
-              </div>
+              {/* 🌐 تنبيه الشبكة: Phantom في المتصفح لا يقرأ شبكة الموقع تلقائياً،
+                  لكن زر «افتح داخل Phantom» وربط المحفظة يضمنان المطابقة ويمنعان تحذير «غير آمن» */}
+              {!isNativeApp && (
+                <div style={{
+                  marginTop: 10, padding: "10px 12px", borderRadius: 12, fontSize: 12, lineHeight: 1.8,
+                  background: "rgba(0,255,204,0.08)", border: "1px solid rgba(0,255,204,0.3)", color: C.teal,
+                }}>
+                  🌐 افتح الموقع داخل Phantom (شبكة مطابقة بلا تحذيرات)
+                  <br />
+                  <button
+                    onClick={() => openInWalletApp()}
+                    className="btn btn-block"
+                    style={{
+                      marginTop: 8, padding: "9px", fontSize: 12,
+                      background: "rgba(0,255,204,0.08)", color: C.teal, border: "1px solid rgba(0,255,204,0.28)",
+                    }}
+                  >
+                    🌐 فتح داخل Phantom
+                  </button>
+                </div>
+              )}
             </div>
 
             {/*
