@@ -61,7 +61,10 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
-app.use(express.json());
+// 🖼️ حد JSON = 4MB: أيقونة العملة تُحفظ كـ data-URL داخل إعدادات الموقع،
+// والحد الافتراضي (100KB) كان يرفض أي صورة أكبر من ~75KB فيرجع 413 PayloadTooLarge
+// فيظهر للمدير «فشل حفظ الإعدادات» دون سبب واضح. الواجهة أيضاً تضغط الصورة قبل الإرسال.
+app.use(express.json({ limit: "4mb" }));
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,

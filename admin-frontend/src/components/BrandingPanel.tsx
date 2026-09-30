@@ -12,6 +12,47 @@ interface BrandingPanelProps {
 
 const MAX_ICON_BYTES = 1_500_000;
 
+// 🖼️ نُصغّر الصورة قبل تحويلها إلى base64 (الحدّ الأقصى 256×256) — بدون ذلك
+// يصبح طلب الحفظ ميغابايتات فيرفضه الخادم (413) ويفشل حفظ الإعدادات.
+//Vector (SVG) يبقى كما هو لأن تصغيره يحتاج مكتبات خارجية.
+async function compressIcon(file: File): Promise<string> {
+  const isVector = file.type === "image/svg+xml";
+  if (isVector) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(new Error("read-failed"));
+      r.readAsDataURL(file);
+    });
+  }
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error("read-failed"));
+    r.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("decode-failed"));
+    el.src = dataUrl;
+  });
+  const MAX = 256;
+  const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0, w, h);
+  // WebP أصغر من PNG مع دعم الشفافية؛ نعود إلى PNG إن لم يدعمه المتصفح.
+  const webp = canvas.toDataURL("image/webp", 0.92);
+  if (webp.startsWith("data:image/webp")) return webp;
+  return canvas.toDataURL("image/png");
+}
+
 export default function BrandingPanel({ token }: BrandingPanelProps) {
   const { t, dir } = useLang();
   const toast = useToast();
@@ -39,9 +80,10 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
     setLoading(false);
   }, [branding]);
 
-  // 🖼️ رفع صورة الأيقونة وتحويلها إلى data URL (base64)
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 🖼️ رفع صورة الأيقونة وتحويلها إلى data URL (base64) بعد تصغيرها
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       toast.error(t("branding.iconHint"));
@@ -51,9 +93,12 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
       toast.error(t("branding.iconTooBig"));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setForm((f) => ({ ...f, tokenIcon: reader.result as string }));
-    reader.readAsDataURL(file);
+    try {
+      const dataUrl = await compressIcon(file);
+      setForm((f) => ({ ...f, tokenIcon: dataUrl }));
+    } catch {
+      toast.error(t("branding.iconHint"));
+    }
   };
 
   const save = async () => {
@@ -70,8 +115,9 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
           tokenIcon: form.tokenIcon,
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
+      if (res.status === 413) throw new Error("الحجم كبير جداً — جرّب صورة أصغر (أقل من 200 كيلوبايت)");
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) {
         setBranding({
           projectName: data.projectName,
           tokenName: data.tokenName,
@@ -81,10 +127,10 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
         toast.success(t("branding.saved"));
         setStatus({ type: "success", text: t("branding.saved") });
       } else {
-        toast.error(data.message || t("token.errorSave"));
+        toast.error(data?.message || t("token.errorSave"));
       }
-    } catch {
-      toast.error(t("token.errorSave"));
+    } catch (e: any) {
+      toast.error(e?.message || t("token.errorSave"));
     } finally {
       setSaving(false);
     }

@@ -314,9 +314,11 @@ model GamePlayRecord {
 // ⚙️ إعدادات الموقع المُدارة من لوحة المدير (نص JSON كامل)
 // ==========================================
 model AppSetting {
-  id        Int      @id @default(autoincrement())
-  key       String   @unique
-  value     String   @db.Text
-  updatedAt DateTime @updatedAt
-}
+    id        Int      @id @default(autoincrement())
+    key       String   @unique
+    // 🖼️ MediumText (16MB) لا Text (64KB): إعدادات الموقع تحوي أيقونة العملة
+    // كـ data-URL، فـ TEXT كان يفيض عند التصدير ويفشل الحفظ.
+    value     String   @db.MediumText
+    updatedAt DateTime @updatedAt
+  }
 
