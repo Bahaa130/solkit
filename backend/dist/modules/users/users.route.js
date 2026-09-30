@@ -14,6 +14,7 @@ import { prisma } from "../../config/prisma.js";
 import { authenticateJWT } from "../../middlewares/auth.middleware.js";
 import { getSettings, updateSettings, flushSettingsToDb, DEFAULTS } from "../../config/settings.js";
 import { ECONOMY_SCENARIO } from "./economyScenario.js";
+import { getBrandPreset } from "./brandPreset.js";
 import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; // 🎯 نظام المستويات حسب النشاط
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
 import { rpcRequest } from "../solana/solana.route.js"; // 🔧 طلب RPC مرن (نفس منطق إعادة محاولة البروكسي)
@@ -1779,6 +1780,67 @@ router.post("/admin/economy-scenario", authenticateJWT, async (req, res) => {
     catch (error) {
         console.error("Apply economy scenario error:", error);
         return res.status(500).json({ message: "فشل تطبيق سيناريو الاقتصاد" });
+    }
+});
+// 🏷️ معاينة هوية المشروع المعتمدة (بدون حفظ) — للمدير فقط
+router.get("/admin/brand-preset", authenticateJWT, async (req, res) => {
+    try {
+        if (!isAdmin(req, res))
+            return;
+        const preset = getBrandPreset();
+        const cur = getSettings();
+        return res.json({
+            brand: { ...preset, tokenIconBytes: Math.round((preset.tokenIcon.length * 3) / 4) },
+            current: {
+                projectName: cur.projectName,
+                tokenName: cur.tokenName,
+                tokenSymbol: cur.tokenSymbol,
+                hasIcon: !!cur.tokenIcon,
+            },
+        });
+    }
+    catch (error) {
+        console.error("Brand preset preview error:", error);
+        return res.status(500).json({ message: "تعذّر تحميل هوية المشروع المعتمدة" });
+    }
+});
+// 🏷️ تطبيق هوية المشروع المعتمدة (YOSHA / Yosoku Sha / YSA + الأيقونة)
+router.post("/admin/brand-preset", authenticateJWT, async (req, res) => {
+    try {
+        if (!isAdmin(req, res))
+            return;
+        if (req.body?.confirm !== true) {
+            return res.status(400).json({ message: "يتطلب التطبيق تأكيداً صريحاً: { confirm: true }" });
+        }
+        const preset = getBrandPreset();
+        const updated = updateSettings({
+            projectName: preset.projectName,
+            tokenName: preset.tokenName,
+            tokenSymbol: preset.tokenSymbol,
+            tokenIcon: preset.tokenIcon,
+        });
+        // 🔍 تحقّق فعلي من الثبات في قاعدة البيانات
+        const persisted = await flushSettingsToDb();
+        if (!persisted.ok) {
+            return res.status(500).json({ message: `تعذّر حفظ الهوية في قاعدة البيانات: ${persisted.error}`, persisted: false });
+        }
+        const stored = getSettings();
+        if (stored.projectName !== preset.projectName || stored.tokenSymbol !== preset.tokenSymbol || stored.tokenIcon !== preset.tokenIcon) {
+            return res.status(500).json({ message: "الهوية لم تُثبَّت بعد (تحقّق من قاعدة البيانات)", persisted: false });
+        }
+        return res.json({
+            message: `تم تطبيق هوية «${preset.projectName}» بنجاح ✅`,
+            persisted: true,
+            projectName: stored.projectName,
+            tokenName: stored.tokenName,
+            tokenSymbol: stored.tokenSymbol,
+            tokenIcon: stored.tokenIcon,
+            note: "الهوية مدمجة أيضاً في التطبيق، فتظهر بدون إنترنت.",
+        });
+    }
+    catch (error) {
+        console.error("Apply brand preset error:", error);
+        return res.status(500).json({ message: "فشل تطبيق هوية المشروع" });
     }
 });
 router.post("/admin/settings", authenticateJWT, async (req, res) => {

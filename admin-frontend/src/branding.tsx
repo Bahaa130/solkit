@@ -15,11 +15,12 @@ export interface Branding {
 }
 
 // الهوية المدمجة في التطبيق: أول ما يظهر قبل أي طلب شبكة
+// (اعتماد نهائي: المشروع YOSHA · العملة Yosoku Sha · الرمز YSA)
 const BUILT_IN_BRANDING: Branding = {
-  projectName: "LOL",
-  tokenName: "LOL",
-  tokenSymbol: "LOL",
-  tokenIcon: "",
+  projectName: "YOSHA",
+  tokenName: "Yosoku Sha",
+  tokenSymbol: "YSA",
+  tokenIcon: "/brand/ysa-icon.png",
 };
 
 const DEFAULT_BRANDING: Branding = BUILT_IN_BRANDING;

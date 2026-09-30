@@ -101,10 +101,25 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
     }
   };
 
+  // 🔒 الخادم يقبل الأيقونة كـ data-URL فقط، فأي مسار ملف (مثل /brand/ysa-icon.png
+  //    المدمجة للتشغيل دون إنترنت) نُحوّله إلى data-URL قبل الإرسال.
+  const toDataUrl = async (src: string): Promise<string> => {
+    if (!src || src.startsWith("data:")) return src;
+    const res = await fetch(src);
+    const blob = await res.blob();
+    return new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(new Error("read-failed"));
+      r.readAsDataURL(blob);
+    });
+  };
+
   const save = async () => {
     try {
       setSaving(true);
       setStatus(null);
+      const icon = await toDataUrl(form.tokenIcon);
       const res = await apiFetch("/api/users/admin/settings", {
         method: "POST",
         headers,
@@ -112,7 +127,7 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
           projectName: form.projectName.trim() || "SOLKIT",
           tokenName: form.tokenName.trim() || form.tokenSymbol.trim() || "SOLKIT",
           tokenSymbol: form.tokenSymbol.trim() || "SOLKIT",
-          tokenIcon: form.tokenIcon,
+          tokenIcon: icon,
         }),
       });
       if (res.status === 413) throw new Error("الحجم كبير جداً — جرّب صورة أصغر (أقل من 200 كيلوبايت)");
@@ -124,6 +139,7 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
           tokenSymbol: data.tokenSymbol,
           tokenIcon: data.tokenIcon,
         });
+        setForm((f) => ({ ...f, tokenIcon: data.tokenIcon }));
         toast.success(t("branding.saved"));
         setStatus({ type: "success", text: t("branding.saved") });
       } else {
@@ -131,6 +147,42 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
       }
     } catch (e: any) {
       toast.error(e?.message || t("token.errorSave"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ♻️ استعادة الهوية المعتمدة (YOSHA / Yosoku Sha / YSA + الأيقونة) بضغطة واحدة
+  const applyPreset = async () => {
+    try {
+      setSaving(true);
+      setStatus(null);
+      const res = await apiFetch("/api/users/admin/brand-preset", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ confirm: true }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) {
+        setBranding({
+          projectName: data.projectName,
+          tokenName: data.tokenName,
+          tokenSymbol: data.tokenSymbol,
+          tokenIcon: data.tokenIcon,
+        });
+        setForm({
+          projectName: data.projectName,
+          tokenName: data.tokenName,
+          tokenSymbol: data.tokenSymbol,
+          tokenIcon: data.tokenIcon,
+        });
+        toast.success(data.message || "تم تطبيق الهوية المعتمدة ✅");
+        setStatus({ type: "success", text: data.message || "تم تطبيق الهوية المعتمدة ✅" });
+      } else {
+        toast.error(data?.message || "فشل تطبيق الهوية المعتمدة");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "فشل تطبيق الهوية المعتمدة");
     } finally {
       setSaving(false);
     }
@@ -168,6 +220,39 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
       {/* 🏷️ حقول الهوية */}
       <div className="glass" style={styles.card}>
         <h3 style={styles.cardTitle}>{t("branding.title")}</h3>
+
+        <div
+          style={{
+            fontSize: 12,
+            lineHeight: 1.8,
+            color: C.muted,
+            background: "rgba(0,255,204,0.06)",
+            border: "1px solid rgba(0,255,204,0.22)",
+            borderRadius: 12,
+            padding: "10px 12px",
+            marginBottom: 14,
+          }}
+        >
+          ♻️ الهوية المعتمدة: <strong>YOSHA</strong> · العملة <strong>Yosoku Sha</strong> · الرمز <strong>YSA</strong> — وهي مدمجة في التطبيق
+          (تظهر بدون إنترنت). زر «استعادة» يعيد حفظها على الخادم.
+          <button
+            onClick={applyPreset}
+            disabled={saving}
+            style={{
+              marginInlineStart: 8,
+              padding: "6px 12px",
+              fontSize: 12,
+              fontWeight: 800,
+              borderRadius: 9,
+              border: "none",
+              background: "linear-gradient(135deg,#7c3aed,#a855f7)",
+              color: "#fff",
+              cursor: saving ? "wait" : "pointer",
+            }}
+          >
+            {saving ? "…" : "♻️ استعادة الهوية المعتمدة"}
+          </button>
+        </div>
 
         <label style={styles.label}>{t("branding.projectName")}</label>
         <input
