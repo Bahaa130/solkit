@@ -56,7 +56,7 @@ interface PurchaseRow {
 }
 
 export default function IcoPage({ token, walletAddress }: IcoPageProps) {
-  const { dir } = useLang();
+  const { dir, t } = useLang();
   const { branding } = useBranding();
   const { address: connectedAddress, connectWallet, sendTransaction } = useSolanaWallet();
 
@@ -126,7 +126,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       }
       setLoadErr(null);
     } catch {
-      setLoadErr("تعذّر جلب بيانات الاكتتاب — تأكد من اتصالك بالإنترنت.");
+      setLoadErr(t("ico.loadError"));
     }
   };
 
@@ -152,13 +152,13 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   const countdown = useMemo(() => {
     if (!config || !config.endDate) return null;
     const diff = config.endDate - now;
-    if (diff <= 0) return { done: true, text: "انتهى الاكتتاب 🏁" };
+    if (diff <= 0) return { done: true, text: t("ico.ended") };
     const d = Math.floor(diff / 86400000);
     const h = Math.floor((diff % 86400000) / 3600000);
     const m = Math.floor((diff % 3600000) / 60000);
     const s = Math.floor((diff % 60000) / 1000);
-    return { done: false, text: `${d} يوم ${h} ساعة ${m} د ${s} ث` };
-  }, [config, now]);
+    return { done: false, text: t("ico.countdown", { d, h, m, s }) };
+  }, [config, now, t]);
 
   const remainingTokens = config ? Math.max(0, config.totalAllocation - stats.soldTokens) : 0;
   const soldPct = config && config.totalAllocation > 0 ? Math.min(100, (stats.soldTokens / config.totalAllocation) * 100) : 0;
@@ -173,9 +173,9 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
   // 🏷️ حالة عملية اكتتاب: مُسلَّمة 📦 / مؤكّدة ✅ / غير مؤكّدة (بانتظار تأكيد المدير) ⏳
   const purchaseBadge = (p: PurchaseRow) => {
-    if (p.delivered) return { label: "مُسلَّمة 📦", color: "#7cf5c0", bg: "rgba(0,255,204,0.1)", border: "rgba(0,255,204,0.3)" };
-    if (p.status === "purchased") return { label: "مؤكّد ✅", color: "#7cf5c0", bg: "rgba(34,229,132,0.1)", border: "rgba(34,229,132,0.3)" };
-    if (p.status === "pending" || !p.status) return { label: "بانتظار تأكيد المدير ⏳", color: "#ffb020", bg: "rgba(255,176,32,0.1)", border: "rgba(255,176,32,0.3)" };
+    if (p.delivered) return { label: t("ico.badgeDelivered"), color: "#7cf5c0", bg: "rgba(0,255,204,0.1)", border: "rgba(0,255,204,0.3)" };
+    if (p.status === "purchased") return { label: t("ico.badgeConfirmed"), color: "#7cf5c0", bg: "rgba(34,229,132,0.1)", border: "rgba(34,229,132,0.3)" };
+    if (p.status === "pending" || !p.status) return { label: t("ico.badgePending"), color: "#ffb020", bg: "rgba(255,176,32,0.1)", border: "rgba(255,176,32,0.3)" };
     return { label: p.status, color: C.muted, bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.12)" };
   };
 
@@ -199,41 +199,41 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
   const purchase = async () => {
     if (!config) return;
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
-      return setStatus({ type: "error", text: "أدخل مبلغاً صحيحاً بالـ SOL" });
+      return setStatus({ type: "error", text: t("ico.errAmount") });
     }
     if (amountNum < config.minSOL) {
-      return setStatus({ type: "error", text: `الحد الأدنى للمشاركة ${config.minSOL} SOL` });
+      return setStatus({ type: "error", text: t("ico.errMin", { v: config.minSOL }) });
     }
     if (amountNum > config.maxSOL) {
-      return setStatus({ type: "error", text: `الحد الأقصى للمشاركة ${config.maxSOL} SOL` });
+      return setStatus({ type: "error", text: t("ico.errMax", { v: config.maxSOL }) });
     }
     if (myRaised + amountNum > perWalletCap + 1e-9) {
-      return setStatus({ type: "error", text: `الحد الأقصى لكل محفظة هو ${perWalletCap} SOL — أنفقت ${myRaised.toFixed(2)} SOL والباقي المتبقي ${walletRemaining.toFixed(2)} SOL` });
+      return setStatus({ type: "error", text: t("ico.errWalletCap", { cap: perWalletCap, spent: myRaised.toFixed(2), left: walletRemaining.toFixed(2) }) });
     }
     if (previewTokens > remainingTokens) {
-      return setStatus({ type: "error", text: `المتبقي من مخصصات الاكتتاب ${fmt(remainingTokens)} توكن فقط` });
+      return setStatus({ type: "error", text: t("ico.errRemaining", { v: fmt(remainingTokens) }) });
     }
     if (config.hardCapSOL && stats.raisedSOL + amountNum > config.hardCapSOL) {
-      return setStatus({ type: "error", text: "اكتمل الهدف الأقصى للاكتتاب" });
+      return setStatus({ type: "error", text: t("ico.errHardCap") });
     }
 
     try {
       setBusy(true);
-      setStatus({ type: "loading", text: "جاري تجهيز الدفع..." });
+      setStatus({ type: "loading", text: t("ico.stPreparing") });
 
       // 🔌 التأكد من اتصال المحفظة — تماماً كدفع رسوم التسجيل: إن لم توجد جلسة
       // نفتح نافذة الربط الحقيقية عبر connectWallet() (الموبايل: رابط Phantom
       // الموحّد، الويب: امتداد Phantom) بدل الاكتفاء بجلسة مخزّنة قد تكون فُقدت.
       let sender = connectedAddress;
       if (!sender) {
-        setStatus({ type: "loading", text: "جاري ربط محفظتك (Phantom) — وافق من النافذة..." });
+        setStatus({ type: "loading", text: t("ico.stConnecting") });
         try { sender = (await connectWallet()) || null; } catch { sender = null; }
       }
       if (!sender) {
-        return setStatus({ type: "error", text: "الرجاء ربط محفظتك (Phantom) أولاً!" });
+        return setStatus({ type: "error", text: t("ico.errConnect") });
       }
       if (walletAddress && sender !== walletAddress) {
-        return setStatus({ type: "error", text: "المحفظة المتصلة ليست المحفظة المرتبطة بحسابك — استخدم نفس المحفظة التي سجّلت بها الدخول." });
+        return setStatus({ type: "error", text: t("ico.errWrongWallet") });
       }
 
       // 🏦 محفظة الخزانة إن لم تصل بعد: من بيانات الاكتتاب العامة؟ نطلبها من /settings مجدداً
@@ -246,7 +246,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
         } catch { target = ""; }
       }
       if (!target) {
-        return setStatus({ type: "error", text: "لم تُضبط محفظة الخزانة بعد — تواصل مع الإدارة." });
+        return setStatus({ type: "error", text: t("ico.errNoTreasury") });
       }
 
       // 🌐 الشبكة تُقرأ من إعدادات الخادم — الدفع يحدث على نفس شبكة محفظة المستخدم
@@ -272,12 +272,12 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       } catch (err) {
         const detail =
           err instanceof Error ? err.message.replace(/^RPC unreachable :: /, "") : "network";
-        setStatus({ type: "error", text: `تعذّر قراءة حالة الشبكة [${rpcUse}] (${detail}) — أعد المحاولة بعد قليل.` });
+        setStatus({ type: "error", text: t("ico.errNetwork", { rpc: rpcUse, detail }) });
         return;
       }
 
       // 3. استدعاء المحفظة لتوقيع وبثّ المعاملة (نفس نداء دفع رسوم التسجيل)
-      setStatus({ type: "loading", text: "افتح محفظتك لتأكيد وتوقيع دفع الاكتتاب..." });
+      setStatus({ type: "loading", text: t("ico.stSign") });
       const tx = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: new PublicKey(sender),
@@ -302,7 +302,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
           if (check.readable && check.ok && check.cluster && !check.cluster.includes(network)) {
             setStatus({
               type: "error",
-              text: `تنبيه: شبكة الموقع ${check.cluster}، وقد تكون محفظتك على شبكة أخرى — تابع رغم ذلك أو بدّل شبكة Phantom لتطابق.`,
+              text: t("ico.errCluster", { cluster: check.cluster }),
             });
             setSkipWarn(true);
             return;
@@ -313,7 +313,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       }
 
       const sig = await sendTransaction(tx, connection);
-      if (!sig) throw new Error("لم يُرجع Phantom توقيع المعاملة");
+      if (!sig) throw new Error(t("ico.errNoSig"));
 
       // 💾 تذكّر التوقيع محلياً: إن انقطع التطبيق قبل التسجيل يمكن استرجاع الدفعة
       // لاحقاً دون دفع مزدوج (السيرفر يمسح خزانة الاكتتاب ويجد الدفعة بنفسه).
@@ -321,7 +321,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
       // 🔁 مثل رسوم التسجيل تماماً: تأكيد محلي "أفضل جهد" بمهلة 15 ثانية لا يرمي
       // خطأ انتهاء — تأكيد السيرفر عبر RPC هو المرجع الحقيقي بعد الدفع.
-      setStatus({ type: "confirming", text: "جاري تأكيد الدفعة على الشبكة..." });
+      setStatus({ type: "confirming", text: t("ico.stConfirming") });
       try {
         await Promise.race([
           connection.confirmTransaction({
@@ -337,7 +337,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
       // 4. إرسال التوقيع للسيرفر لتسجيل المشاركة (يعتمدها فوراً حتى لو تعذّر
       // التحقق الآني — "سُجِّلت ✅ بانتظار تأكيد الإدارة" لا رسالة رفض أبداً)
-      setStatus({ type: "loading", text: "جاري تسجيل مشاركتك على الخادم..." });
+      setStatus({ type: "loading", text: t("ico.stRegistering") });
       const res = await apiFetch("/api/users/ico/purchase", {
         method: "POST",
         headers,
@@ -345,9 +345,9 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        return setStatus({ type: "error", text: data.message || "فشل اعتماد المشاركة — ستظهر زر الاسترجاع، جرّبه بعد قليل." });
+        return setStatus({ type: "error", text: data.message || t("ico.errRegister") });
       }
-      setStatus({ type: "success", text: data.message || "تم تسجيل المشاركة ✅" });
+      setStatus({ type: "success", text: data.message || t("ico.stRegistered") });
       setOpen(false);
       setAmountStr("");
       try { localStorage.removeItem("solkit_pending_ico_tx"); setPendingTx(null); } catch { /* */ }
@@ -356,7 +356,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       console.error("ICO purchase error:", err);
       let msg = err?.message || "";
       if (/Failed to fetch|NetworkError|load failed|No data received|ERR_/i.test(msg)) {
-        msg = "شبكة ضعيفة أو الخادم يستيقظ الآن — جرّب زر «استرجاع المشاركة السابقة» بعد قليل.";
+        msg = t("ico.errWeakNet");
       }
       setStatus({ type: "error", text: msg });
     } finally {
@@ -371,7 +371,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
     if (!token) return;
     try {
       setBusy(true);
-      setStatus({ type: "loading", text: "جاري البحث عن دفعتك السابقة على خزانة الاكتتاب..." });
+      setStatus({ type: "loading", text: t("ico.stSearching") });
       const res = await Promise.race([
         apiFetch("/api/users/ico/purchase", {
           method: "POST",
@@ -379,14 +379,14 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
           body: JSON.stringify({}),
         }),
         new Promise<Response>((_, reject) =>
-          setTimeout(() => reject(new Error("انتهت مهلة الاتصال بالخادم — أعد المحاولة")), 25000),
+          setTimeout(() => reject(new Error(t("ico.stTimeout"))), 25000),
         ),
       ]);
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         try { localStorage.removeItem("solkit_pending_ico_tx"); } catch { /* */ }
         setPendingTx(null);
-        setStatus({ type: "success", text: data.message || "تم تسجيل مشاركتك ✅" });
+        setStatus({ type: "success", text: data.message || t("ico.stRegistered") });
         load();
       } else {
         // 🧾 لا دفعة مؤهلة؟ رسالة واضحة بدل الرفض الغامض
@@ -395,13 +395,13 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
         setStatus({
           type: "error",
           text: noPayment
-            ? "لم يجد السيرفر دفعة سابقة لم تُسجَّل — إن دفعت فعلاً فانتظر تأكيد الشبكة ثم أعد المحاولة."
-            : (msg || "فشل استرجاع المشاركة — أعد المحاولة"),
+            ? t("ico.errNoPayment")
+            : (msg || t("ico.errResume")),
         });
       }
     } catch (error: any) {
       console.error("ICO resume error:", error);
-      setStatus({ type: "error", text: error?.message || "فشل استرجاع المشاركة — أعد المحاولة" });
+      setStatus({ type: "error", text: error?.message || t("ico.errResume") });
     } finally {
       setBusy(false);
     }
@@ -413,8 +413,8 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
       <div style={{ ...styles.page, direction: dir, fontFamily: font }}>
         <div className="glass" style={{ ...styles.card, textAlign: "center", padding: "48px 24px" }}>
           <div className="floaty" style={{ fontSize: 56 }}>🏦</div>
-          <h2 style={{ color: C.text, fontWeight: 900, fontSize: 20, marginTop: 12 }}>{loadErr || "الاكتتاب غير متاح حالياً"}</h2>
-          <p style={{ ...T.hint, marginTop: 8 }}>سيُفتح باب المشاركة المبكرة قريباً — ترقّب الإعلانات.</p>
+          <h2 style={{ color: C.text, fontWeight: 900, fontSize: 20, marginTop: 12 }}>{loadErr || t("ico.unavailable")}</h2>
+          <p style={{ ...T.hint, marginTop: 8 }}>{t("ico.unavailableHint")}</p>
         </div>
       </div>
     );
@@ -431,7 +431,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
           </h1>
           <p style={{ ...T.hint, marginTop: 6 }}>{config.subtitle.replace("{token}", branding.tokenName)}</p>
           <div className="pill" style={{ marginTop: 12, padding: "6px 14px", border: "1px solid rgba(0,255,204,0.3)", color: C.teal, background: "rgba(0,255,204,0.08)" }}>
-            {countdown ? (countdown.done ? countdown.text : `⏳ ينتهي خلال: ${countdown.text}`) : "⏳ مفتوح حتى إشعار آخر"}
+            {countdown ? (countdown.done ? countdown.text : t("ico.endsIn", { time: countdown.text })) : t("ico.openUntil")}
           </div>
         </div>
 
@@ -440,26 +440,26 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div className="pill" style={{ ...styles.miniStat, textAlign: "center", display: "block" }}>
-              <span style={{ display: "block", fontSize: 11, color: C.muted }}>سعر التوكن</span>
+              <span style={{ display: "block", fontSize: 11, color: C.muted }}>{t("ico.price")}</span>
               <span style={{ fontWeight: 900, color: C.teal, fontSize: 16 }}>{priceSOL.toFixed(6)} SOL</span>
             </div>
             <div className="pill" style={{ ...styles.miniStat, textAlign: "center", display: "block" }}>
-              <span style={{ display: "block", fontSize: 11, color: C.muted }}>إجمالي المخصص</span>
+              <span style={{ display: "block", fontSize: 11, color: C.muted }}>{t("ico.totalAllocation")}</span>
               <span style={{ fontWeight: 900, color: C.text, fontSize: 16 }}>{fmt(config.totalAllocation)}</span>
             </div>
             <div className="pill" style={{ ...styles.miniStat, textAlign: "center", display: "block" }}>
-              <span style={{ display: "block", fontSize: 11, color: C.muted }}>حدَّي عملية الشراء</span>
+              <span style={{ display: "block", fontSize: 11, color: C.muted }}>{t("ico.limits")}</span>
               <span style={{ fontWeight: 900, color: C.text, fontSize: 16 }}>{config.minSOL} – {config.maxSOL} SOL</span>
             </div>
             <div className="pill" style={{ ...styles.miniStat, textAlign: "center", display: "block" }}>
-              <span style={{ display: "block", fontSize: 11, color: C.muted }}>مشاركون</span>
+              <span style={{ display: "block", fontSize: 11, color: C.muted }}>{t("ico.participants")}</span>
               <span style={{ fontWeight: 900, color: C.amber, fontSize: 16 }}>{fmt(stats.participants)}</span>
             </div>
           </div>
 
           <div style={{ marginTop: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.muted, marginBottom: 6 }}>
-              <span>🎯 مخصصات بيعت</span>
+              <span>{t("ico.soldLabel")}</span>
               <span style={{ color: C.text, fontWeight: 800 }}>{fmt(stats.soldTokens)} / {fmt(config.totalAllocation)} ({soldPct.toFixed(1)}%)</span>
             </div>
             <div style={{ height: 10, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
@@ -469,7 +469,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.muted, marginBottom: 6 }}>
-              <span>💰 المجموع</span>
+              <span>{t("ico.raisedLabel")}</span>
               <span style={{ color: C.text, fontWeight: 800 }}>{fmt(stats.raisedSOL, 2)} / {fmt(config.hardCapSOL, 2)} SOL ({raisedPct.toFixed(1)}%)</span>
             </div>
             <div style={{ height: 10, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
@@ -478,12 +478,12 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, fontSize: 11.5, color: C.muted }}>
-            <span>🛡️ الهدف الأدنى: {fmt(config.softCapSOL, 2)} SOL</span>
-            <span>🚀 {config.tgePercent}% يُفرج فور الإدراج (TGE)</span>
+            <span>{t("ico.softCap", { v: fmt(config.softCapSOL, 2) })}</span>
+            <span>{t("ico.tge", { v: config.tgePercent })}</span>
           </div>
           <div className="pill" style={{ marginTop: 10, padding: "8px 12px", border: "1px solid rgba(255,176,32,0.3)", color: "#ffb020", background: "rgba(255,176,32,0.06)", fontSize: 11.5, textAlign: "center" }}>
-            👛 حد المحفظة الكلي: {fmt(perWalletCap, 2)} SOL — لا يمكن لمحفظة واحدة الشراء بأكثر من ذلك إجمالاً
-            {purchases.length > 0 && <span style={{ display: "block", marginTop: 3, color: C.text }}>→ أنفقت {fmt(myRaised, 2)} SOL · المتبقي {fmt(walletRemaining, 2)} SOL</span>}
+            {t("ico.walletCap", { v: fmt(perWalletCap, 2) })}
+            {purchases.length > 0 && <span style={{ display: "block", marginTop: 3, color: C.text }}>{t("ico.walletSpent", { spent: fmt(myRaised, 2), left: fmt(walletRemaining, 2) })}</span>}
           </div>
         </div>
       </div>
@@ -495,15 +495,15 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
         className="btn btn-purple btn-block"
         style={{ padding: "16px", fontWeight: 900, fontSize: 15, marginTop: 14 }}
       >
-        {windowOpen ? "اشترك الآن في الاكتتاب 🚀" : "الاكتتاب غير متاح حالياً"}
+        {windowOpen ? t("ico.ctaOpen") : t("ico.ctaClosed")}
       </button>
 
       {/* 🔄 استرجاع دفعة سابقة لم تُسجَّل (مثل استرجاع رسوم التسجيل) */}
       {token && pendingTx && (
         <div className="glass" style={{ ...styles.card, marginTop: 12, borderColor: "rgba(255,176,32,0.45)" }}>
-          <h3 style={styles.cardTitle}>🔄 لديك دفعة اكتتاب لم تُسجَّل بعد</h3>
+          <h3 style={styles.cardTitle}>{t("ico.pendingTitle")}</h3>
           <p style={{ ...T.hint, marginTop: 6, fontSize: 12 }}>
-            بُثّت دفعتك السابقة على الشبكة لكن انقطع الاتصال قبل اكتمال التسجيل — استرجعها الآن دون دفع مزدوج.
+            {t("ico.pendingHint")}
           </p>
           <button
             onClick={resumePurchase}
@@ -511,7 +511,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
             className="btn btn-purple btn-block"
             style={{ marginTop: 10, padding: "12px", fontWeight: 900, fontSize: 13 }}
           >
-            {busy ? "جاري البحث..." : "🔍 استرجاع المشاركة السابقة"}
+            {busy ? t("ico.resumeBusy") : t("ico.resumeSearch")}
           </button>
         </div>
       )}
@@ -529,7 +529,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
       {/* 🎁 المزايا */}
       <div className="glass" style={{ ...styles.card, marginTop: 14 }}>
-        <h3 style={styles.cardTitle}>🎁 مزايا المشاركة</h3>
+        <h3 style={styles.cardTitle}>{t("ico.perksTitle")}</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           {config.perks.map((p, i) => (
             <div key={i} style={{ ...styles.perkBox, textAlign: "center" }}>
@@ -543,7 +543,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
       {/* 📅 جدول الاستحقاق */}
       <div className="glass" style={{ ...styles.card, marginTop: 14 }}>
-        <h3 style={styles.cardTitle}>📅 جدول الإفراج والاستحقاق</h3>
+        <h3 style={styles.cardTitle}>{t("ico.vestingTitle")}</h3>
         {config.vesting.map((v, i) => (
           <div key={i} style={{ ...styles.splitRow, marginTop: i === 0 ? 10 : 8 }}>
             <span style={{ fontWeight: 800, color: C.text, fontSize: 13 }}>{v.label}</span>
@@ -555,7 +555,7 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
       {/* ❓ الأسئلة الشائعة */}
       <div className="glass" style={{ ...styles.card, marginTop: 14 }}>
-        <h3 style={styles.cardTitle}>❓ أسئلة شائعة</h3>
+        <h3 style={styles.cardTitle}>{t("ico.faqTitle")}</h3>
         {config.faq.map((f, i) => (
           <div key={i} style={{ marginTop: i === 0 ? 10 : 12 }}>
             <div style={{ fontWeight: 800, color: C.teal, fontSize: 13.5 }}>◈ {f.q}</div>
@@ -566,22 +566,22 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
       {/* 📜 الشروط */}
       <div className="glass" style={{ ...styles.card, marginTop: 14 }}>
-        <h3 style={styles.cardTitle}>📜 الشروط والأحكام</h3>
+        <h3 style={styles.cardTitle}>{t("ico.termsTitle")}</h3>
         <p style={{ ...T.hint, marginTop: 8, fontSize: 12.5, lineHeight: 1.9 }}>{config.terms}</p>
       </div>
 
       {/* 📄 مشترياتي */}
       {purchases.length > 0 && (
         <div className="glass" style={{ ...styles.card, marginTop: 14 }}>
-          <h3 style={styles.cardTitle}>📄 سجل مشترياتي من الاكتتاب</h3>
+          <h3 style={styles.cardTitle}>{t("ico.myPurchases")}</h3>
           {purchases.map((p) => (
             <div key={p.id} style={{ ...styles.splitRow, marginTop: 8 }}>
               <div>
                 <div style={{ fontWeight: 800, color: C.text, fontSize: 13 }}>
-                  {fmt(p.tokenAmount)} توكن
+                  {t("ico.tokensUnit", { v: fmt(p.tokenAmount) })}
                   {p.txHash && (
                     <button onClick={() => copyAddress(p.txHash!)} style={{ marginInlineStart: 8, fontSize: 10.5, color: C.teal, background: "none", border: "none", cursor: "pointer" }}>
-                      {copied ? "✓ نُسخ" : "🔗 الرابط"}
+                      {copied ? t("ico.copied") : t("ico.link")}
                     </button>
                   )}
                 </div>
@@ -599,47 +599,51 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
 
       {/* 🪙 رصيد بالتوكنات يفيدك: أبرز أن الارصدة تُضاف بعد تأكيد الإدارة */}
       <p style={{ ...T.hint, textAlign: "center", marginTop: 12, fontSize: 11.5 }}>
-        تُضاف التوكنات إلى رصيد حسابك بعد تأكيد الإدارة لمشاركتك، ثم تُفرج حسب جدول الاستحقاق بعد الإدراج.
+        {t("ico.balanceNote")}
       </p>
 
       {/* 🪟 نافذة المشاركة */}
       {open && (
         <div style={styles.modalOverlay} onClick={() => !busy && setOpen(false)}>
           <div className="glass" style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ ...styles.cardTitle, textAlign: "center" }}>🚀 المشاركة في الاكتتاب</h3>
-            <p style={{ ...T.hint, textAlign: "center", marginTop: 4 }}>سعر التوكن: <strong style={{ color: C.teal }}>{priceSOL.toFixed(6)} SOL</strong> — الحد الأدنى {config.minSOL} والحد الأقصى {config.maxSOL} SOL</p>
+            <h3 style={{ ...styles.cardTitle, textAlign: "center" }}>{t("ico.modalTitle")}</h3>
+            <p style={{ ...T.hint, textAlign: "center", marginTop: 4 }}>{t("ico.modalPrice", { price: `${priceSOL.toFixed(6)} SOL`, min: config.minSOL, max: config.maxSOL })}</p>
 
-            <label style={{ display: "block", marginTop: 14, fontSize: 12, color: C.muted }}>مبلغ المشاركة (SOL)</label>
+            <label style={{ display: "block", marginTop: 14, fontSize: 12, color: C.muted }}>{t("ico.amountLabel")}</label>
             <input
               dir="ltr"
               className="input"
               value={amountStr}
               onChange={(e) => { setAmountStr(e.target.value); setSkipWarn(false); }}
-              placeholder={`مثال: ${config.minSOL}`}
+              placeholder={t("ico.amountPlaceholder", { v: config.minSOL })}
               inputMode="decimal"
               style={{ textAlign: "center", fontWeight: 800, color: C.teal, marginTop: 6 }}
             />
 
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12, color: C.muted }}>
-              <span>ستحصل على:</span>
-              <span style={{ fontWeight: 900, color: C.text }}>{previewTokens > 0 ? fmt(previewTokens, 2) : "—"} توكن</span>
+              <span>{t("ico.youGet")}</span>
+              <span style={{ fontWeight: 900, color: C.text }}>{previewTokens > 0 ? t("ico.tokensUnit", { v: fmt(previewTokens, 2) }) : "—"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12, color: C.muted }}>
-              <span>👛 حد محفظتك التراكمي:</span>
-              <span style={{ fontWeight: 900, color: C.amber }}>{fmt(myRaised, 2)} / {fmt(perWalletCap, 2)} SOL <span style={{ color: C.muted, fontWeight: 600 }}>(متبقي {fmt(walletRemaining, 2)})</span></span>
+              <span>{t("ico.yourCap")}</span>
+              <span style={{ fontWeight: 900, color: C.amber }}>{fmt(myRaised, 2)} / {fmt(perWalletCap, 2)} SOL <span style={{ color: C.muted, fontWeight: 600 }}>({t("ico.remaining", { v: fmt(walletRemaining, 2) })})</span></span>
             </div>
 
             <div style={{ marginTop: 14, fontSize: 11.5, color: C.muted, lineHeight: 1.8 }}>
-              تُرسل دفعتك إلى <strong style={{ color: C.text }}>{treasury ? `${treasury.slice(0, 6)}…${treasury.slice(-4)}` : "محفظة الخزانة"}</strong> عن طريق محفظتك مباشرة — لا نحتفظ بأموالك في أي وقت.
+              {t("ico.sendNotePre")}{" "}
+              <strong style={{ color: C.text }}>
+                {treasury ? `${treasury.slice(0, 6)}…${treasury.slice(-4)}` : t("ico.treasuryWallet")}
+              </strong>{" "}
+              {t("ico.sendNotePost")}
               <br />
               {/* 💸 صريح تماماً: ما تكتبه هو المحوَّل، ورسوم الشبكة تُضاف فوقه — حتى لا يظهر
                   خطأ «رصيد غير كافٍ» بسبب فرق ضئيل جداً بين رصيدك والمبلغ المطلوب */}
               <span style={{ color: C.amber }}>
-                يضاف فوق المبلغ رسم شبكة {fmtSol(FEE_FALLBACK_LAMPORTS, 5)} SOL (فقط) — فاحرص أن يكون رصيدك أكبر من المبلغ بهامش يساوي هذا الرسم.
+                {t("ico.feeNote", { fee: fmtSol(FEE_FALLBACK_LAMPORTS, 5) })}
               </span>
             </div>
             <div className="pill" style={{ marginTop: 10, padding: "6px 10px", border: "1px solid rgba(0,255,204,0.25)", color: C.teal, background: "rgba(0,255,204,0.06)", fontSize: 11.5, textAlign: "center" }}>
-              🌐 الشبكة: {network === "mainnet-beta" ? "الشبكة الحقيقية (Mainnet)" : "شبكة التطوير (Devnet)"} — تأكد أن محفظتك على نفس الشبكة قبل الدفع.
+              {t("ico.network", { network: network === "mainnet-beta" ? t("ico.networkMainnet") : t("ico.networkDevnet") })}
             </div>
 
             {status && (
@@ -654,10 +658,10 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
             )}
 
             <button onClick={purchase} disabled={busy} className="btn btn-purple btn-block" style={{ marginTop: 14, padding: "14px", fontWeight: 900 }}>
-              {busy ? "جاري المعالجة..." : "تأكيد المشاركة والدفع"}
+              {busy ? t("ico.submitBusy") : t("ico.submit")}
             </button>
             <button onClick={() => setOpen(false)} disabled={busy} className="btn btn-block" style={{ marginTop: 8, padding: "10px", fontSize: 12 }}>
-              إلغاء
+              {t("ico.cancel")}
             </button>
           </div>
         </div>

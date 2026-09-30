@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { prisma } from "./prisma.js";
+import { toEnglishContent } from "../modules/users/contentEn.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -152,7 +153,7 @@ export const DEFAULT_ACTIVITY_XP = {
 
 export const DEFAULTS: SiteSettings = {
   maintenanceMode: false,
-  maintenanceMessage: "نحن نجري صيانة مجدولة. سنعود قريباً! 🔧",
+  maintenanceMessage: "Scheduled maintenance in progress. Back shortly! 🔧",
   tgeTarget: 0,
   tokenMint: "",
   tokenDecimals: 9,
@@ -164,15 +165,15 @@ export const DEFAULTS: SiteSettings = {
   tokenIcon: "",
   tokenSupply: 1_000_000,
   levelPlan: [
-    { level: 1, name: "المبتدئ", minXp: 0, color: "#94a3b8", miningRate: 0.50, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
-    { level: 2, name: "المبتدئ+", minXp: 120, color: "#4ade80", miningRate: 0.58, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
-    { level: 3, name: "النشط", minXp: 300, color: "#22d3ee", miningRate: 0.68, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
-    { level: 4, name: "المتقدم", minXp: 600, color: "#3b82f6", miningRate: 0.80, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
-    { level: 5, name: "المحترف", minXp: 1100, color: "#a855f7", miningRate: 0.95, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
-    { level: 6, name: "الخبير", minXp: 1900, color: "#ec4899", miningRate: 1.12, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
-    { level: 7, name: "الأسطوري", minXp: 3200, color: "#f59e0b", miningRate: 1.32, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
-    { level: 8, name: "الفخري", minXp: 5200, color: "#ef4444", miningRate: 1.55, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
-    { level: 9, name: "القمة", minXp: 8000, color: "#fde047", miningRate: 1.85, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 1, name: "Beginner", minXp: 0, color: "#94a3b8", miningRate: 0.50, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 2, name: "Beginner+", minXp: 120, color: "#4ade80", miningRate: 0.58, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 3, name: "Active", minXp: 300, color: "#22d3ee", miningRate: 0.68, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 4, name: "Advanced", minXp: 600, color: "#3b82f6", miningRate: 0.80, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 5, name: "Professional", minXp: 1100, color: "#a855f7", miningRate: 0.95, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 6, name: "Expert", minXp: 1900, color: "#ec4899", miningRate: 1.12, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 7, name: "Legendary", minXp: 3200, color: "#f59e0b", miningRate: 1.32, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 8, name: "Prestige", minXp: 5200, color: "#ef4444", miningRate: 1.55, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
+    { level: 9, name: "Summit", minXp: 8000, color: "#fde047", miningRate: 1.85, xpLogin: 10, xpTask: 25, xpGame: 5, xpRef: 50, xpMine: 30, xpBonus: 15 },
   ],
   dailyRewards: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 10.0],
   dailyLevelMult: 0.05,
@@ -188,11 +189,11 @@ export const DEFAULTS: SiteSettings = {
   xpBonus: 15,
   miningDuration: 24,
   roadmap: [
-    { icon: "⚙️", label: "بناء النظام الأساسي", status: "done" },
-    { icon: "🔐", label: "تفعيل أمني + اختبار", status: "done" },
-    { icon: "🚀", label: "إطلاق النسخة التجريبية", status: "current" },
-    { icon: "🦍", label: "إطلاق النسخة الكاملة", status: "upcoming" },
-    { icon: "🌐", label: "التوسع والبورصات", status: "upcoming" },
+    { icon: "⚙️", label: "Core System Build", status: "done" },
+    { icon: "🔐", label: "Security Audit + Testing", status: "done" },
+    { icon: "🚀", label: "Beta Launch", status: "current" },
+    { icon: "🦍", label: "Full Launch", status: "upcoming" },
+    { icon: "🌐", label: "Expansion & Exchanges", status: "upcoming" },
   ],
   // 🎰 عجلة الحظ الافتراضية: القيم من الأصغر للأكبر، الأوزان تجعل الجوائز الكبرى أندر
   wheel: {
@@ -222,27 +223,27 @@ export const DEFAULTS: SiteSettings = {
   },
   // 💼 اقتصاديات التوكن الافتراضية: نسب توزيع العرض الكلي (تتحكم بها الإدارة من لوحة المدير)
   tokenomics: [
-    { label: "التعدين", pct: 40, color: "#00ffcc" },
-    { label: "الألعاب", pct: 25, color: "#7c5cff" },
-    { label: "المجتمع", pct: 20, color: "#ffb020" },
-    { label: "الفريق", pct: 15, color: "#ff5c7a" },
+    { label: "Mining", pct: 40, color: "#00ffcc" },
+    { label: "Games", pct: 25, color: "#7c5cff" },
+    { label: "Community", pct: 20, color: "#ffb020" },
+    { label: "Team", pct: 15, color: "#ff5c7a" },
   ],
   // 📇 بطاقات الدخل الافتراضية (حملات إعلانية تُرقى بالنقاط = إيراد يضاف لمعدل التعدين)
   cards: [
-    { key: "ads_influencer", icon: "🤳", label: "مؤثرون للتسويق", color: "#f43f5e", baseCost: 50, costGrowth: 1.18, reward: 0.04, maxLevel: 20, duration: 1 },
-    { key: "ads_video", icon: "🎬", label: "فيديو ترويجي", color: "#8b5cf6", baseCost: 120, costGrowth: 1.2, reward: 0.08, maxLevel: 15, duration: 1 },
-    { key: "ads_banner", icon: "🖼️", label: "لافتات إعلانية", color: "#0ea5e9", baseCost: 300, costGrowth: 1.22, reward: 0.16, maxLevel: 12, duration: 2 },
-    { key: "ads_telegram", icon: "📣", label: "قنوات تيليجرام", color: "#22c55e", baseCost: 750, costGrowth: 1.25, reward: 0.32, maxLevel: 10, duration: 2 },
-    { key: "ads_coupons", icon: "🎟️", label: "كوبونات خصم", color: "#f59e0b", baseCost: 1800, costGrowth: 1.28, reward: 0.64, maxLevel: 8, duration: 3 },
-    { key: "ads_tv", icon: "📺", label: "إعلان تلفزيوني", color: "#ef4444", baseCost: 4500, costGrowth: 1.3, reward: 1.2, maxLevel: 6, duration: 4 },
+    { key: "ads_influencer", icon: "🤳", label: "Influencer Marketing", color: "#f43f5e", baseCost: 50, costGrowth: 1.18, reward: 0.04, maxLevel: 20, duration: 1 },
+    { key: "ads_video", icon: "🎬", label: "Promotional Video", color: "#8b5cf6", baseCost: 120, costGrowth: 1.2, reward: 0.08, maxLevel: 15, duration: 1 },
+    { key: "ads_banner", icon: "🖼️", label: "Banner Ads", color: "#0ea5e9", baseCost: 300, costGrowth: 1.22, reward: 0.16, maxLevel: 12, duration: 2 },
+    { key: "ads_telegram", icon: "📣", label: "Telegram Channels", color: "#22c55e", baseCost: 750, costGrowth: 1.25, reward: 0.32, maxLevel: 10, duration: 2 },
+    { key: "ads_coupons", icon: "🎟️", label: "Discount Coupons", color: "#f59e0b", baseCost: 1800, costGrowth: 1.28, reward: 0.64, maxLevel: 8, duration: 3 },
+    { key: "ads_tv", icon: "📺", label: "TV Advertisement", color: "#ef4444", baseCost: 4500, costGrowth: 1.3, reward: 1.2, maxLevel: 6, duration: 4 },
   ],
   // 🏗️ الإعدادات الافتراضية لصفحة الاكتتاب (يضبطها المدير دائماً من لوحة التحكم)
   ico: {
     enabled: false,
-    title: "اكتتاب مشاركة مبكرة 🚀",
-    subtitle: "اشترِ توكن {token} بسعر ما قبل الطرح وكن أول المستثمرين في المنصة.",
+    title: "Early Participation Sale 🚀",
+    subtitle: "Buy {token} tokens at the pre-sale price and be among the first investors in the platform.",
     description:
-      "رحلة المشاركة المبكرة في توكن {token}: اطلب توكناتك قبل إدراجها في البورصات، وادفع بالـ SOL مباشرة من محفظتك، واحصل على مخصصاتك وفق جدول الاستحقاق.",
+      "The early participation journey for the {token} token: request your tokens before exchange listing, pay directly in SOL from your wallet, and receive your allocation following the vesting schedule.",
     priceSOL: 0.001,
     minSOL: 0.05,
     maxSOL: 10,
@@ -254,22 +255,22 @@ export const DEFAULTS: SiteSettings = {
     hardCapSOL: 100,
     tgePercent: 25,
     perks: [
-      { icon: "💎", title: "سعر تفضيلي", desc: "سعر أقل من سعر الإدراج المتوقّع في البورصات." },
-      { icon: "🛡️", title: "أولوية الحجز", desc: "مخصصاتك تُحجز باسمك فور التأكيد على السلسلة." },
-      { icon: "🎁", title: "مكافآت إحالة", desc: "شارك رابطك واحصل على علاوات إضافية." },
+      { icon: "💎", title: "Preferential Price", desc: "A price below the expected exchange listing price." },
+      { icon: "🛡️", title: "Reservation Priority", desc: "Your allocation is reserved in your name as soon as it is confirmed on-chain." },
+      { icon: "🎁", title: "Referral Bonuses", desc: "Share your link and earn additional bonuses." },
     ],
     faq: [
-      { q: "متى أستلم توكناتي؟", a: "تُسجَّل مخصصاتك فور تأكيد الدفع على البلوكشين، وتُفرج وفق جدول الاستحقاق بعد الإدراج." },
-      { q: "هل يُسترد المبلغ إذا لم تكتمل اللوحة؟", a: "إذا لم يصل الاكتتاب إلى الهدف الأدنى، تُعاد العمليات بعد الإغلاق دون رسوم." },
+      { q: "When do I receive my tokens?", a: "Your allocation is recorded as soon as the payment is confirmed on-chain, and is released according to the vesting schedule after listing." },
+      { q: "هل يُسترد المبلغ إذا لم تكتمل اللوحة؟", a: "If the sale does not reach its soft cap, transactions are returned after the close with no fees." },
     ],
     vesting: [
-      { label: "عند الإدراج (TGE)", pct: 25, when: "فوراً" },
-      { label: "الدفعة الثانية", pct: 25, when: "بعد 3 أشهر" },
-      { label: "الدفعة الثالثة", pct: 25, when: "بعد 6 أشهر" },
-      { label: "الدفعة النهائية", pct: 25, when: "بعد 12 شهراً" },
+      { label: "At Listing (TGE)", pct: 25, when: "Immediately" },
+      { label: "Second Tranche", pct: 25, when: "After 3 months" },
+      { label: "Third Tranche", pct: 25, when: "After 6 months" },
+      { label: "Final Tranche", pct: 25, when: "After 12 months" },
     ],
     terms:
-      "دفعات الاكتتاب تُرسل إلى محفظة الخزانة على البلوكشين وتُوثَّق تلقائياً بين التطبيق والخادم. التوكنات الرقمية قد ترتفع أو تنخفض قيمتها ولا نضمن أداءً خاصاً. تفحص الأهلية والقوانين في بلدك قبل المشاركة.",
+      "Sale payments are sent to the on-chain treasury wallet and are recorded automatically between the app and the server. Digital tokens may rise or fall in value and we guarantee no specific performance. Verify eligibility and local regulations in your country before participating.",
   },
 };
 
@@ -291,7 +292,9 @@ let lastPersistError: string | null = null;
 
 function mergeParsed(parsed: Partial<SiteSettings>): SiteSettings {
   const ico: IcoSettings = { ...DEFAULTS.ico, ...(parsed?.ico ?? {}) } as IcoSettings;
-  return { ...DEFAULTS, ...parsed, ico } as SiteSettings;
+  // 🌍 محتوى المدير يُعرض بالإنجليزية: نطبّع النصوص الافتراضية القديمة هنا،
+  //    فأي نص كتبه المدير بنفسه أو عدّله يبقى كما هو (المطابقة حرفية).
+  return toEnglishContent({ ...DEFAULTS, ...parsed, ico }) as SiteSettings;
 }
 
 export function getSettings(): SiteSettings {

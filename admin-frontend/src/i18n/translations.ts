@@ -3130,4 +3130,15 @@ const tr: Dict = {
   "admin.levels.saved": "Seviye planı başarıyla kaydedildi ✅",
 };
 
-export const TRANSLATIONS: Record<string, Dict> = { ar, en, fr, es, tr };
+// 🏦 مفاتيح صفحة الاكتتاب في ملف منفصل (i18n/ico.ts) ثم تُدمج هنا لكل لغة.
+import { ICO_TRANSLATIONS } from "./ico";
+
+const withIco = (base: Dict, lang: string): Dict => ({ ...base, ...(ICO_TRANSLATIONS[lang] ?? {}) });
+
+export const TRANSLATIONS: Record<string, Dict> = {
+  ar: withIco(ar, "ar"),
+  en: withIco(en, "en"),
+  fr: withIco(fr, "fr"),
+  es: withIco(es, "es"),
+  tr: withIco(tr, "tr"),
+};
