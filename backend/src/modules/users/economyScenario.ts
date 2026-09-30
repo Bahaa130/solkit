@@ -25,19 +25,19 @@ export interface EconomyScenario {
 
 export const ECONOMY_SCENARIO: EconomyScenario = {
   id: "sol62",
-  name: "62M · أنشطة 30% · بلا مهام",
+  name: "62M · 30% Activities · No Tasks",
   desc:
-    "عرض 62,000,000 توكن. 30% (18,600,000) لأنشطة المستخدمين: التعدين + العجلة + البونص فقط — بلا المهام. " +
-    "مُعاير على 5,000 مستخدم نشط (≈4.37 توكن/يوم لكل مستخدم) ⇒ يستهلك ≈86% من ميزانية الأنشطة خلال 24 شهراً.",
+    "Supply of 62,000,000 tokens. 30% (18,600,000) for user activities: mining + wheel + daily bonus only — no tasks. " +
+    "Calibrated for 5,000 active users (≈4.37 tokens/day per user) ⇒ consumes ≈86% of the activity budget over 24 months.",
   summary: [
-    { label: "🏦 العرض", value: "62,000,000" },
-    { label: "🎯 ميزانية الأنشطة", value: "18,600,000 (30%)" },
-    { label: "⛏️ تعدين L1 → L9", value: "0.068 → 0.194 /ساعة" },
-    { label: "⛏️ متوسط التعدين", value: "2.09 /يوم" },
-    { label: "🎁 XP المهام", value: "0 (معطّل)" },
-    { label: "🎰 العجلة", value: "0.53 /يوم (3 لفات)" },
-    { label: "🎮 الألعاب", value: "0.90 /يوم (سقف)" },
-    { label: "📊 الإجمالي/مستخدم", value: "4.37 توكن/يوم" },
+    { label: "🏦 Supply", value: "62,000,000" },
+    { label: "🎯 Activity budget", value: "18,600,000 (30%)" },
+    { label: "⛏️ Mining L1 → L9", value: "0.068 → 0.194 /hour" },
+    { label: "⛏️ Average mining", value: "2.09 /day" },
+    { label: "🎁 Task XP", value: "0 (disabled)" },
+    { label: "🎰 Wheel", value: "0.53 /day (3 spins)" },
+    { label: "🎮 Games", value: "0.90 /day (cap)" },
+    { label: "📊 Total/user", value: "4.37 tokens/day" },
   ],
   payload: {
     // 🏦 العرض الكلي

@@ -639,7 +639,7 @@ export default function App() {
   if (maintenance?.enabled && session.role !== "admin" && session.walletAddress !== ADMIN_WALLET) {
     return (
       <>
-        <MaintenancePage onLogout={handleLogout} />
+        <MaintenancePage onLogout={handleLogout} message={maintenance.message} />
         {splash && <SplashOverlay quick={splashMs !== null} />}
       </>
     );

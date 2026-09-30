@@ -6,9 +6,11 @@ import { useLang } from "../i18n/index.tsx";
 
 interface MaintenancePageProps {
   onLogout?: () => void;
+  /** 📝 الرسالة التي يكتبها المدير من لوحة الإدارة (نص حر — يُعرض كما هو) */
+  message?: string;
 }
 
-export default function MaintenancePage({ onLogout }: MaintenancePageProps) {
+export default function MaintenancePage({ onLogout, message }: MaintenancePageProps) {
   const { dir, t } = useLang();
 
   return (
@@ -22,6 +24,14 @@ export default function MaintenancePage({ onLogout }: MaintenancePageProps) {
         <p style={styles.desc}>
           {t("maintenance.desc")}
         </p>
+
+        {/* 📝 رسالة المدير — إن كتب شيئاً يُعرض بدل النص الافتراضي */}
+        {message?.trim() && (
+          <div className="glass" style={styles.adminMsg}>
+            <span style={styles.adminMsgIcon}>📣</span>
+            <span style={styles.adminMsgText}>{message}</span>
+          </div>
+        )}
 
         {/* 🔄 مؤشر تحميل حي */}
         <div style={styles.spinnerWrap}>
@@ -71,6 +81,26 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   title: { fontSize: 24, fontWeight: 900, color: C.text, margin: "0 0 12px" },
   desc: { color: C.muted, fontSize: 14, lineHeight: 1.9, margin: "0 0 24px" },
+  adminMsg: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    textAlign: "left",
+    direction: "ltr",
+    padding: "14px 16px",
+    marginBottom: 20,
+    fontSize: 13.5,
+    fontWeight: 700,
+    lineHeight: 1.7,
+    color: C.text,
+    border: "1px solid rgba(255,176,32,0.28)",
+    background: "rgba(255,176,32,0.07)",
+    borderRadius: 14,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  },
+  adminMsgIcon: { flexShrink: 0, lineHeight: 1.4 },
+  adminMsgText: { flex: 1 },
   spinnerWrap: { display: "flex", justifyContent: "center", marginBottom: 18 },
   spinner: {
     width: 34,
