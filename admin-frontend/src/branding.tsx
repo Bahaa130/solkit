@@ -23,22 +23,28 @@ const BUILT_IN_BRANDING: Branding = {
   tokenIcon: "/brand/ysa-icon.png",
 };
 
-const DEFAULT_BRANDING: Branding = BUILT_IN_BRANDING;
-const BRANDING_CACHE_KEY = "solkit.branding.v1";
+// 📦 v2: نُبطل ذاكرة v1 القديمة (كانت تحفظ هوية SOLKIT مؤقتاً على أجهزة المستخدمين)
+const BRANDING_CACHE_KEY = "solkit.branding.v2";
+const BRANDING_CACHE_KEY_LEGACY = "solkit.branding.v1";
+// 🚫 أسماء نائسة من إصدارات سابقة: لا تُعتمد أبداً حتى لو وصلت من الخادم أو الذاكرة القديمة
+const LEGACY_NAMES = new Set(["", "SOLKIT", "LOL", "solkit", "lol"]);
+
+const isLegacyName = (v: unknown): boolean => typeof v !== "string" || LEGACY_NAMES.has(v.trim());
 
 /** 📴 قراءة الهوية المحفوظة محلياً (متاحة فوراً بلا شبكة) */
 function readCachedBranding(): Branding | null {
   try {
+    localStorage.removeItem(BRANDING_CACHE_KEY_LEGACY);
     const raw = localStorage.getItem(BRANDING_CACHE_KEY);
     if (!raw) return null;
     const b = JSON.parse(raw) as Partial<Branding>;
-    if (!b || (!b.projectName && !b.tokenName && !b.tokenSymbol)) return null;
-    return {
-      projectName: b.projectName || BUILT_IN_BRANDING.projectName,
-      tokenName: b.tokenName || BUILT_IN_BRANDING.tokenName,
-      tokenSymbol: b.tokenSymbol || BUILT_IN_BRANDING.tokenName,
-      tokenIcon: b.tokenIcon || "",
-    };
+    if (!b) return null;
+    // 🛡️ نرفض أي قيمة نائسة ونعود للمدمجة — تضمن ثبات الهوية دائماً
+    const projectName = isLegacyName(b.projectName) ? BUILT_IN_BRANDING.projectName : b.projectName!;
+    const tokenName = isLegacyName(b.tokenName) ? BUILT_IN_BRANDING.tokenName : b.tokenName!;
+    const tokenSymbol = isLegacyName(b.tokenSymbol) ? BUILT_IN_BRANDING.tokenSymbol : b.tokenSymbol!;
+    const tokenIcon = typeof b.tokenIcon === "string" && b.tokenIcon ? b.tokenIcon : BUILT_IN_BRANDING.tokenIcon;
+    return { projectName, tokenName, tokenSymbol, tokenIcon };
   } catch {
     return null;
   }
@@ -93,11 +99,15 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!active || !data) return;
+        // 📴 ندمج المدمج مع الخادم: أي حقل ناقص/نائب يأخذ قيمته المدمجة بدل الفراغ
         const b: Branding = {
-          projectName: data.projectName || DEFAULT_BRANDING.projectName,
-          tokenName: data.tokenName || DEFAULT_BRANDING.tokenName,
-          tokenSymbol: data.tokenSymbol || DEFAULT_BRANDING.tokenSymbol,
-          tokenIcon: data.tokenIcon || "",
+          projectName: isLegacyName(data.projectName) ? BUILT_IN_BRANDING.projectName : data.projectName,
+          tokenName: isLegacyName(data.tokenName) ? BUILT_IN_BRANDING.tokenName : data.tokenName,
+          tokenSymbol: isLegacyName(data.tokenSymbol) ? BUILT_IN_BRANDING.tokenSymbol : data.tokenSymbol,
+          tokenIcon:
+            typeof data.tokenIcon === "string" && data.tokenIcon
+              ? data.tokenIcon
+              : readCachedBranding()?.tokenIcon || BUILT_IN_BRANDING.tokenIcon,
         };
         setBrandingSync(b);
         setBrandingState(b);

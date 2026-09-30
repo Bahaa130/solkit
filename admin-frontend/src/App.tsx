@@ -59,7 +59,22 @@ export default function App() {
     return tab && KNOWN_TABS.includes(tab) ? tab : (tab ? "404" : "home");
   });
   // 🔗 تنقّل موحّد: يبدّل التبويب ويحدّث رابط ?tab= في المتصفح
+  // 💫 صفحة التحميل تُعرض مع كل تنقّل بين الصفحات (NAV_SPLASH_MS) كما في الإقلاع (3000ms)
+  const NAV_SPLASH_MS = 900;
+  const splashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ⏱️ مدة بقاء الشاشة الحالية: null = إقلاع (الافتراضي 3000ms)، رقم = تنقّل سريع
+  const [splashMs, setSplashMs] = useState<number | null>(null);
+  const showSplash = (ms: number | null) => {
+    setSplash(true);
+    setSplashMs(ms);
+    if (splashTimer.current) clearTimeout(splashTimer.current);
+    splashTimer.current = setTimeout(() => {
+      splashTimer.current = null;
+      setSplash(false);
+    }, ms ?? 3000);
+  };
   const navigateTab = (tab: string) => {
+    if (tab !== activeTab) showSplash(NAV_SPLASH_MS);
     setActiveTab(tab);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tab);
@@ -96,10 +111,16 @@ export default function App() {
     return true;
   });
   useEffect(() => {
-    if (!splash) return;
+    if (!splash || splashTimer.current) return;
     const id = setTimeout(() => setSplash(false), 3000);
     return () => clearTimeout(id);
   }, [splash]);
+  // 🔄 ذاكرة مؤقتة عند مغادرة التطبيق — نوقف مؤقّت التحميل حتى لا يُخفى أثناء الخلفية
+  useEffect(() => {
+    const onHide = () => { if (document.hidden && splashTimer.current) { clearTimeout(splashTimer.current); splashTimer.current = null; } };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, []);
 
   // ⬇️ سحب من أعلى لأسفل → تحديث الصفحة (pull-to-refresh) — إصدار أندرويد الدقيق:
   // 1) العتبة السلبية ENGAGE: اللمسات الصغيرة والحركات الدقيقة أثناء النقر لا تُفعّل السحب
@@ -274,7 +295,9 @@ export default function App() {
 
     const onPopState = () => {
       const tab = new URLSearchParams(window.location.search).get("tab");
-      setActiveTab(tab && KNOWN_TABS.includes(tab) ? tab : (tab ? "404" : "home"));
+      const next = tab && KNOWN_TABS.includes(tab) ? tab : (tab ? "404" : "home");
+      if (next !== activeTab) showSplash(NAV_SPLASH_MS); // 💫 زر الرجوع/التقدم في المتصفح
+      setActiveTab(next);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -607,7 +630,7 @@ export default function App() {
         <ConnectWalletPage
           onWalletConnected={(t, w, r, s) => handleWalletConnected(t, w, r, s || "inactive")}
         />
-        {splash && <SplashOverlay />}
+        {splash && <SplashOverlay quick={splashMs !== null} />}
       </>
     );
   }
@@ -617,7 +640,7 @@ export default function App() {
     return (
       <>
         <MaintenancePage onLogout={handleLogout} />
-        {splash && <SplashOverlay />}
+        {splash && <SplashOverlay quick={splashMs !== null} />}
       </>
     );
   }
@@ -897,7 +920,7 @@ export default function App() {
           )}
         </>
       )}
-      {splash && <SplashOverlay />}
+      {splash && <SplashOverlay quick={splashMs !== null} />}
     </div>
   );
 }
@@ -1058,12 +1081,13 @@ const styles: { [key: string]: React.CSSProperties } = {
   navLabel: { fontSize: 11, fontWeight: 700 }
 };
 
-// 💫 شاشة تحميل التطبيق — تظهر 3 ثوانٍ عند كل زيارة فوق كل المحتوى
-function SplashOverlay() {
+// 💫 شاشة تحميل التطبيق — 3 ثوانٍ عند الإقلاع، و900ms عند كل تنقّل بين الصفحات.
+//    تتحمّل هوية YOSHA المدمجة، فتظهر دائماً حتى بلا إنترنت.
+function SplashOverlay({ quick = false }: { quick?: boolean }) {
   const { t } = useLang();
   const { branding } = useBranding();
   return (
-    <div className="splash" dir="rtl" style={{
+    <div className={quick ? "splash splash--quick" : "splash"} dir="rtl" style={{
       position: "fixed", inset: 0, zIndex: 9999,
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       background:
@@ -1085,7 +1109,7 @@ function SplashOverlay() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 24 }}>
         <span style={{ fontSize: 15, color: "#00ffcc", fontWeight: "bold" }}>⟠</span>
-        <span className="gradient-text" style={{ fontSize: 30, fontWeight: 900, letterSpacing: 1 }}>{branding.projectName || "SOLKIT"}</span>
+        <span className="gradient-text" style={{ fontSize: 30, fontWeight: 900, letterSpacing: 1 }}>{branding.projectName}</span>
         <span style={{ fontSize: 15, color: "#00ffcc", fontWeight: "bold" }}>⟠</span>
       </div>
 

@@ -124,9 +124,9 @@ export default function BrandingPanel({ token }: BrandingPanelProps) {
         method: "POST",
         headers,
         body: JSON.stringify({
-          projectName: form.projectName.trim() || "SOLKIT",
-          tokenName: form.tokenName.trim() || form.tokenSymbol.trim() || "SOLKIT",
-          tokenSymbol: form.tokenSymbol.trim() || "SOLKIT",
+          projectName: form.projectName.trim(),
+          tokenName: form.tokenName.trim() || form.tokenSymbol.trim(),
+          tokenSymbol: form.tokenSymbol.trim(),
           tokenIcon: icon,
         }),
       });

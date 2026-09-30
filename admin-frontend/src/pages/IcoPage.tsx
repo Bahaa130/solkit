@@ -427,16 +427,16 @@ export default function IcoPage({ token, walletAddress }: IcoPageProps) {
         <div style={{ padding: "22px 18px 18px", textAlign: "center", background: "linear-gradient(160deg, rgba(0,255,204,0.10), rgba(124,92,255,0.08))" }}>
           <div className="floaty" style={{ fontSize: 46 }}>🚀</div>
           <h1 className="gradient-text" style={{ fontWeight: 900, fontSize: 23, marginTop: 6 }}>
-            {config.title.replace("{token}", branding.tokenName || "SOLKIT")}
+            {config.title.replace("{token}", branding.tokenName)}
           </h1>
-          <p style={{ ...T.hint, marginTop: 6 }}>{config.subtitle.replace("{token}", branding.tokenName || "SOLKIT")}</p>
+          <p style={{ ...T.hint, marginTop: 6 }}>{config.subtitle.replace("{token}", branding.tokenName)}</p>
           <div className="pill" style={{ marginTop: 12, padding: "6px 14px", border: "1px solid rgba(0,255,204,0.3)", color: C.teal, background: "rgba(0,255,204,0.08)" }}>
             {countdown ? (countdown.done ? countdown.text : `⏳ ينتهي خلال: ${countdown.text}`) : "⏳ مفتوح حتى إشعار آخر"}
           </div>
         </div>
 
         <div style={{ padding: "18px" }}>
-          <p style={{ color: C.text, fontSize: 13.5, lineHeight: 1.9, marginBottom: 16 }}>{config.description.replace("{token}", branding.tokenName || "SOLKIT")}</p>
+          <p style={{ color: C.text, fontSize: 13.5, lineHeight: 1.9, marginBottom: 16 }}>{config.description.replace("{token}", branding.tokenName)}</p>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div className="pill" style={{ ...styles.miniStat, textAlign: "center", display: "block" }}>

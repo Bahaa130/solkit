@@ -108,8 +108,8 @@ function buildAdapters(network: NetworkOption) {
           options: {
             projectId: WC_PROJECT_ID,
             metadata: {
-              name: "SOLKIT",
-              description: "SOLKIT mining & rewards platform",
+              name: "YOSHA",
+              description: "YOSHA mining & rewards platform",
               url: "https://solkit.app",
               icons: ["https://solkit.app/icon-512.png"],
             },
