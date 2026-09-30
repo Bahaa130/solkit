@@ -273,14 +273,21 @@ export const DEFAULTS: SiteSettings = {
   },
 };
 
-// 📖 قراءة الإعدادات من القرص (تعيد القيم الافتراضية عند عدم وجود الملف)
+// 📖 قراءة الإعدادات (الملف المحلي مُطابِقٌ للقيم الافتراضية فقط)
+// 🗄️ بعد أول تحميل ناجح من قاعدة البيانات (أو أول كتابة) تصبح قاعدة البيانات
+//    هي المرجع الوحيد: لا نُعيد قراءة settings.json إطلاقاً، لأن ملفه على Render
+//    للقراءة فقط (فشل صامت) فكانت أي تعديلات تُمحى بعد 5 ثوانٍ عند انتهاء الـ TTL.
 let cachedSettings: SiteSettings | null = null;
 let cacheTime = 0;
 const CACHE_TTL_MS = 5000;
 
-// وجهة تحميل الإعدادات (DB يغلب على الملف المحلي بينما بقية السلوك كما كان)
+/** وجهة تحميل الإعدادات (قاعدة البيانات تغلب على الملف المحلي بعد أول نجاح) */
 let hydratePromise: Promise<boolean> | null = null;
 let dbChain: Promise<void> = Promise.resolve();
+/** true = المرجع الآن هو قاعدة البيانات (لا ملف) */
+let dbAuthoritative = false;
+/** آخر خطأ في الكتابة إلى قاعدة البيانات (لعرضه للمدير بدل ادّعاء النجاح) */
+let lastPersistError: string | null = null;
 
 function mergeParsed(parsed: Partial<SiteSettings>): SiteSettings {
   const ico: IcoSettings = { ...DEFAULTS.ico, ...(parsed?.ico ?? {}) } as IcoSettings;
@@ -290,6 +297,13 @@ function mergeParsed(parsed: Partial<SiteSettings>): SiteSettings {
 export function getSettings(): SiteSettings {
   const now = Date.now();
   if (cachedSettings && now - cacheTime < CACHE_TTL_MS) {
+    return cachedSettings;
+  }
+  if (dbAuthoritative && cachedSettings) {
+    // 🗄️ المرجع = قاعدة البيانات. نُبقي الذاكرة مرجعاً للقراءات المتزامنة
+    //    ونُحدّثها في الخلفية، بدل الرجوع للملف (كتابةُه تفشل على Render).
+    cacheTime = now;
+    void refreshFromDb();
     return cachedSettings;
   }
   try {
@@ -320,10 +334,30 @@ async function loadFromDb(): Promise<boolean> {
     const parsed = JSON.parse(row.value) as Partial<SiteSettings>;
     cachedSettings = mergeParsed(parsed);
     cacheTime = Date.now();
+    dbAuthoritative = true;
     return true;
   } catch (err) {
     console.error("Failed to load settings from DB:", err);
     return false;
+  }
+}
+
+/** 🔄 تحديث الذاكرة من قاعدة البيانات (بدون تغيير المرجع) — يُستدعى في الخلفية. */
+async function refreshFromDb(): Promise<void> {
+  try {
+    const row = await prisma
+      .appSetting
+      .findUnique({ where: { key: SETTINGS_KEY } });
+    if (!row?.value) return;
+    const parsed = JSON.parse(row.value) as Partial<SiteSettings>;
+    const next = mergeParsed(parsed);
+    // نتجاهل التحديث إن كان مطابقاً للذاكرة (سباق مع الكتابة)
+    if (JSON.stringify(next) !== JSON.stringify(cachedSettings)) {
+      cachedSettings = next;
+      cacheTime = Date.now();
+    }
+  } catch {
+    /* تجاهل: نُبقي الذاكرة كما هي */
   }
 }
 
@@ -342,10 +376,28 @@ function persistToDb(updated: SiteSettings): void {
         create: { key: SETTINGS_KEY, value: JSON.stringify(updated) },
         update: { value: JSON.stringify(updated) },
       });
+      // 🗄️ بعد أول كتابة ناجحة تصبح قاعدة البيانات المرجع: نتوقّف عن قراءة الملف
+      //    (كان يُعيد القيم القديمة بعد 5 ثوانٍ على Render لأن كتابته تفشل هناك).
+      dbAuthoritative = true;
+      lastPersistError = null;
     } catch (err) {
+      lastPersistError = err instanceof Error ? err.message : String(err);
       console.error("Failed to persist settings to DB:", err);
     }
   });
+}
+
+/**
+ * ⏳ انتظار انتهاء كل عمليات الكتابة المعلّقة + نتيجة آخرها.
+ * تستعملها مسارات الحفظ لتُبلغ المدير بالفشل بدل أن ترجع 200 نجاحاً كاذباً.
+ */
+export async function flushSettingsToDb(): Promise<{ ok: boolean; error: string | null }> {
+  try {
+    await dbChain;
+  } catch {
+    /* persistToDb يبتلع الأخطاء ويسجّلها في lastPersistError */
+  }
+  return { ok: lastPersistError === null, error: lastPersistError };
 }
 
 // ✏️ تحديث الإعدادات وحفظها على القرص + قاعدة البيانات
@@ -355,7 +407,8 @@ export function updateSettings(partial: Partial<SiteSettings>): SiteSettings {
   try {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2), "utf-8");
   } catch (err) {
-    console.error("Failed to save settings file:", err);
+    // ⚠️ متوقّع على Render (نظام الملفات للقراءة فقط) — لا يوقف الحفظ، والقاعدة هي المرجع.
+    console.warn("settings.json write skipped (read-only fs?):", err instanceof Error ? err.message : err);
   }
   cachedSettings = updated;
   cacheTime = Date.now();

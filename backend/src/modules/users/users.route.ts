@@ -12,7 +12,7 @@ import bs58 from "bs58"; // 🔐 فك ترميز عنوان المحفظة (base
 import { ed25519 } from "@noble/curves/ed25519"; // ✍️ التحقق من توقيع ed25519
 import { prisma } from "../../config/prisma.js";
 import { authenticateJWT, AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
-import { getSettings, updateSettings, DEFAULTS, type SiteSettings, type CardDef, type IcoSettings, type GamesSettings } from "../../config/settings.js";
+import { getSettings, updateSettings, flushSettingsToDb, DEFAULTS, type SiteSettings, type CardDef, type IcoSettings, type GamesSettings } from "../../config/settings.js";
 import { ECONOMY_SCENARIO } from "./economyScenario.js";
 import { getLevelPlan, rateForLevel, awardActivity } from "./levelSystem.js"; // 🎯 نظام المستويات حسب النشاط
 import gamesRouter from "../games/games.route.js"; // 🎮 مسارات الألعاب المصغرة والمستوى الموحد
@@ -1853,17 +1853,32 @@ router.post("/admin/economy-scenario", authenticateJWT, async (req: Authenticate
       }
     }
 
+    // 3️⃣ 🔍 تحقّق فعلي: القيم يجب أن تكون في قاعدة البيانات، لا في الذاكرة فقط.
+    //    (كان الحفظ يُبلّغ بنجاح ثم ترجع القيم القديمة بعد ثوانٍ لأن القراءة كانت من ملف للقراءة فقط)
+    const persisted = await flushSettingsToDb();
+    if (!persisted.ok) {
+      return res.status(500).json({
+        message: `تعذّر حفظ القيم في قاعدة البيانات: ${persisted.error}`,
+        persisted: false,
+      });
+    }
+    const stored = getSettings();
+    if (stored.tokenSupply !== updated.tokenSupply || stored.levelPlan?.[0]?.miningRate !== updated.levelPlan?.[0]?.miningRate) {
+      return res.status(500).json({ message: "القيم لم تُثبَّت بعد (تحقّق من قاعدة البيانات)", persisted: false });
+    }
+
     return res.json({
       message: `تم تطبيق سيناريو «${ECONOMY_SCENARIO.name}» بنجاح ✅`,
+      persisted: true,
       scenarioId: ECONOMY_SCENARIO.id,
       stoppedTasks,
-      tokenSupply: updated.tokenSupply,
-      levelCount: updated.levelPlan?.length ?? 0,
-      miningRateL1: updated.levelPlan?.[0]?.miningRate,
-      miningRateMax: updated.levelPlan?.[updated.levelPlan.length - 1]?.miningRate,
-      xpTask: updated.xpTask,
-      games: updated.games,
-      wheel: updated.wheel,
+      tokenSupply: stored.tokenSupply,
+      levelCount: stored.levelPlan?.length ?? 0,
+      miningRateL1: stored.levelPlan?.[0]?.miningRate,
+      miningRateMax: stored.levelPlan?.[stored.levelPlan.length - 1]?.miningRate,
+      xpTask: stored.xpTask,
+      games: stored.games,
+      wheel: stored.wheel,
       note: "كل هذه القيم ما زالت قابلة للتعديل من إعدادات الموقع.",
     });
   } catch (error) {

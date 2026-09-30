@@ -1,6 +1,8 @@
 // src/branding.tsx
 // 🏷️ مزوّد الهوية: يجلب اسم المشروع وبيانات العملة (الاسم/الرمز/الأيقونة) من الخادم
 // ويجعلها متاحة عالمياً لتغييرها من لوحة المدير (مع تحديث عنوان الصفحة تلقائياً).
+// 📴 العمل بدون إنترنت: نحفظ آخر هوية ناجحة في localStorage، ونستخدمها فوراً عند
+//    الإقلاع وقبل وصول الشبكة، فلا يظهر «SOLKIT» أبداً إلا في أول نسخة install فقط.
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { apiFetch } from "./lib/api";
@@ -12,15 +14,46 @@ export interface Branding {
   tokenIcon: string;   // 🖼️ أيقونة العملة (data URL) أو نص فارغ = الإيموجي الافتراضي 💎
 }
 
-const DEFAULT_BRANDING: Branding = {
-  projectName: "SOLKIT",
-  tokenName: "SOLKIT",
-  tokenSymbol: "SOLKIT",
+// الهوية المدمجة في التطبيق: أول ما يظهر قبل أي طلب شبكة
+const BUILT_IN_BRANDING: Branding = {
+  projectName: "LOL",
+  tokenName: "LOL",
+  tokenSymbol: "LOL",
   tokenIcon: "",
 };
 
+const DEFAULT_BRANDING: Branding = BUILT_IN_BRANDING;
+const BRANDING_CACHE_KEY = "solkit.branding.v1";
+
+/** 📴 قراءة الهوية المحفوظة محلياً (متاحة فوراً بلا شبكة) */
+function readCachedBranding(): Branding | null {
+  try {
+    const raw = localStorage.getItem(BRANDING_CACHE_KEY);
+    if (!raw) return null;
+    const b = JSON.parse(raw) as Partial<Branding>;
+    if (!b || (!b.projectName && !b.tokenName && !b.tokenSymbol)) return null;
+    return {
+      projectName: b.projectName || BUILT_IN_BRANDING.projectName,
+      tokenName: b.tokenName || BUILT_IN_BRANDING.tokenName,
+      tokenSymbol: b.tokenSymbol || BUILT_IN_BRANDING.tokenName,
+      tokenIcon: b.tokenIcon || "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 💾 حفظ الهوية محلياً لتبقى بعد الإغلاق وفقدان الشبكة */
+function writeCachedBranding(b: Branding): void {
+  try {
+    localStorage.setItem(BRANDING_CACHE_KEY, JSON.stringify(b));
+  } catch {
+    /* تجاهل: الوضع الخاص أو امتلاء المساحة */
+  }
+}
+
 // 🔁 مخزن على مستوى الوحدة للوصول المتزامن من دالة الترجمة t()
-let _branding: Branding = DEFAULT_BRANDING;
+let _branding: Branding = readCachedBranding() ?? BUILT_IN_BRANDING;
 const _listeners = new Set<() => void>();
 
 export function getBranding(): Branding {
@@ -29,6 +62,7 @@ export function getBranding(): Branding {
 
 function setBrandingSync(b: Partial<Branding>) {
   _branding = { ..._branding, ...b };
+  writeCachedBranding(_branding);
   _listeners.forEach((l) => l());
 }
 
@@ -48,10 +82,12 @@ interface BrandingContextValue {
 const BrandingContext = createContext<BrandingContextValue | null>(null);
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
+  // 📴 نبدأ من الهوية المحفوظة/المدمجة (تظهر فوراً) ثم نحدّثها من الشبكة إن توفّرت
   const [branding, setBrandingState] = useState<Branding>(_branding);
 
   useEffect(() => {
     let active = true;
+    applyDocumentTitle(_branding);
     apiFetch("/api/users/settings")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -66,7 +102,10 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
         setBrandingState(b);
         applyDocumentTitle(b);
       })
-      .catch(() => {});
+      .catch(() => {
+        // 📴 لا شبكة: نُبقي هوية localStorage/المدمجة كما هي
+        if (active) applyDocumentTitle(_branding);
+      });
     return () => {
       active = false;
     };
